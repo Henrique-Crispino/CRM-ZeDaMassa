@@ -474,6 +474,9 @@ export async function loadDemoData() {
         fromLocationId: "factory",
         toLocationId,
         at: sentAt,
+        status: "conferido",
+        receivedAt: sentAt,
+        receivedBy: toLocationId === "store_1" ? "Loja 1" : "Loja 2",
       });
 
       for (const nicheId of NICHE_IDS) {
@@ -494,6 +497,7 @@ export async function loadDemoData() {
             nicheId,
             lotId: chunk.lotId,
             qty: chunk.qty,
+            receivedQty: chunk.qty,
           });
           movements.push(
             {

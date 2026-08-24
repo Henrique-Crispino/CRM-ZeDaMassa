@@ -25,7 +25,7 @@ import {
   SuccessBox,
 } from "@/components/ui";
 import { getPanel } from "@/lib/locations";
-import { catalogItems, stockByLocation } from "@/lib/queries";
+import { catalogItems, sellableQty, stockByLocation } from "@/lib/queries";
 import { createStoreRequest, listRequests, RequestError } from "@/lib/requests";
 import { getLocationId } from "@/lib/session";
 import { useReady } from "@/lib/use-ready";
@@ -119,7 +119,7 @@ export default function PedirPage() {
       <div className="pb-44">
         <PageTitle
           title="Pedir para a fábrica"
-          hint="Busque o produto, coloque a quantidade e envie. O botão fica sempre embaixo."
+          hint="Veja quanto a fábrica tem de válido agora. Se pedir mais, o pedido fica — mas não mente que vai sair tudo."
         />
 
         <div className="mb-4 space-y-3">
@@ -144,13 +144,15 @@ export default function PedirPage() {
             {grouped.map((group) => (
               <CompactGroup key={group[0].product.id} title={group[0].product.name}>
                 {group.map((item) => {
-                  const here = stock?.find((row) => row.niche.id === item.niche.id)?.qty[locationId ?? ""] ?? 0;
+                  const row = stock?.find((entry) => entry.niche.id === item.niche.id);
+                  const here = row?.qty[locationId ?? ""] ?? 0;
+                  const factory = row ? sellableQty(row, "factory") : 0;
                   const chosen = qty[item.niche.id] ?? 0;
                   return (
                     <CompactRow
                       key={item.niche.id}
                       title={item.niche.name}
-                      hint={`Na loja: ${here} un.`}
+                      hint={`Na loja: ${here} · fábrica tem ${factory} válidas`}
                       selected={chosen > 0}
                     >
                       <NumberStepper
@@ -175,16 +177,16 @@ export default function PedirPage() {
               {mine?.slice(0, 8).map((request) => (
                 <Card key={request.id} className="p-4">
                   <p className="font-extrabold">
-                    {request.status === "pending"
-                      ? "Aguardando a fábrica"
-                      : request.status === "sent"
-                        ? "Já foi enviado"
-                        : "Dispensado"}
+                    {request.statusLabel}
                   </p>
                   <ul className="mt-1 text-stone-700">
                     {request.items.map((item) => (
                       <li key={item.nicheId}>
-                        {item.label} · {item.qty} un.
+                        {item.label} · pediu {item.qty}
+                        {item.sentQty > 0 ? ` · mandou ${item.sentQty}` : ""}
+                        {request.status !== "sent" && request.status !== "cancelled"
+                          ? ` · fábrica ${item.factoryQty}`
+                          : ""}
                       </li>
                     ))}
                   </ul>
@@ -217,7 +219,15 @@ export default function PedirPage() {
       <ConfirmDialog
         open={confirm}
         title="Enviar este pedido?"
-        hint="A fábrica e o admin vão receber o aviso."
+        hint={
+          selected.some(([nicheId, value]) => {
+            const row = stock?.find((entry) => entry.niche.id === nicheId);
+            const factory = row ? sellableQty(row, "factory") : 0;
+            return factory < value;
+          })
+            ? "A fábrica não tem tudo isso agora. O pedido fica registrado, mas pode não sair inteiro."
+            : "A fábrica e o admin vão receber o aviso. O saldo da fábrica aparece no pedido."
+        }
         confirmLabel="Confirmar pedido"
         busy={saving}
         onConfirm={save}
@@ -226,10 +236,17 @@ export default function PedirPage() {
         <ul className="divide-y divide-stone-100 rounded-2xl bg-stone-50 px-4">
           {selected.map(([nicheId, value]) => {
             const found = catalog?.find((item) => item.niche.id === nicheId);
+            const row = stock?.find((entry) => entry.niche.id === nicheId);
+            const factory = row ? sellableQty(row, "factory") : 0;
             return (
               <li key={nicheId} className="flex justify-between gap-3 py-3">
                 <span className="font-bold text-stone-800">{found?.label ?? "Produto"}</span>
-                <span className="font-extrabold">{value} un.</span>
+                <span className="font-extrabold">
+                  {value} un.
+                  <span className={`block text-sm font-semibold ${factory < value ? "text-red-700" : "text-stone-500"}`}>
+                    fábrica {factory}
+                  </span>
+                </span>
               </li>
             );
           })}

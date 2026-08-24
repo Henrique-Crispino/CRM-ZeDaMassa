@@ -19,9 +19,10 @@ import {
 } from "@/components/pick-flow";
 import { Button, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { getLocation, getPanel, useLocationCatalog } from "@/lib/locations";
-import { sellableQty, stockByLocation } from "@/lib/queries";
+import { listTransfers, sellableQty, stockByLocation } from "@/lib/queries";
 import { getLocationId } from "@/lib/session";
 import { sendToStore, StockError } from "@/lib/stock";
+import { formatDate, formatTime } from "@/lib/money";
 import { useReady } from "@/lib/use-ready";
 
 export default function EnviarPage() {
@@ -29,6 +30,10 @@ export default function EnviarPage() {
   const panel = ready ? getPanel(getLocationId() ?? "") : undefined;
   const { stores } = useLocationCatalog();
   const stock = useLiveQuery(() => (ready ? stockByLocation() : []), [ready]);
+  const pending = useLiveQuery(
+    () => (ready ? listTransfers().then((rows) => rows.filter((row) => row.status === "em_transito")) : []),
+    [ready],
+  );
   const [storeId, setStoreId] = useState("");
   const [qty, setQty] = useState<Record<string, number>>({});
   const [search, setSearch] = useState("");
@@ -100,7 +105,7 @@ export default function EnviarPage() {
       });
       setQty({});
       setConfirm(false);
-      setOk(`Pronto. Já saiu da fábrica e já entrou no estoque da ${storeName}.`);
+      setOk(`Saiu da fábrica. Está em trânsito para a ${storeName}. A loja confere em Receber.`);
     } catch (err) {
       setError(err instanceof StockError ? err.message : "Não deu para mandar. Confira as quantidades.");
       setConfirm(false);
@@ -114,8 +119,27 @@ export default function EnviarPage() {
       <div className="pb-52">
         <PageTitle
           title="Mandar para a loja"
-          hint="Primeiro coloque as quantidades. Só no final escolha a loja. Trocar de loja não apaga o que você já digitou."
+          hint="Primeiro coloque as quantidades. Só no final escolha a loja. O que sair da câmara fica em trânsito até a loja conferir."
         />
+
+        {(pending ?? []).length > 0 ? (
+          <div className="mb-4 rounded-3xl bg-orange-50 px-4 py-3 ring-1 ring-orange-200">
+            <p className="font-extrabold text-stone-900">
+              {(pending ?? []).length} envio{(pending ?? []).length === 1 ? "" : "s"} em trânsito
+            </p>
+            <ul className="mt-2 space-y-1 text-stone-700">
+              {(pending ?? []).slice(0, 4).map((row) => (
+                <li key={row.id} className="font-semibold">
+                  {row.storeName} · {row.sentQty} un. · {formatDate(row.at)} {formatTime(row.at)}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-stone-600">Ainda não conta como estoque da loja. A loja confere em Receber.</p>
+            <Link href="/receber" className="mt-2 inline-flex min-h-11 items-center font-bold text-orange-800">
+              Ver recebimentos
+            </Link>
+          </div>
+        ) : null}
 
         {expiredFactory > 0 ? (
           <div className="mb-4 rounded-3xl bg-red-50 px-4 py-3 ring-1 ring-red-200">
@@ -208,7 +232,7 @@ export default function EnviarPage() {
       <ConfirmDialog
         open={confirm}
         title={`Mandar para a ${storeName}?`}
-        hint="Confira o que vai sair da fábrica. Depois disso já entra no estoque da loja."
+        hint="Confira o que vai sair da fábrica. Entra no estoque da loja só depois que ela conferir."
         confirmLabel="Confirmar e mandar"
         busy={saving}
         onConfirm={save}

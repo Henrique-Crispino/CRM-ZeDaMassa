@@ -9,7 +9,7 @@ import { useReady } from "@/lib/use-ready";
 export function PendingRequests({ canSend }: { canSend: boolean }) {
   const ready = useReady();
   const pending = useLiveQuery(
-    () => (ready ? listRequests("pending") : []),
+    () => (ready ? listRequests("open") : []),
     [ready],
   );
 
@@ -37,8 +37,12 @@ export function PendingRequests({ canSend }: { canSend: boolean }) {
         <ul className="mt-4 space-y-2">
           {rows.slice(0, 4).map((request) => (
             <li key={request.id} className="rounded-2xl bg-orange-50 px-4 py-3 font-semibold text-stone-800">
-              {request.storeName} · {request.items.map((item) => `${item.qty} ${item.label}`).join(", ")}
-              <span className="block text-sm font-medium text-stone-500">{requestWhen(request.at)}</span>
+              {request.storeName} · {request.statusLabel} ·{" "}
+              {request.items.map((item) => `${item.remaining} ${item.label}`).join(", ")}
+              <span className="block text-sm font-medium text-stone-500">
+                {requestWhen(request.at)}
+                {request.status === "sem_saldo" ? " · sem saldo na fábrica" : ""}
+              </span>
             </li>
           ))}
         </ul>

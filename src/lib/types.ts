@@ -100,11 +100,35 @@ export type Movement = {
   at: string;
 };
 
+export type TransferStatus = "em_transito" | "conferido" | "divergente";
+
+export const TRANSFER_STATUSES: { id: TransferStatus; label: string }[] = [
+  { id: "em_transito", label: "Em trânsito" },
+  { id: "conferido", label: "Conferido" },
+  { id: "divergente", label: "Divergente" },
+];
+
+export function transferStatus(transfer?: Pick<Transfer, "status"> | null): TransferStatus {
+  return transfer?.status ?? "conferido";
+}
+
+export function transferStatusLabel(status?: TransferStatus) {
+  return TRANSFER_STATUSES.find((item) => item.id === status)?.label ?? "Conferido";
+}
+
+export function receivedQtyOf(item: Pick<TransferItem, "qty" | "receivedQty">, status?: TransferStatus) {
+  if (item.receivedQty != null) return item.receivedQty;
+  return status === "em_transito" ? undefined : item.qty;
+}
+
 export type Transfer = {
   id: string;
   fromLocationId: string;
   toLocationId: string;
   at: string;
+  status?: TransferStatus;
+  receivedAt?: string;
+  receivedBy?: string;
 };
 
 export type TransferItem = {
@@ -113,6 +137,7 @@ export type TransferItem = {
   nicheId: string;
   lotId: string;
   qty: number;
+  receivedQty?: number;
 };
 
 export type Sale = {
@@ -138,7 +163,21 @@ export type SaleItem = {
   promo?: boolean;
 };
 
-export type RequestStatus = "pending" | "sent" | "cancelled";
+export type RequestStatus = "pending" | "parcial" | "sem_saldo" | "sent" | "cancelled";
+
+export function isOpenRequest(status: RequestStatus) {
+  return status === "pending" || status === "parcial" || status === "sem_saldo";
+}
+
+export function requestStatusLabel(status: RequestStatus) {
+  return {
+    pending: "Aguardando",
+    parcial: "Parcial",
+    sem_saldo: "Sem saldo",
+    sent: "Enviado",
+    cancelled: "Dispensado",
+  }[status];
+}
 export type NotificationAudience = "admin" | "factory";
 export type NotificationType = "store_request" | "request_sent" | "request_cancelled";
 
@@ -156,6 +195,7 @@ export type StockRequestItem = {
   requestId: string;
   nicheId: string;
   qty: number;
+  sentQty?: number;
 };
 
 export type AppNotification = {

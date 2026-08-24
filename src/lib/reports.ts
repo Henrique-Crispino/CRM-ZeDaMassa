@@ -14,7 +14,7 @@ import { cashDifferenceLabel, cashPeriodLabel, sessionLedger } from "./cash";
 import { catalogItems, listProductionLogs, stockByLocation } from "./queries";
 import { factoryMin, storeMin } from "./stock-min";
 import type { Niche } from "./types";
-import { adjustmentReasonLabel, isLiveSale, lotCost } from "./types";
+import { adjustmentReasonLabel, isLiveSale, lotCost, receivedQtyOf, transferStatus, transferStatusLabel } from "./types";
 
 export type StoreScope = "all" | string;
 
@@ -413,14 +413,16 @@ export async function reportTransfers(window: ReportWindow, scope: StoreScope): 
   let totalCost = 0;
   for (const transfer of transfers.sort((a, b) => a.at.localeCompare(b.at))) {
     const dest = getLocation(transfer.toLocationId)?.name ?? transfer.toLocationId;
+    const situation = transferStatusLabel(transferStatus(transfer));
     const parts = items.filter((item) => item.transferId === transfer.id);
     if (parts.length === 0) {
-      rows.push([formatDate(transfer.at.slice(0, 10)), formatTime(transfer.at), dest, "—", 0, "—", money(0)]);
+      rows.push([formatDate(transfer.at.slice(0, 10)), formatTime(transfer.at), dest, situation, "—", 0, 0, "—", money(0)]);
       continue;
     }
     for (const part of parts) {
       const found = catalog.find((item) => item.niche.id === part.nicheId);
       const lot = lotById.get(part.lotId);
+      const arrived = receivedQtyOf(part, transferStatus(transfer)) ?? 0;
       const cost = part.qty * lotCost(lot, found?.niche.costPrice ?? 0);
       totalQty += part.qty;
       totalCost += cost;
@@ -428,8 +430,10 @@ export async function reportTransfers(window: ReportWindow, scope: StoreScope): 
         formatDate(transfer.at.slice(0, 10)),
         formatTime(transfer.at),
         dest,
+        situation,
         found?.label ?? "Produto",
         part.qty,
+        arrived,
         lot?.expiresAt ? formatDate(lot.expiresAt) : "Sem validade",
         money(cost),
       ]);
@@ -439,11 +443,11 @@ export async function reportTransfers(window: ReportWindow, scope: StoreScope): 
   return {
     title: "Envios da fábrica para as lojas",
     subtitle: `${window.label}${scope === "all" ? "" : ` · destino ${scopeName(scope)}`}`,
-    headers: ["Data", "Hora", "Loja", "Produto", "Quantidade", "Validade do lote", "Custo enviado"],
-    rows: rows.length ? [...rows, ["TOTAL", "", "", "", totalQty, "", money(totalCost)]] : rows,
+    headers: ["Data", "Hora", "Loja", "Situação", "Produto", "Mandou", "Chegou", "Validade do lote", "Custo enviado"],
+    rows: rows.length ? [...rows, ["TOTAL", "", "", "", "", totalQty, "", "", money(totalCost)]] : rows,
     notes: [
       rows.length === 0 ? "Nenhum envio neste recorte." : `${totalQty} un. saíram da fábrica · custo de reposição ${money(totalCost)}.`,
-      "Este relatório mostra o estoque que mudou de lugar. Não é venda.",
+      "Mandou é o que saiu da fábrica. Chegou é o que a loja conferiu. Em trânsito ainda não é estoque da loja.",
     ],
   };
 }

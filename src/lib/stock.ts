@@ -5,7 +5,7 @@ import { isStore } from "./locations";
 import { addDays, newId, todayDate } from "./money";
 import { changeStock, oldestLots, StockError, stockQty } from "./stock-core";
 import type { AdjustmentReason, InventoryLine, PaymentMethod, SaleChannel, SaleVoidReason } from "./types";
-import { ADJUSTMENT_REASONS, SALE_VOID_REASONS, lotCost } from "./types";
+import { ADJUSTMENT_REASONS, SALE_VOID_REASONS, lotCost, transferStatus } from "./types";
 
 export { StockError, stockQty } from "./stock-core";
 
@@ -139,13 +139,13 @@ export async function sendToStore(input: {
         fromLocationId: "factory",
         toLocationId: input.toLocationId,
         at,
+        status: "em_transito",
       });
 
       for (const item of items) {
         const chunks = await oldestLots("factory", item.nicheId, item.qty, { skipExpired: true });
         for (const chunk of chunks) {
           await changeStock("factory", item.nicheId, chunk.lotId, -chunk.qty);
-          await changeStock(input.toLocationId, item.nicheId, chunk.lotId, chunk.qty);
           await db.transferItems.add({
             id: newId(),
             transferId,
@@ -163,22 +163,79 @@ export async function sendToStore(input: {
             refId: transferId,
             at,
           });
-          await db.movements.add({
-            id: newId(),
-            locationId: input.toLocationId,
-            nicheId: item.nicheId,
-            lotId: chunk.lotId,
-            qty: chunk.qty,
-            type: "send",
-            refId: transferId,
-            at,
-          });
         }
       }
     },
   );
 
   return transferId;
+}
+
+export async function receiveTransfer(input: {
+  transferId: string;
+  receivedBy: string;
+  items: { id: string; receivedQty: number }[];
+}) {
+  const receivedBy = input.receivedBy.trim();
+  if (!receivedBy) throw new StockError("Falta quem conferiu o que chegou.");
+
+  const db = getDb();
+  const transfer = await db.transfers.get(input.transferId);
+  if (!transfer) throw new StockError("Envio não encontrado.");
+  if (transferStatus(transfer) !== "em_transito") {
+    throw new StockError("Este envio já foi conferido.");
+  }
+
+  const parts = await db.transferItems.where("transferId").equals(transfer.id).toArray();
+  if (parts.length === 0) throw new StockError("Este envio não tem itens para conferir.");
+
+  const qtyById = new Map(
+    input.items.map((item) => [item.id, Math.max(0, Math.floor(item.receivedQty))]),
+  );
+  for (const part of parts) {
+    if (!qtyById.has(part.id)) {
+      throw new StockError("Confera todos os itens deste envio.");
+    }
+  }
+
+  const at = new Date().toISOString();
+
+  await db.transaction(
+    "rw",
+    [db.stock, db.lots, db.movements, db.transfers, db.transferItems],
+    async () => {
+      const current = await db.transfers.get(transfer.id);
+      if (!current || transferStatus(current) !== "em_transito") {
+        throw new StockError("Este envio já foi conferido.");
+      }
+
+      let divergente = false;
+      for (const part of parts) {
+        const receivedQty = qtyById.get(part.id) ?? 0;
+        if (receivedQty !== part.qty) divergente = true;
+        if (receivedQty > 0) {
+          await changeStock(transfer.toLocationId, part.nicheId, part.lotId, receivedQty);
+          await db.movements.add({
+            id: newId(),
+            locationId: transfer.toLocationId,
+            nicheId: part.nicheId,
+            lotId: part.lotId,
+            qty: receivedQty,
+            type: "send",
+            refId: transfer.id,
+            at,
+          });
+        }
+        await db.transferItems.update(part.id, { receivedQty });
+      }
+
+      await db.transfers.update(transfer.id, {
+        status: divergente ? "divergente" : "conferido",
+        receivedAt: at,
+        receivedBy,
+      });
+    },
+  );
 }
 
 export async function checkout(input: {

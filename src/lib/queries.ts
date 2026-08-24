@@ -2,8 +2,16 @@ import { getDb } from "./db";
 import { LOCATIONS, storeLocations, getLocation, type Location } from "./locations";
 import { daysUntil, formatDate, periodRange, todayDate, type Period } from "./money";
 import { factoryMin, isLowAt, storeMin } from "./stock-min";
-import type { MovementType, Niche, Product, Sale, SaleItem, Waste } from "./types";
-import { adjustmentReasonLabel, isLiveSale, movementLabel, saleVoidReasonLabel } from "./types";
+import type { MovementType, Niche, Product, Sale, SaleItem, TransferStatus, Waste } from "./types";
+import {
+  adjustmentReasonLabel,
+  isLiveSale,
+  movementLabel,
+  receivedQtyOf,
+  saleVoidReasonLabel,
+  transferStatus,
+  transferStatusLabel,
+} from "./types";
 
 export type CatalogItem = {
   niche: Niche;
@@ -674,12 +682,15 @@ export async function loadKardex(input: {
       note = "Entrada de mercadoria";
     } else if (movement.type === "send") {
       const transfer = transferById.get(movement.refId);
+      const dest = getLocation(transfer?.toLocationId ?? "")?.name ?? transfer?.toLocationId ?? "loja";
       if (movement.qty < 0) {
         who = "Fábrica";
-        note = `Mandou para ${getLocation(transfer?.toLocationId ?? "")?.name ?? transfer?.toLocationId ?? "loja"}`;
+        note = `Mandou para ${dest}`;
+        if (transfer && transferStatus(transfer) === "em_transito") note += " · ainda em trânsito";
       } else {
-        who = locationName;
+        who = transfer?.receivedBy ?? locationName;
         note = `Recebeu da ${getLocation(transfer?.fromLocationId ?? "factory")?.name ?? "fábrica"}`;
+        if (transfer && transferStatus(transfer) === "divergente") note += " · conferência com divergência";
       }
     } else if (movement.type === "sale" || movement.type === "sale_void") {
       const sale = saleById.get(movement.refId);
@@ -743,5 +754,81 @@ export async function loadKardex(input: {
   const closing = opening == null ? null : running;
 
   return { label, opening, closing, rows };
+}
+
+export type TransferLineView = {
+  id: string;
+  nicheId: string;
+  lotId: string;
+  label: string;
+  lotHint: string;
+  qty: number;
+  receivedQty?: number;
+};
+
+export type TransferView = {
+  id: string;
+  fromLocationId: string;
+  toLocationId: string;
+  storeName: string;
+  at: string;
+  receivedAt?: string;
+  receivedBy?: string;
+  status: TransferStatus;
+  statusLabel: string;
+  sentQty: number;
+  arrivedQty: number;
+  items: TransferLineView[];
+};
+
+export async function listTransfers(toLocationId?: string): Promise<TransferView[]> {
+  const db = getDb();
+  const [transfers, items, catalog, lots] = await Promise.all([
+    db.transfers.toArray(),
+    db.transferItems.toArray(),
+    catalogItems(false),
+    db.lots.toArray(),
+  ]);
+  const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+
+  return transfers
+    .filter((row) => !toLocationId || row.toLocationId === toLocationId)
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .map((row) => {
+      const status = transferStatus(row);
+      const lines = items
+        .filter((item) => item.transferId === row.id)
+        .map((item) => {
+          const found = catalog.find((entry) => entry.niche.id === item.nicheId);
+          const lot = lotById.get(item.lotId);
+          return {
+            id: item.id,
+            nicheId: item.nicheId,
+            lotId: item.lotId,
+            label: found?.label ?? "Produto",
+            lotHint: lot?.expiresAt
+              ? `Lote ${formatDate(lot.madeAt)} · vale até ${formatDate(lot.expiresAt)}`
+              : lot?.madeAt
+                ? `Lote ${formatDate(lot.madeAt)}`
+                : "Sem lote",
+            qty: item.qty,
+            receivedQty: receivedQtyOf(item, status),
+          };
+        });
+      return {
+        id: row.id,
+        fromLocationId: row.fromLocationId,
+        toLocationId: row.toLocationId,
+        storeName: getLocation(row.toLocationId)?.name ?? row.toLocationId,
+        at: row.at,
+        receivedAt: row.receivedAt,
+        receivedBy: row.receivedBy,
+        status,
+        statusLabel: transferStatusLabel(status),
+        sentQty: lines.reduce((sum, line) => sum + line.qty, 0),
+        arrivedQty: lines.reduce((sum, line) => sum + (line.receivedQty ?? 0), 0),
+        items: lines,
+      };
+    });
 }
 
