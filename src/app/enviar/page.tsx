@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import {
@@ -48,10 +48,6 @@ export default function EnviarPage() {
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [sheet, setSheet] = useState<ReportTable | null>(null);
-
-  useEffect(() => {
-    if (!storeId && stores[0]) setStoreId(stores[0].id);
-  }, [storeId, stores]);
 
   const expiredFactory = useMemo(
     () => (stock ?? []).reduce((sum, item) => sum + (item.expiredQty.factory ?? 0), 0),
@@ -101,6 +97,7 @@ export default function EnviarPage() {
   }
 
   async function save() {
+    if (!storeId) return;
     setError("");
     setOk("");
     setSaving(true);
@@ -111,6 +108,7 @@ export default function EnviarPage() {
         sentBy: panel?.name ?? "Fábrica",
       });
       setQty({});
+      setStoreId("");
       setConfirm(false);
       setOk(`Saiu da fábrica. Está em trânsito para a ${storeName}. Imprima o romaneio para o motorista.`);
       setSheet(await reportRomaneio(transferId));
@@ -124,10 +122,10 @@ export default function EnviarPage() {
 
   return (
     <AppShell>
-      <div className="pb-52">
+      <div className="pb-36">
         <PageTitle
           title="Mandar para a loja"
-          hint="Primeiro coloque as quantidades. Só no final escolha a loja. O que sair da câmara fica em trânsito até a loja conferir."
+          hint="Primeiro as quantidades. A loja só aparece na revisão — assim não manda para o lugar errado no meio da conta. O que sair da câmara fica em trânsito até a loja conferir."
         />
 
         {(pending ?? []).length > 0 ? (
@@ -220,8 +218,30 @@ export default function EnviarPage() {
       <StickyActionBar>
         <ErrorBox message={error} />
         <SuccessBox message={ok} />
-        <p className="text-base font-bold text-stone-800">Agora, para qual loja?</p>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="font-bold text-stone-700">
+            {selected.length > 0
+              ? `${selected.length} tipos · ${selectedUnits} un. · a loja entra na revisão`
+              : "Monte as quantidades acima"}
+          </p>
+          <Button disabled={selected.length === 0} onClick={() => { setOk(""); setConfirm(true); }}>
+            Revisar e mandar
+          </Button>
+        </div>
+      </StickyActionBar>
+
+      <ConfirmDialog
+        open={confirm}
+        title={storeId ? `Mandar para a ${storeName}?` : "Para qual loja?"}
+        hint="Escolha a loja agora. Entra no estoque dela só depois que ela conferir."
+        confirmLabel="Confirmar e mandar"
+        confirmDisabled={!storeId}
+        busy={saving}
+        onConfirm={save}
+        onCancel={() => setConfirm(false)}
+      >
+        <p className="mb-2 text-base font-bold text-stone-800">Destino</p>
+        <div className="mb-4 grid grid-cols-2 gap-2">
           {stores.map((store) => (
             <Button
               key={store.id}
@@ -234,27 +254,6 @@ export default function EnviarPage() {
             </Button>
           ))}
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="font-bold text-stone-700">
-            {selected.length > 0
-              ? `${selected.length} tipos · ${selectedUnits} un. → ${storeName}`
-              : "Monte as quantidades acima"}
-          </p>
-          <Button disabled={selected.length === 0} onClick={() => { setOk(""); setConfirm(true); }}>
-            Revisar e mandar
-          </Button>
-        </div>
-      </StickyActionBar>
-
-      <ConfirmDialog
-        open={confirm}
-        title={`Mandar para a ${storeName}?`}
-        hint="Confira o que vai sair da fábrica. Entra no estoque da loja só depois que ela conferir."
-        confirmLabel="Confirmar e mandar"
-        busy={saving}
-        onConfirm={save}
-        onCancel={() => setConfirm(false)}
-      >
         <ul className="divide-y divide-stone-100 rounded-2xl bg-stone-50 px-4">
           {selected.map((row) => (
             <li key={row.item.niche.id} className="flex justify-between gap-3 py-3">
