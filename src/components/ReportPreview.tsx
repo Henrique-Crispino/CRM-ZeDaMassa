@@ -36,7 +36,9 @@ export function ReportPreview({
             <h1 className="text-2xl font-extrabold text-stone-900">{report.title}</h1>
             <p className="mt-1 text-stone-600">{report.subtitle}</p>
             <div className="mt-5 overflow-x-auto">
-              <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+              <table
+                className={`w-full border-collapse text-left text-sm ${report.headers.length <= 3 ? "" : "min-w-[720px]"}`}
+              >
                 <thead>
                   <tr>
                     {report.headers.map((header) => (

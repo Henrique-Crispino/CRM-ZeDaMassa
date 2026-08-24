@@ -12,6 +12,7 @@ import {
   fileName,
   reportCash,
   reportClosing,
+  reportDayPack,
   reportInternal,
   reportInventory,
   reportProduction,
@@ -75,7 +76,7 @@ export default function RelatoriosPage() {
     <AppShell>
       <PageTitle
         title="Relatórios"
-        hint="Um recorte só: quando e onde. Depois escolha o papel. Estoque é foto agora; o resto usa o período."
+        hint="Um recorte só: quando e onde. O pacote do dia junta caixa, envio, saídas e inventário numa folha. O resto é o detalhe."
       />
 
       <Card className="mb-6 space-y-5">
@@ -138,6 +139,28 @@ export default function RelatoriosPage() {
           </div>
         </div>
         {error ? <p className="font-semibold text-red-700">{error}</p> : null}
+      </Card>
+
+      <Card className="mb-6 ring-2 ring-orange-300">
+        <p className="text-xs font-extrabold uppercase tracking-wide text-orange-700">
+          {when === "today" ? "Hoje · uma folha" : "Uma folha do recorte"}
+        </p>
+        <h2 className="mt-1 text-2xl font-extrabold text-stone-900">Pacote do dia</h2>
+        <p className="mt-1 text-stone-600">
+          Caixa (espécie, Pix, cartão, sangria, suprimento, quebra ou sobra), o que a fábrica mandou e a loja confirmou,
+          vendeu / sobra / vencido / consumo. Se teve inventário, sistema × físico. Melhor em Hoje — 7 ou 30 dias junta o período.
+        </p>
+        <p className="mt-2 text-sm font-semibold text-stone-500">Usa: {window.label} · {storeLabel}</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button type="button" disabled={busy !== null} onClick={() => run("day", "print", () => reportDayPack(window, scope), "pacote-do-dia")}>
+            <Printer className="size-5" />
+            {busy === "day-print" ? "Montando..." : "Ver e imprimir"}
+          </Button>
+          <Button type="button" variant="ghost" disabled={busy !== null} onClick={() => run("day", "csv", () => reportDayPack(window, scope), "pacote-do-dia")}>
+            <Download className="size-5" />
+            {busy === "day-csv" ? "Baixando..." : "Excel"}
+          </Button>
+        </div>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">

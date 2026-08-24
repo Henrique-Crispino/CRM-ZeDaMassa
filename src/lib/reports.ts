@@ -886,6 +886,145 @@ export async function reportInventory(window: ReportWindow, scope: StoreScope): 
   };
 }
 
+export async function reportDayPack(window: ReportWindow, scope: StoreScope): Promise<ReportTable> {
+  const db = getDb();
+  const [sales, wastes, consumptions, sessions, transfers, transferItems, counts, lines] = await Promise.all([
+    liveSales(await db.sales.where("at").between(window.from, window.to, true, true).toArray(), scope),
+    filterStore(await db.wastes.where("at").between(window.from, window.to, true, true).toArray(), scope),
+    filterStore(await db.consumptions.where("at").between(window.from, window.to, true, true).toArray(), scope),
+    filterStore(await db.cashSessions.toArray(), scope).filter(
+      (session) => session.openedAt >= window.from && session.openedAt <= window.to,
+    ),
+    db.transfers.where("at").between(window.from, window.to, true, true).toArray(),
+    db.transferItems.toArray(),
+    db.inventoryCounts.toArray(),
+    db.inventoryLines.toArray(),
+  ]);
+
+  const ledgers = await Promise.all(sessions.map((session) => sessionLedger(session.id)));
+  const saleItems = (await Promise.all(sales.map((sale) => db.saleItems.where("saleId").equals(sale.id).toArray()))).flat();
+  const soldQty = saleItems.reduce((sum, item) => sum + item.qty, 0);
+  const soldRev = saleItems.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
+  const leftover = wastes.filter((row) => row.reason === "sobra_frito");
+  const expired = wastes.filter((row) => row.reason === "vencido");
+  const leftoverQty = leftover.reduce((sum, row) => sum + row.qty, 0);
+  const expiredQty = expired.reduce((sum, row) => sum + row.qty, 0);
+  const consumeQty = consumptions.reduce((sum, row) => sum + row.qty, 0);
+
+  const dinheiro = ledgers.reduce((sum, ledger) => sum + ledger.byPayment.dinheiro, 0);
+  const pix = ledgers.reduce((sum, ledger) => sum + ledger.byPayment.pix, 0);
+  const cartao = ledgers.reduce((sum, ledger) => sum + ledger.byPayment.cartao, 0);
+  const sangria = ledgers.reduce((sum, ledger) => sum + ledger.sangriaTotal, 0);
+  const supply = ledgers.reduce((sum, ledger) => sum + ledger.supplyTotal, 0);
+  const closed = ledgers.filter((ledger) => ledger.difference != null);
+  const expected = ledgers.reduce((sum, ledger) => sum + ledger.expectedCash, 0);
+  const counted = closed.reduce((sum, ledger) => sum + (ledger.countedCash ?? 0), 0);
+  const difference = closed.reduce((sum, ledger) => sum + (ledger.difference ?? 0), 0);
+
+  const envios = transfers.filter(
+    (transfer) => transferKind(transfer) === "envio" && (scope === "all" || transfer.toLocationId === scope),
+  );
+  let sentQty = 0;
+  let arrivedQty = 0;
+  let transitQty = 0;
+  for (const transfer of envios) {
+    const status = transferStatus(transfer);
+    for (const part of transferItems.filter((item) => item.transferId === transfer.id)) {
+      sentQty += part.qty;
+      if (status === "em_transito") {
+        transitQty += part.qty;
+        continue;
+      }
+      arrivedQty += receivedQtyOf(part, status) ?? part.qty;
+    }
+  }
+  const gap = sentQty - arrivedQty - transitQty;
+
+  const inventories = counts
+    .filter((row) => row.at >= window.from && row.at <= window.to)
+    .filter((row) => scope === "all" || row.locationId === scope);
+  let systemQty = 0;
+  let physicalQty = 0;
+  for (const count of inventories) {
+    for (const line of lines.filter((item) => item.countId === count.id)) {
+      systemQty += line.systemQty;
+      physicalQty += line.countedQty;
+    }
+  }
+
+  const rows: (string | number)[][] = [];
+
+  if (ledgers.length === 0) {
+    rows.push(["Caixa", "Movimento", "Sem caixa neste recorte"]);
+  } else {
+    rows.push(
+      ["Caixa", "Vendas em espécie", money(dinheiro)],
+      ["Caixa", "Pix", money(pix)],
+      ["Caixa", "Cartão", money(cartao)],
+      ["Caixa", "Sangria", money(sangria)],
+      ["Caixa", "Suprimento", money(supply)],
+      ["Caixa", "Esperado em espécie", money(expected)],
+      ["Caixa", "Dinheiro apurado", closed.length ? money(counted) : "Ainda sem conferência"],
+      [
+        "Caixa",
+        "Quebra ou sobra",
+        closed.length ? `${cashDifferenceLabel(difference)} · ${money(difference)}` : "—",
+      ],
+    );
+  }
+
+  if (envios.length === 0) {
+    rows.push(["Envio", "Fábrica → loja", "Nenhum envio"]);
+  } else {
+    rows.push(
+      ["Envio", "Fábrica mandou", `${sentQty} un.`],
+      ["Envio", "Loja confirmou", `${arrivedQty} un.`],
+      ["Envio", "Ainda em trânsito", `${transitQty} un.`],
+      [
+        "Envio",
+        "Divergência",
+        gap === 0 ? "Bateu" : `${gap > 0 ? "Faltou" : "Sobra"} ${Math.abs(gap)} un.`,
+      ],
+    );
+  }
+
+  rows.push(
+    ["Saídas", "Vendeu", `${soldQty} un. · ${money(soldRev)}`],
+    ["Saídas", "Sobra", `${leftoverQty} un.`],
+    ["Saídas", "Vencido", `${expiredQty} un.`],
+    ["Saídas", "Consumo interno", `${consumeQty} un.`],
+  );
+
+  if (inventories.length === 0) {
+    rows.push(["Inventário", "Contagem", "Não teve inventário neste recorte"]);
+  } else {
+    rows.push(
+      ["Inventário", "Contagens", String(inventories.length)],
+      ["Inventário", "Sistema", `${systemQty} un.`],
+      ["Inventário", "Físico", `${physicalQty} un.`],
+      [
+        "Inventário",
+        "Diferença",
+        `${physicalQty - systemQty} un. · ${physicalQty - systemQty === 0 ? "bateu" : physicalQty > systemQty ? "apareceu a mais" : "faltou no físico"}`,
+      ],
+    );
+  }
+
+  return {
+    title: "Pacote do dia",
+    subtitle: `${window.label} · ${scopeName(scope)}`,
+    headers: ["Bloco", "O que olhar", "Número"],
+    rows,
+    notes: [
+      "Uma folha para o dono. Não substitui o detalhe de cada relatório.",
+      "Espécie no caixa é só a parte em dinheiro. Pix e cartão não entram na gaveta.",
+      "Mandou é o que saiu da câmara. Confirmou é o que a loja conferiu. Em trânsito ainda não é estoque da loja.",
+      "Sobra não é vencido. Inventário não é venda.",
+      closed.length < ledgers.length ? "Tem caixa ainda aberto neste recorte: o apurado fica em branco até encerrar." : "",
+    ].filter(Boolean),
+  };
+}
+
 export function fileName(prefix: string) {
   const stamp = new Date().toISOString().slice(0, 10);
   return `${prefix}-${stamp}.csv`;
