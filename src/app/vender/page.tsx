@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog, FilterChips, SearchField } from "@/components/pick-flow";
+import { SessionSalesList } from "@/components/SessionSalesList";
 import {
   Button,
   Card,
@@ -329,6 +330,12 @@ export default function VenderPage() {
           </Button>
         </Card>
       </div>
+
+      {session ? (
+        <div className="mt-8">
+          <SessionSalesList sessionId={session.id} canVoid={!session.closedAt} />
+        </div>
+      ) : null}
 
       <ConfirmDialog
         open={confirm}

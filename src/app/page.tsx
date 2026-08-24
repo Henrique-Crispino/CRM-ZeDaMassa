@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { Factory, Shield, Store } from "lucide-react";
-import { DemoDataButton } from "@/components/DemoDataButton";
 import { useLocationCatalog } from "@/lib/locations";
 import { setLocationId } from "@/lib/session";
 import { Button } from "@/components/ui";
@@ -10,7 +9,7 @@ import { useReady } from "@/lib/use-ready";
 
 export default function HomePage() {
   const router = useRouter();
-  const ready = useReady();
+  useReady();
   const { panels } = useLocationCatalog();
   const admin = panels.filter((panel) => panel.type === "admin");
   const factory = panels.filter((panel) => panel.type === "factory");
@@ -75,13 +74,6 @@ export default function HomePage() {
               ))}
             </div>
           </section>
-        ) : null}
-
-        {ready ? (
-          <div className="mt-10 rounded-3xl bg-white p-5 ring-1 ring-stone-200">
-            <p className="mb-3 text-lg font-extrabold text-stone-900">Quer ver o sistema funcionando?</p>
-            <DemoDataButton variant="soft" />
-          </div>
         ) : null}
       </main>
     </div>

@@ -118,6 +118,8 @@ export function ConfirmDialog({
   children,
   confirmLabel,
   cancelLabel = "Voltar",
+  confirmVariant = "primary",
+  confirmDisabled,
   busy,
   onConfirm,
   onCancel,
@@ -128,6 +130,8 @@ export function ConfirmDialog({
   children: ReactNode;
   confirmLabel: string;
   cancelLabel?: string;
+  confirmVariant?: "primary" | "secondary" | "danger";
+  confirmDisabled?: boolean;
   busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -158,7 +162,7 @@ export function ConfirmDialog({
         {hint ? <p className="mt-1 text-stone-600">{hint}</p> : null}
         <div className="mt-4">{children}</div>
         <div className="mt-6 flex flex-wrap gap-3">
-          <Button className="flex-1" disabled={busy} onClick={onConfirm}>
+          <Button className="flex-1" variant={confirmVariant} disabled={busy || confirmDisabled} onClick={onConfirm}>
             {busy ? "Salvando..." : confirmLabel}
           </Button>
           <Button type="button" variant="ghost" className="flex-1" disabled={busy} onClick={onCancel}>

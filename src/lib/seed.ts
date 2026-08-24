@@ -239,9 +239,20 @@ function employeeFor(storeId: string, period: "manha" | "tarde") {
   return period === "manha" ? DEFAULT_EMPLOYEES[2] : DEFAULT_EMPLOYEES[3];
 }
 
+export async function hasOperationalData() {
+  const db = getDb();
+  const [products, sales, lots, stock, movements] = await Promise.all([
+    db.products.count(),
+    db.sales.count(),
+    db.lots.count(),
+    db.stock.count(),
+    db.movements.count(),
+  ]);
+  return products + sales + lots + stock + movements > 0;
+}
+
 export async function ensureDemoData() {
-  const sales = await getDb().sales.count();
-  if (sales > 0) {
+  if (await hasOperationalData()) {
     await ensureAppDefaults();
     return false;
   }
@@ -338,6 +349,10 @@ export async function ensureAppDefaults() {
 }
 
 export async function loadDemoData() {
+  if (await hasOperationalData()) {
+    throw new Error("Este computador já tem dados. O exemplo só entra numa base vazia.");
+  }
+
   const db = getDb();
   const rng: Rng = { n: 42 };
   const lots: Lot[] = [];

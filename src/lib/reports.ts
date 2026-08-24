@@ -14,6 +14,7 @@ import { cashDifferenceLabel, cashPeriodLabel, sessionLedger } from "./cash";
 import { catalogItems, listProductionLogs, stockByLocation } from "./queries";
 import { factoryMin, storeMin } from "./stock-min";
 import type { Niche } from "./types";
+import { isLiveSale } from "./types";
 
 export type StoreScope = "all" | string;
 
@@ -99,6 +100,10 @@ function filterStore<T extends { locationId: string }>(rows: T[], scope: StoreSc
   return rows.filter((row) => row.locationId === scope);
 }
 
+function liveSales<T extends { locationId: string; voidedAt?: string }>(rows: T[], scope: StoreScope) {
+  return filterStore(rows, scope).filter(isLiveSale);
+}
+
 export function downloadCsv(filename: string, report: ReportTable) {
   const escape = (value: string | number) => {
     const text = String(value);
@@ -126,7 +131,7 @@ export async function reportClosing(window: ReportWindow, scope: StoreScope): Pr
   const db = getDb();
   const catalog = await catalogItems(false);
   const nicheById = new Map(catalog.map((item) => [item.niche.id, item]));
-  const sales = filterStore(await db.sales.where("at").between(window.from, window.to, true, true).toArray(), scope);
+  const sales = liveSales(await db.sales.where("at").between(window.from, window.to, true, true).toArray(), scope);
   const wastes = filterStore(await db.wastes.where("at").between(window.from, window.to, true, true).toArray(), scope);
   const consumptions = filterStore(
     await db.consumptions.where("at").between(window.from, window.to, true, true).toArray(),
@@ -258,7 +263,7 @@ export async function reportClosing(window: ReportWindow, scope: StoreScope): Pr
 export async function reportSales(window: ReportWindow, scope: StoreScope): Promise<ReportTable> {
   const db = getDb();
   const catalog = await catalogItems(false);
-  const sales = filterStore(await db.sales.where("at").between(window.from, window.to, true, true).toArray(), scope);
+  const sales = liveSales(await db.sales.where("at").between(window.from, window.to, true, true).toArray(), scope);
   const saleItems = (
     await Promise.all(sales.map((sale) => db.saleItems.where("saleId").equals(sale.id).toArray()))
   ).flat();
@@ -330,7 +335,7 @@ export async function reportWaste(window: ReportWindow, scope: StoreScope): Prom
   const db = getDb();
   const catalog = await catalogItems(false);
   const wastes = filterStore(await db.wastes.where("at").between(window.from, window.to, true, true).toArray(), scope);
-  const sales = filterStore(await db.sales.where("at").between(window.from, window.to, true, true).toArray(), scope);
+  const sales = liveSales(await db.sales.where("at").between(window.from, window.to, true, true).toArray(), scope);
   const saleItems = (
     await Promise.all(sales.map((sale) => db.saleItems.where("saleId").equals(sale.id).toArray()))
   ).flat();

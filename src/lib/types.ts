@@ -1,8 +1,23 @@
 export type Category = "salgado" | "bebida" | "limpeza" | "descartavel" | "embalagem";
-export type MovementType = "production" | "send" | "sale" | "waste" | "internal";
+export type MovementType = "production" | "send" | "sale" | "sale_void" | "waste" | "internal";
 export type PaymentMethod = "dinheiro" | "pix" | "cartao";
 export type SaleChannel = "caixa" | "delivery" | "encomenda";
 export type CashPeriod = "manha" | "tarde";
+export type SaleVoidReason = "quantidade" | "produto" | "desistencia";
+
+export const SALE_VOID_REASONS: { id: SaleVoidReason; label: string }[] = [
+  { id: "quantidade", label: "Erro de quantidade" },
+  { id: "produto", label: "Produto errado" },
+  { id: "desistencia", label: "Cliente desistiu" },
+];
+
+export function isLiveSale(sale: Pick<Sale, "voidedAt">) {
+  return !sale.voidedAt;
+}
+
+export function saleVoidReasonLabel(reason?: SaleVoidReason) {
+  return SALE_VOID_REASONS.find((item) => item.id === reason)?.label ?? "Estornada";
+}
 
 export type Product = {
   id: string;
@@ -76,6 +91,8 @@ export type Sale = {
   total: number;
   at: string;
   cashSessionId?: string;
+  voidedAt?: string;
+  voidReason?: SaleVoidReason;
 };
 
 export type SaleItem = {

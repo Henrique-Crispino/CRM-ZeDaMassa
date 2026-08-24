@@ -3,7 +3,8 @@ import { getDb } from "./db";
 import { isStore } from "./locations";
 import { addDays, newId, todayDate } from "./money";
 import { changeStock, oldestLots, StockError, stockQty } from "./stock-core";
-import type { PaymentMethod, SaleChannel } from "./types";
+import type { PaymentMethod, SaleChannel, SaleVoidReason } from "./types";
+import { SALE_VOID_REASONS } from "./types";
 
 export { StockError, stockQty } from "./stock-core";
 
@@ -200,6 +201,62 @@ export async function checkout(input: {
   );
 
   return saleId;
+}
+
+export async function voidSale(input: { saleId: string; reason: SaleVoidReason }) {
+  if (!SALE_VOID_REASONS.some((item) => item.id === input.reason)) {
+    throw new StockError("Escolha o motivo do estorno: quantidade, produto errado ou desistência.");
+  }
+
+  const db = getDb();
+  const sale = await db.sales.get(input.saleId);
+  if (!sale) throw new StockError("Venda não encontrada.");
+  if (sale.voidedAt) throw new StockError("Esta venda já foi estornada.");
+  if (!sale.cashSessionId) {
+    throw new StockError("Esta venda não tem caixa. Não dá para estornar.");
+  }
+
+  const session = await db.cashSessions.get(sale.cashSessionId);
+  if (!session || session.closedAt) {
+    throw new StockError("O caixa desta venda já fechou. Não dá para estornar neste turno.");
+  }
+
+  const items = await db.saleItems.where("saleId").equals(sale.id).toArray();
+  if (items.length === 0) throw new StockError("Esta venda não tem itens para devolver.");
+
+  const at = new Date().toISOString();
+
+  await db.transaction(
+    "rw",
+    [db.stock, db.lots, db.movements, db.sales, db.saleItems, db.cashSessions],
+    async () => {
+      const current = await db.sales.get(sale.id);
+      if (!current || current.voidedAt) throw new StockError("Esta venda já foi estornada.");
+      const open = await db.cashSessions.get(sale.cashSessionId ?? "");
+      if (!open || open.closedAt) {
+        throw new StockError("O caixa desta venda já fechou. Não dá para estornar neste turno.");
+      }
+
+      for (const item of items) {
+        await changeStock(sale.locationId, item.nicheId, item.lotId, item.qty);
+        await db.movements.add({
+          id: newId(),
+          locationId: sale.locationId,
+          nicheId: item.nicheId,
+          lotId: item.lotId,
+          qty: item.qty,
+          type: "sale_void",
+          refId: sale.id,
+          at,
+        });
+      }
+
+      await db.sales.update(sale.id, {
+        voidedAt: at,
+        voidReason: input.reason,
+      });
+    },
+  );
 }
 
 export async function registerWaste(input: {

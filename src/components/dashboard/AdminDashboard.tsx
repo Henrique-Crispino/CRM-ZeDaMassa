@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { FileDown } from "lucide-react";
-import { DemoDataButton } from "@/components/DemoDataButton";
 import { PendingRequests } from "@/components/PendingRequests";
 import { Card, PageTitle } from "@/components/ui";
 import { formatBRL, periodLabel } from "@/lib/money";
@@ -162,11 +161,6 @@ export function AdminDashboard({
         <ChartCard title="Venda e perda no tempo" empty={data.daily.every((item) => item.receita === 0 && item.perda === 0)}>
           <TrendLine data={data.daily} />
         </ChartCard>
-      </div>
-
-      <div className="mt-8 rounded-3xl bg-white p-5 ring-1 ring-stone-200">
-        <p className="mb-3 text-lg font-extrabold text-stone-900">Dados de teste</p>
-        <DemoDataButton variant="ghost" label="Gerar de novo os dados de exemplo" />
       </div>
     </div>
   );

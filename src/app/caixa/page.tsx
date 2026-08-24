@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/pick-flow";
+import { SessionSalesList } from "@/components/SessionSalesList";
 import {
   Button,
   Card,
@@ -196,6 +197,10 @@ export default function CaixaPage() {
                 accent
               />
               <Metric label="Faturamento do turno" hint="Todas as formas" value={formatBRL(ledger.salesTotal)} />
+            </div>
+
+            <div className="mb-6">
+              <SessionSalesList sessionId={session.id} canVoid />
             </div>
 
             <Card className="mb-6 space-y-4">

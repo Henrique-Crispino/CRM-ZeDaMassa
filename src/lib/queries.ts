@@ -3,6 +3,7 @@ import { LOCATIONS, storeLocations, getLocation, type Location } from "./locatio
 import { daysUntil, periodRange, todayDate, type Period } from "./money";
 import { factoryMin, isLowAt, storeMin } from "./stock-min";
 import type { Niche, Product, Sale, SaleItem, Waste } from "./types";
+import { isLiveSale } from "./types";
 
 export type CatalogItem = {
   niche: Niche;
@@ -235,7 +236,7 @@ export async function loadDashboard(period: Period, scope?: string): Promise<Das
   const nicheById = new Map(catalog.map((item) => [item.niche.id, item]));
 
   const [sales, wastes, movements] = await Promise.all([
-    db.sales.where("at").between(from, to, true, true).toArray(),
+    db.sales.where("at").between(from, to, true, true).toArray().then((rows) => rows.filter(isLiveSale)),
     db.wastes.where("at").between(from, to, true, true).toArray(),
     db.movements.where("at").between(from, to, true, true).toArray(),
   ]);

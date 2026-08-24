@@ -1,7 +1,9 @@
 import { getDb } from "./db";
 import { isStore } from "./locations";
 import { newId, todayDate } from "./money";
-import type { CashMovement, CashMovementKind, CashPeriod, CashSession, Employee, PaymentMethod } from "./types";
+import { catalogItems } from "./queries";
+import type { CashMovement, CashMovementKind, CashPeriod, CashSession, Employee, PaymentMethod, Sale } from "./types";
+import { isLiveSale } from "./types";
 
 function localDay(iso: string) {
   const date = new Date(iso);
@@ -201,12 +203,48 @@ export async function sessionSalesTotal(sessionId: string) {
   return { count: ledger.salesCount, total: ledger.salesTotal };
 }
 
+export type SessionTicketItem = {
+  label: string;
+  qty: number;
+  unitPrice: number;
+  promo?: boolean;
+};
+
+export type SessionTicket = {
+  sale: Sale;
+  items: SessionTicketItem[];
+};
+
+export async function listSessionTickets(sessionId: string): Promise<SessionTicket[]> {
+  const db = getDb();
+  const [sales, catalog] = await Promise.all([
+    db.sales.where("cashSessionId").equals(sessionId).toArray(),
+    catalogItems(false),
+  ]);
+  const labels = new Map(catalog.map((item) => [item.niche.id, item.label]));
+  const tickets = await Promise.all(
+    sales.map(async (sale) => {
+      const items = await db.saleItems.where("saleId").equals(sale.id).toArray();
+      return {
+        sale,
+        items: items.map((item) => ({
+          label: labels.get(item.nicheId) ?? "Produto",
+          qty: item.qty,
+          unitPrice: item.unitPrice,
+          promo: item.promo,
+        })),
+      };
+    }),
+  );
+  return tickets.sort((a, b) => b.sale.at.localeCompare(a.sale.at));
+}
+
 export async function sessionLedger(sessionId: string): Promise<CashLedger> {
   const db = getDb();
   const session = await db.cashSessions.get(sessionId);
   if (!session) throw new CashError("Caixa não encontrado.");
 
-  const sales = await db.sales.where("cashSessionId").equals(sessionId).toArray();
+  const sales = (await db.sales.where("cashSessionId").equals(sessionId).toArray()).filter(isLiveSale);
   const movements = (
     (await db.cashMovements?.where("sessionId").equals(sessionId).toArray().catch(() => [])) ?? []
   ).sort((a, b) => a.at.localeCompare(b.at));
