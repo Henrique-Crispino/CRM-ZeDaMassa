@@ -16,6 +16,7 @@ export type RequestItemView = {
   remaining: number;
   factoryQty: number;
   availableQty: number;
+  storeWaitingQty: number;
 };
 
 export type RequestView = Omit<StockRequest, "status"> & {
@@ -149,6 +150,7 @@ function claimLines(
       remaining,
       factoryQty: sellable.get(item.nicheId) ?? 0,
       availableQty: remaining,
+      storeWaitingQty: 0,
     };
   });
 }
@@ -210,6 +212,17 @@ export async function loadFactoryWell() {
       const left = leftover.get(line.nicheId) ?? 0;
       line.availableQty = Math.min(line.remaining, left);
       leftover.set(line.nicheId, left - line.availableQty);
+    }
+  }
+
+  for (const claim of [...storeClaims, ...customerClaims]) {
+    for (const line of claim.items) {
+      line.storeWaitingQty = storeClaims
+        .filter((row) => isOpenRequest(row.status))
+        .reduce(
+          (sum, row) => sum + (row.items.find((item) => item.nicheId === line.nicheId)?.availableQty ?? 0),
+          0,
+        );
     }
   }
 

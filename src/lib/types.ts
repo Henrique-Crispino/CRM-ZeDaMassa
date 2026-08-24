@@ -9,7 +9,8 @@ export type MovementType =
   | "ajuste"
   | "purchase"
   | "return"
-  | "uso";
+  | "uso"
+  | "cliente";
 export type AdjustmentReason = "quebra" | "furto" | "erro" | "contagem";
 
 export const ADJUSTMENT_REASONS: { id: AdjustmentReason; label: string }[] = [
@@ -34,6 +35,7 @@ export const MOVEMENT_LABELS: Record<MovementType, string> = {
   internal: "Consumo interno",
   ajuste: "Ajuste",
   uso: "Abriu o pacote",
+  cliente: "Cliente",
 };
 
 export function movementLabel(type: MovementType) {
@@ -379,7 +381,8 @@ export type NotificationType =
   | "request_sent"
   | "request_cancelled"
   | "factory_order"
-  | "factory_order_cancelled";
+  | "factory_order_cancelled"
+  | "factory_order_delivered";
 
 export type StockRequest = {
   id: string;

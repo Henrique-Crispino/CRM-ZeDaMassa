@@ -780,6 +780,9 @@ export async function loadKardex(input: {
     } else if (movement.type === "uso") {
       who = locationName;
       note = "Abriu o pacote";
+    } else if (movement.type === "cliente") {
+      who = "Fábrica";
+      note = "Saiu da câmara";
     }
 
     if (opening != null) running += movement.qty;

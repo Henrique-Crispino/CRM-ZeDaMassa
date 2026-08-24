@@ -7,7 +7,7 @@ import { ConfirmDialog } from "@/components/pick-flow";
 import { ReportPreview } from "@/components/ReportPreview";
 import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { PageBoard, Pager, usePager } from "@/components/pager";
-import { cancelFactoryOrder, FactoryOrderError, listFactoryOrders } from "@/lib/factory-orders";
+import { cancelFactoryOrder, deliverFactoryOrder, FactoryOrderError, listFactoryOrders } from "@/lib/factory-orders";
 import { getPanel } from "@/lib/locations";
 import { reportRomaneio, type ReportTable } from "@/lib/reports";
 import { cancelRequest, fulfillRequest, listRequests, requestWhen, RequestError, type RequestItemView } from "@/lib/requests";
@@ -98,6 +98,21 @@ export default function PedidosPage() {
     }
   }
 
+  async function deliver(orderId: string) {
+    setError("");
+    setOk("");
+    setBusy(orderId);
+    try {
+      await deliverFactoryOrder(orderId, qty[orderId]);
+      setConfirmId(null);
+      setOk("Saiu da câmara. A loja não ganhou estoque. O caixa da loja não mexeu.");
+    } catch (err) {
+      setError(err instanceof FactoryOrderError ? err.message : "Não deu para separar.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function dismiss(row: QueueRow) {
     setError("");
     setOk("");
@@ -121,8 +136,8 @@ export default function PedidosPage() {
         title="Pedidos"
         hint={
           canSend
-            ? "Loja e cliente de volume na mesma fila. O mais antigo segura o saldo válido da câmara. Pedido de cliente ainda não baixa estoque."
-            : "Aqui o admin vê o que as lojas e os clientes pediram. Quem manda o estoque da loja é a fábrica."
+            ? "Loja e cliente de volume na mesma fila. O mais antigo segura o saldo. Cliente levou sai da câmara — não vai para a loja e não passa no caixa."
+            : "Aqui o admin vê o que as lojas e os clientes pediram. Quem manda o estoque da loja e quem separa na câmara é a fábrica."
         }
       />
       <ErrorBox message={error} />
@@ -172,9 +187,12 @@ export default function PedidosPage() {
                         </p>
                         <p className="text-sm font-semibold text-stone-600">
                           Câmara tem {item.factoryQty} válidas · para este pedido {item.availableQty}
+                          {request.source === "customer" && item.storeWaitingQty > 0
+                            ? ` · loja já espera ${item.storeWaitingQty}`
+                            : ""}
                         </p>
                       </div>
-                      {canSend && request.source === "store" ? (
+                      {canSend && (request.source === "store" || request.source === "customer") ? (
                         <NumberStepper
                           value={chosenQty(request.id, item.nicheId, fallback)}
                           max={Math.max(item.availableQty, 0)}
@@ -204,7 +222,15 @@ export default function PedidosPage() {
                         Revisar e mandar
                       </Button>
                     ) : (
-                      <p className="font-semibold text-stone-600">Reservado. Separar e entregar é o próximo passo.</p>
+                      <Button
+                        disabled={busy === request.id || request.items.every((item) => item.availableQty <= 0)}
+                        onClick={() => {
+                          setOk("");
+                          setConfirmId(request.id);
+                        }}
+                      >
+                        Cliente levou
+                      </Button>
                     )}
                     <Button variant="ghost" disabled={busy === request.id} onClick={() => dismiss(request)}>
                       Dispensar
@@ -259,12 +285,24 @@ export default function PedidosPage() {
       ) : null}
 
       <ConfirmDialog
-        open={Boolean(confirmId && confirmRow?.source === "store")}
-        title={`Mandar para a ${confirmRow?.name ?? "loja"}?`}
-        hint="Confira as quantidades. Sai da fábrica e fica em trânsito até a loja conferir."
-        confirmLabel="Confirmar e mandar"
+        open={Boolean(confirmId && confirmRow)}
+        title={
+          confirmRow?.source === "customer"
+            ? `${confirmRow.name} levou?`
+            : `Mandar para a ${confirmRow?.name ?? "loja"}?`
+        }
+        hint={
+          confirmRow?.source === "customer"
+            ? "Confira as quantidades. Sai da câmara agora. Não vai para a loja. Não passa no caixa."
+            : "Confira as quantidades. Sai da fábrica e fica em trânsito até a loja conferir."
+        }
+        confirmLabel={confirmRow?.source === "customer" ? "Confirmar: cliente levou" : "Confirmar e mandar"}
         busy={busy === confirmId}
-        onConfirm={() => confirmId && send(confirmId)}
+        onConfirm={() => {
+          if (!confirmId || !confirmRow) return;
+          if (confirmRow.source === "customer") deliver(confirmId);
+          else send(confirmId);
+        }}
         onCancel={() => setConfirmId(null)}
       >
         <ul className="divide-y divide-stone-100 rounded-2xl bg-stone-50 px-4">
@@ -275,9 +313,17 @@ export default function PedidosPage() {
               Math.min(item.remaining, item.availableQty),
             );
             return (
-              <li key={item.nicheId} className="flex justify-between gap-3 py-3">
-                <span className="font-bold text-stone-800">{item.label}</span>
-                <span className="font-extrabold">{sendQty} un.</span>
+              <li key={item.nicheId} className="py-3">
+                <div className="flex justify-between gap-3">
+                  <span className="font-bold text-stone-800">{item.label}</span>
+                  <span className="font-extrabold">{sendQty} un.</span>
+                </div>
+                {confirmRow?.source === "customer" ? (
+                  <p className="mt-1 text-sm font-semibold text-stone-600">
+                    Câmara {item.factoryQty} · pedido {item.remaining} · livres {item.availableQty}
+                    {item.storeWaitingQty > 0 ? ` · loja já espera ${item.storeWaitingQty}` : ""}
+                  </p>
+                ) : null}
               </li>
             );
           })}

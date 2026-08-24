@@ -70,7 +70,7 @@ async function main() {
   const { saleCategories } = await import("../src/lib/categories.ts");
   const { saveCombo } = await import("../src/lib/combos.ts");
   const { listCustomers, saveCustomer } = await import("../src/lib/customers.ts");
-  const { createFactoryOrder, listFactoryOrders } = await import("../src/lib/factory-orders.ts");
+  const { createFactoryOrder, listFactoryOrders, deliverFactoryOrder } = await import("../src/lib/factory-orders.ts");
   const { customerKind } = await import("../src/lib/types.ts");
   const db = getDb();
   const today = todayDate();
@@ -1041,6 +1041,74 @@ async function main() {
     "Reservar o poço não baixa estoque",
     wellAfter === 100 && storeAfterWell === storeAfterKind,
     `fábrica ${wellStock}→${wellAfter} loja ${storeAfterKind}→${storeAfterWell}`,
+  );
+
+  const orderId = customerWell?.id;
+  const store1BeforeDeliver = await stockQty("store_1", "cox-mini");
+  const store2BeforeDeliver = await stockQty("store_2", "cox-mini");
+  const cashBefore = await currentCashSession("store_2");
+  const ledgerBefore = cashBefore ? await sessionLedger(cashBefore.id) : null;
+  const salesBefore = await db.sales.count();
+  const transfersBefore = await db.transfers.count();
+
+  await expectFail(
+    "Não leva mais do que a fila reserva",
+    () => deliverFactoryOrder(orderId ?? "x", { "cox-mini": 50 }),
+    "livres",
+  );
+  await expectOk("Padaria leva as 20 livres da câmara", () =>
+    deliverFactoryOrder(orderId ?? "x", { "cox-mini": 20 }),
+  );
+
+  const factoryAfterDeliver = await stockQty("factory", "cox-mini");
+  const store1AfterDeliver = await stockQty("store_1", "cox-mini");
+  const store2AfterDeliver = await stockQty("store_2", "cox-mini");
+  record(
+    "Câmara desce e a loja não ganha estoque",
+    factoryAfterDeliver === 80 && store1AfterDeliver === store1BeforeDeliver && store2AfterDeliver === store2BeforeDeliver,
+    `fábrica ${wellAfter}→${factoryAfterDeliver} centro ${store1BeforeDeliver}→${store1AfterDeliver} jardim ${store2BeforeDeliver}→${store2AfterDeliver}`,
+  );
+
+  const cashAfter = await currentCashSession("store_2");
+  const ledgerAfter = cashAfter ? await sessionLedger(cashAfter.id) : null;
+  record(
+    "Caixa da loja não mexe na entrega da câmara",
+    Boolean(ledgerBefore) && ledgerBefore?.expectedCash === ledgerAfter?.expectedCash && (await db.sales.count()) === salesBefore,
+    `esperado ${ledgerBefore?.expectedCash}→${ledgerAfter?.expectedCash} vendas ${salesBefore}→${await db.sales.count()}`,
+  );
+  record(
+    "Entrega da câmara não vira envio nem venda",
+    (await db.transfers.count()) === transfersBefore &&
+      (await db.movements.where("type").equals("cliente").count()) > 0 &&
+      (await db.movements.filter((row) => row.refId === orderId && row.type === "sale").count()) === 0,
+    "",
+  );
+
+  const afterDeliver = (await listFactoryOrders()).find((row) => row.id === orderId);
+  const afterLine = afterDeliver?.items.find((item) => item.nicheId === "cox-mini");
+  record(
+    "O que faltou no pedido da padaria fica explícito",
+    afterDeliver?.status === "sem_saldo" && afterLine?.remaining === 30 && afterLine.availableQty === 0 && afterLine.sentQty === 20,
+    `${afterDeliver?.statusLabel ?? "sumiu"} · restam ${afterLine?.remaining} · livres ${afterLine?.availableQty}`,
+  );
+
+  const storeStill = (await listRequests("open")).find((row) => row.id === storeWell?.id);
+  record(
+    "Pedido da loja mais antiga continua com a reserva",
+    storeStill?.items.find((item) => item.nicheId === "cox-mini")?.availableQty === 80,
+    `${storeStill?.statusLabel ?? "sumiu"} · ${storeStill?.items.find((item) => item.nicheId === "cox-mini")?.availableQty}`,
+  );
+
+  await expectOk("Loja 2 pede 40 depois da entrega", () =>
+    createStoreRequest({ fromLocationId: "store_2", items: [{ nicheId: "cox-mini", qty: 40 }] }),
+  );
+  const store2Ask = (await listRequests("open")).find(
+    (row) => row.fromLocationId === "store_2" && row.items.some((item) => item.qty === 40),
+  );
+  record(
+    "Pedido novo da loja envelhece se o poço acabou",
+    store2Ask?.status === "sem_saldo" && store2Ask.items[0]?.availableQty === 0,
+    `${store2Ask?.statusLabel ?? "sumiu"} · livres ${store2Ask?.items[0]?.availableQty}`,
   );
 
   const passed = rows.filter((row) => row.pass).length;
