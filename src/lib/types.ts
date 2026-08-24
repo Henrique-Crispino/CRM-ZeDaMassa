@@ -232,10 +232,15 @@ export type Lot = {
   madeAt: string;
   expiresAt?: string;
   unitCost?: number;
+  unitPrice?: number;
 };
 
 export function lotCost(lot?: Pick<Lot, "unitCost"> | null, nicheCost = 0) {
   return lot?.unitCost ?? nicheCost;
+}
+
+export function lotPrice(lot?: Pick<Lot, "unitPrice"> | null, nichePrice = 0) {
+  return lot?.unitPrice ?? nichePrice;
 }
 
 export type StockRow = {
@@ -559,6 +564,7 @@ export type InventoryCount = {
   locationId: string;
   at: string;
   countedBy: string;
+  recountedBy?: string;
 };
 
 export type InventoryLine = {
@@ -569,4 +575,11 @@ export type InventoryLine = {
   systemQty: number;
   countedQty: number;
   reason: AdjustmentReason;
+  secondCount?: number;
 };
+
+export const INVENTORY_RECOUNT_THRESHOLD = 5;
+
+export function needsInventoryRecount(delta: number) {
+  return Math.abs(delta) > INVENTORY_RECOUNT_THRESHOLD;
+}

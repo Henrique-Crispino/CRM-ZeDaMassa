@@ -245,7 +245,7 @@ export function ProductForm({
                 />
               </Field>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Preço de venda" hint="Quanto o cliente paga.">
+                <Field label="Preço de venda" hint="Quanto o cliente paga. Vale para o próximo lote. O que já está na câmara ou na loja fica com o preço antigo.">
                   <Input
                     inputMode="decimal"
                     value={item.sellPrice}

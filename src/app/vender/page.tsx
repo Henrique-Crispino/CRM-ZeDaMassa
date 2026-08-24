@@ -25,7 +25,7 @@ import { cashPeriodLabel } from "@/lib/cash";
 import { getPanel } from "@/lib/locations";
 import { formatBRL, parseMoney } from "@/lib/money";
 import { comboMissingLabel, comboPacksAvailable, listLiveCombos } from "@/lib/combos";
-import { expiryAlertsFor, sellableQty, stockByLocation } from "@/lib/queries";
+import { expiryAlertsFor, sellableQty, shelfPriceOf, stockByLocation } from "@/lib/queries";
 import { getLocationId } from "@/lib/session";
 import { checkout, StockError } from "@/lib/stock";
 import type { Category, PaymentMethod, SaleChannel } from "@/lib/types";
@@ -96,7 +96,7 @@ export default function VenderPage() {
           const item = (stock ?? []).find((row) => row.niche.id === nicheId);
           if (!item) return null;
           const usePromo = Boolean(promo[nicheId] && promoIsLive(item.niche));
-          const unitPrice = usePromo ? item.niche.promoPrice : item.niche.sellPrice;
+          const unitPrice = usePromo ? item.niche.promoPrice : locationId ? shelfPriceOf(item, locationId) : item.niche.sellPrice;
           return {
             ...item,
             cartQty,
@@ -340,7 +340,7 @@ export default function VenderPage() {
                   <p className="text-xl font-extrabold text-stone-900">{item.product.name}</p>
                   <p className="text-stone-600">{item.niche.name}</p>
                   <p className="mt-2 text-lg font-extrabold text-orange-700">
-                    {formatBRL(item.niche.sellPrice)}
+                    {formatBRL(locationId ? shelfPriceOf(item, locationId) : item.niche.sellPrice)}
                   </p>
                   {promoIsLive(item.niche) ? (
                     <p className="text-sm font-bold text-emerald-700">

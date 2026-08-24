@@ -651,6 +651,7 @@ export async function loadDemoData() {
         madeAt,
         expiresAt: lotExpiry(nicheId, madeAt),
         unitCost: NICHE_BY_ID.get(nicheId)?.costPrice,
+        unitPrice: NICHE_BY_ID.get(nicheId)?.sellPrice,
       });
       addStock("factory", nicheId, lotId, qty);
       const purchased = PRODUCT_BY_NICHE.get(nicheId)?.category !== "salgado";
@@ -897,6 +898,7 @@ export async function loadDemoData() {
     madeAt: expiredMade,
     expiresAt: addDays(expiredMade, 2),
     unitCost: NICHE_BY_ID.get("cox-mini")?.costPrice,
+    unitPrice: NICHE_BY_ID.get("cox-mini")?.sellPrice,
   });
   addStock("store_1", "cox-mini", "lot-expired-cox", 8);
 

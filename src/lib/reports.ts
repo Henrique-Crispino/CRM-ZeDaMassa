@@ -16,7 +16,7 @@ import { personLocation } from "./people";
 import { catalogItems, listProductionLogs, stockByLocation } from "./queries";
 import { factoryMin, storeMin } from "./stock-min";
 import type { Niche } from "./types";
-import { adjustmentReasonLabel, cashDestinationLabel, isLiveSale, lotCost, receivedQtyOf, salePayments, transferKind, transferStatus, transferStatusLabel } from "./types";
+import { adjustmentReasonLabel, cashDestinationLabel, isLiveSale, lotCost, lotPrice, receivedQtyOf, salePayments, transferKind, transferStatus, transferStatusLabel } from "./types";
 
 export type StoreScope = "all" | string;
 
@@ -438,7 +438,6 @@ export async function reportTransfers(window: ReportWindow, scope: StoreScope): 
   const catalog = await catalogItems(false);
   const transfers = (await db.transfers.where("at").between(window.from, window.to, true, true).toArray()).filter(
     (transfer) =>
-    (transfer) =>
       transferKind(transfer) === "envio" &&
       (scope === "all" || scope === "factory" || transfer.toLocationId === scope),
   );
@@ -584,14 +583,19 @@ export async function reportStock(scope: StoreScope): Promise<ReportTable> {
         if (!lot?.expiresAt || lot.expiresAt >= todayDate()) return sum;
         return sum + row.qty * lotCost(lot, item.niche.costPrice);
       }, 0);
+      const validSaleValue = here.reduce((sum, row) => {
+        const lot = lotById.get(row.lotId);
+        if (lot?.expiresAt && lot.expiresAt < todayDate()) return sum;
+        return sum + row.qty * lotPrice(lot, item.niche.sellPrice);
+      }, 0);
       const cost = qty ? stockValue / qty : item.niche.costPrice;
-      const price = item.niche.sellPrice;
+      const price = valid ? validSaleValue / valid : item.niche.sellPrice;
       units += qty;
       sellable += valid;
       expired += expiredQty;
       value += stockValue;
       expiredValue += expiredValueHere;
-      sellValue += valid * price;
+      sellValue += validSaleValue;
       rows.push([
         location.name,
         item.label,
@@ -633,7 +637,7 @@ export async function reportStock(scope: StoreScope): Promise<ReportTable> {
     notes: [
       `Valor de estoque (custo) ${money(value)} · disso ${money(expiredValue)} está vencido.`,
       `Se vender o que ainda vale: ${money(sellValue)}. Lote vencido não entra nessa conta.`,
-      "Custo un. é o do lote (média se houver mais de um). Mudar o custo do tipo só vale para o próximo lote.",
+      "Custo un. e preço un. são do lote (média se houver mais de um). Mudar o tipo só vale para o próximo lote.",
       "Mínimo é o ponto de reposição. Abaixo dele a loja precisa pedir e a fábrica precisa produzir.",
     ],
   };
@@ -912,6 +916,7 @@ export async function reportInventory(window: ReportWindow, scope: StoreScope): 
         : `${counts.length} contagem${counts.length === 1 ? "" : "s"} · diferença ${counted - system}.`,
       "Diferença negativa = faltou no físico. Positiva = apareceu a mais. Motivo fica no lançamento.",
       "Ajuste não é venda nem sobra. O saldo do estoque já foi corrigido na hora da contagem.",
+      "Diferença maior que 5 pede 2ª contagem e o nome de quem conferiu — o mesmo ritual do caixa.",
     ],
   };
 }

@@ -6,6 +6,7 @@ import type { MovementType, Niche, Product, ReturnReason, Sale, SaleItem, Transf
 import {
   adjustmentReasonLabel,
   isLiveSale,
+  lotPrice,
   movementLabel,
   productIsLive,
   salePaymentSummary,
@@ -28,10 +29,15 @@ export type CatalogItem = {
 export type StockView = CatalogItem & {
   qty: Record<string, number>;
   expiredQty: Record<string, number>;
+  shelfPrice: Record<string, number>;
 };
 
 export function sellableQty(item: Pick<StockView, "qty" | "expiredQty">, locationId: string) {
   return Math.max(0, (item.qty[locationId] ?? 0) - (item.expiredQty[locationId] ?? 0));
+}
+
+export function shelfPriceOf(item: Pick<StockView, "shelfPrice" | "niche">, locationId: string) {
+  return item.shelfPrice[locationId] ?? item.niche.sellPrice;
 }
 
 export type AlertItem = {
@@ -166,6 +172,8 @@ export async function stockByLocation(): Promise<StockView[]> {
   const today = todayDate();
   const qty = new Map<string, number>();
   const expired = new Map<string, number>();
+  const fifo = new Map<string, { sortKey: string; price: number }>();
+  const nichePrice = new Map(items.map((item) => [item.niche.id, item.niche.sellPrice]));
 
   for (const row of rows) {
     const key = `${row.locationId}:${row.nicheId}`;
@@ -173,6 +181,13 @@ export async function stockByLocation(): Promise<StockView[]> {
     const lot = lotById.get(row.lotId);
     if (lot?.expiresAt && lot.expiresAt < today) {
       expired.set(key, (expired.get(key) ?? 0) + row.qty);
+      continue;
+    }
+    if (row.qty <= 0) continue;
+    const sortKey = `${lot?.expiresAt ?? "9999-12-31"}|${lot?.madeAt ?? "9999-12-31"}|${lot?.id ?? ""}`;
+    const prev = fifo.get(key);
+    if (!prev || sortKey < prev.sortKey) {
+      fifo.set(key, { sortKey, price: lotPrice(lot, nichePrice.get(row.nicheId) ?? 0) });
     }
   }
 
@@ -188,6 +203,12 @@ export async function stockByLocation(): Promise<StockView[]> {
       LOCATIONS.map((location) => [
         location.id,
         expired.get(`${location.id}:${item.niche.id}`) ?? 0,
+      ]),
+    ) as Record<string, number>,
+    shelfPrice: Object.fromEntries(
+      LOCATIONS.map((location) => [
+        location.id,
+        fifo.get(`${location.id}:${item.niche.id}`)?.price ?? item.niche.sellPrice,
       ]),
     ) as Record<string, number>,
   }));

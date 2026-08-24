@@ -234,6 +234,30 @@ export async function factoryFreeByNiche() {
   return leftover;
 }
 
+export async function assertFactoryFreeQty(items: { nicheId: string; qty: number }[]) {
+  const { leftover, storeClaims, customerClaims } = await loadFactoryWell();
+  const open = [...storeClaims, ...customerClaims].filter((claim) => isOpenRequest(claim.status));
+  for (const item of items) {
+    if (item.qty <= 0) continue;
+    const holders = open.filter(
+      (claim) => (claim.items.find((line) => line.nicheId === item.nicheId)?.availableQty ?? 0) > 0,
+    );
+    if (holders.length === 0) continue;
+    const free = leftover.get(item.nicheId) ?? 0;
+    if (item.qty <= free) continue;
+    const label = holders[0]?.items.find((line) => line.nicheId === item.nicheId)?.label ?? "Produto";
+    const names = [...new Set(holders.map((claim) => claim.name))];
+    if (free <= 0) {
+      throw new StockError(
+        `${label}: o que tem na câmara já está no pedido de ${names.join(" e ")}. Mande pelo Pedidos.`,
+      );
+    }
+    throw new StockError(
+      `${label}: só ${free} livres. O resto já está no pedido de ${names.join(" e ")}. Mande pelo Pedidos.`,
+    );
+  }
+}
+
 function asRequestView(claim: WellClaim): RequestView {
   const live = isOpenRequest(claim.status) ? coverageStatus(claim.items) : claim.status;
   return {
@@ -272,20 +296,35 @@ export async function fulfillRequest(
     throw new RequestError("Esse pedido já foi resolvido.");
   }
 
+  const views = await listRequests();
+  const view = views.find((row) => row.id === requestId);
+  if (!view) throw new RequestError("Esse pedido já foi resolvido.");
+
   const items = await db.requestItems.where("requestId").equals(requestId).toArray();
   const payload = items
     .map((item) => {
+      const line = view.items.find((row) => row.nicheId === item.nicheId);
       const remaining = Math.max(0, item.qty - (item.sentQty ?? 0));
-      const asked = qtyByNiche?.[item.nicheId] ?? remaining;
-      return {
-        item,
-        qty: Math.min(remaining, Math.max(0, Math.floor(asked))),
-      };
+      const available = line?.availableQty ?? 0;
+      const asked = qtyByNiche?.[item.nicheId] ?? available;
+      const qty = Math.max(0, Math.floor(asked));
+      return { item, line, remaining, available, qty };
     })
     .filter((row) => row.qty > 0);
 
   if (payload.length === 0) {
     throw new RequestError("Informe o que vai mandar.");
+  }
+
+  for (const row of payload) {
+    if (row.qty > row.available) {
+      throw new RequestError(
+        `Não tem ${row.qty} livres neste pedido de ${row.line?.label ?? "produto"}. A câmara reserva ${row.available}; o resto já está na fila.`,
+      );
+    }
+    if (row.qty > row.remaining) {
+      throw new RequestError("Não dá para mandar mais do que o pedido.");
+    }
   }
 
   let transferId = "";
@@ -294,6 +333,7 @@ export async function fulfillRequest(
       toLocationId: request.fromLocationId,
       items: payload.map((row) => ({ nicheId: row.item.nicheId, qty: row.qty })),
       sentBy: sentBy?.trim() || "Fábrica",
+      respectWell: false,
     });
   } catch (error) {
     if (error instanceof StockError) throw error;

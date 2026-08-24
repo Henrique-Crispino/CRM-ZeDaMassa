@@ -13,6 +13,8 @@ import {
   SALE_VOID_REASONS,
   closedCatalogMessage,
   lotCost,
+  lotPrice,
+  needsInventoryRecount,
   productIsLive,
   promoIsLive,
   promoStatus,
@@ -53,7 +55,9 @@ export async function produceItems(input: {
 
   await db.transaction("rw", [db.lots, db.stock, db.movements, db.niches, db.products], async () => {
     for (const [index, item] of items.entries()) {
+      const niche = niches[index];
       const product = products[index];
+      if (!niche) throw new StockError("Produto não encontrado.");
       if (product && isPurchased(product.category)) {
         throw new StockError(`${product.name} não se produz. Dê entrada em Compras.`);
       }
@@ -67,7 +71,8 @@ export async function produceItems(input: {
         nicheId: item.nicheId,
         madeAt: input.madeAt,
         expiresAt,
-        unitCost: niches[index]?.costPrice ?? 0,
+        unitCost: niche.costPrice,
+        unitPrice: niche.sellPrice,
       });
       await changeStock("factory", item.nicheId, lotId, item.qty);
       await db.movements.add({
@@ -128,6 +133,7 @@ export async function receivePurchase(input: {
         madeAt: input.receivedAt,
         expiresAt,
         unitCost,
+        unitPrice: niche.sellPrice,
       });
       await changeStock("factory", item.nicheId, lotId, item.qty);
       await db.movements.add({
@@ -150,6 +156,7 @@ export async function sendToStore(input: {
   toLocationId: string;
   items: { nicheId: string; qty: number }[];
   sentBy?: string;
+  respectWell?: boolean;
 }) {
   if (!isStore(input.toLocationId)) {
     throw new StockError("Escolha uma loja para receber o envio.");
@@ -161,6 +168,11 @@ export async function sendToStore(input: {
   }
 
   await assertLiveNiches(items.map((item) => item.nicheId));
+
+  if (input.respectWell !== false) {
+    const { assertFactoryFreeQty } = await import("./requests");
+    await assertFactoryFreeQty(items);
+  }
 
   const db = getDb();
   const transferId = newId();
@@ -442,7 +454,7 @@ export async function receiveReturn(input: {
             reason: "devolucao",
             at,
             unitCost: lotCost(lot, niche?.costPrice ?? 0),
-            unitPrice: niche?.sellPrice ?? 0,
+            unitPrice: lotPrice(lot, niche?.sellPrice ?? 0),
           });
           await db.movements.add({
             id: newId(),
@@ -564,13 +576,13 @@ export async function checkout(input: {
                 : `${niche.name} não está liberado para promoção.`,
           );
         }
-        const unitPrice = usePromo ? niche.promoPrice : niche.sellPrice;
         const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, { skipExpired: true });
         for (const chunk of chunks) {
           const lot = await db.lots.get(chunk.lotId);
           if (usePromo && niche.promoOnlyExpiringToday && (!lot?.expiresAt || daysUntil(lot.expiresAt) !== 0)) {
             throw new StockError(`${niche.name}: esta promoção só vale para o que vence hoje.`);
           }
+          const unitPrice = usePromo ? niche.promoPrice : lotPrice(lot, niche.sellPrice);
           await changeStock(input.locationId, item.nicheId, chunk.lotId, -chunk.qty);
           await db.saleItems.add({
             id: newId(),
@@ -779,7 +791,7 @@ export async function registerWaste(input: {
           reason: "sobra_frito",
           at,
           unitCost: lotCost(lot, niche?.costPrice ?? 0),
-          unitPrice: niche?.sellPrice ?? 0,
+          unitPrice: lotPrice(lot, niche?.sellPrice ?? 0),
         });
         await db.movements.add({
           id: newId(),
@@ -878,7 +890,7 @@ export async function discardExpiredLots(input: {
         reason: "vencido",
         at,
         unitCost: lotCost(lot, niche?.costPrice ?? 0),
-        unitPrice: niche?.sellPrice ?? 0,
+        unitPrice: lotPrice(lot, niche?.sellPrice ?? 0),
       });
       await db.movements.add({
         id: newId(),
@@ -910,6 +922,8 @@ export async function applyInventory(input: {
   locationId: string;
   countedBy: string;
   lines: { nicheId: string; lotId?: string; countedQty: number; reason?: AdjustmentReason }[];
+  secondCounts?: { nicheId: string; lotId?: string; countedQty: number }[];
+  recountedBy?: string;
 }) {
   if (input.locationId !== "factory" && !isStore(input.locationId)) {
     throw new StockError("Escolha a fábrica ou uma loja para contar.");
@@ -948,6 +962,31 @@ export async function applyInventory(input: {
     throw new StockError("A contagem bateu com o sistema. Não há ajuste para lançar.");
   }
 
+  const big = diffs.filter((line) => needsInventoryRecount(line.countedQty - line.systemQty));
+  let recountedBy: string | undefined;
+  if (big.length > 0) {
+    recountedBy = input.recountedBy?.trim() ?? "";
+    if (recountedBy.length < 2) {
+      throw new StockError("Diferença maior que 5: conte de novo e escreva quem conferiu.");
+    }
+    const seconds = input.secondCounts ?? [];
+    for (const line of big) {
+      const found = seconds.find(
+        (row) => row.nicheId === line.nicheId && (row.lotId ?? "") === (line.lotId ?? ""),
+      );
+      if (found == null || !Number.isFinite(found.countedQty)) {
+        throw new StockError("Diferença maior que 5: conte de novo antes de lançar.");
+      }
+      const secondCount = Math.max(0, Math.floor(found.countedQty));
+      if (secondCount !== line.countedQty) {
+        throw new StockError(
+          "A segunda contagem tem que bater com a primeira. Se achou outro valor, corrija o físico e conte de novo.",
+        );
+      }
+      line.secondCount = secondCount;
+    }
+  }
+
   await db.transaction(
     "rw",
     [db.stock, db.lots, db.movements, db.niches, db.products, db.inventoryCounts, db.inventoryLines],
@@ -957,6 +996,7 @@ export async function applyInventory(input: {
         locationId: input.locationId,
         at,
         countedBy,
+        recountedBy,
       });
 
       for (const line of diffs) {
@@ -1006,6 +1046,7 @@ export async function applyInventory(input: {
                   ? addDays(todayDate(), product.shelfLifeDays)
                   : undefined,
               unitCost: niche?.costPrice ?? 0,
+              unitPrice: niche?.sellPrice ?? 0,
             });
             await changeStock(input.locationId, line.nicheId, lotId, delta);
           }

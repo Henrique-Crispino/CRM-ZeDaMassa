@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog, SearchField } from "@/components/pick-flow";
-import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
+import { Button, Card, Empty, ErrorBox, Field, Input, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { Pager, usePager } from "@/components/pager";
 import { getLocation, getPanel, useLocationCatalog } from "@/lib/locations";
 import { formatDate, formatTime } from "@/lib/money";
@@ -17,7 +17,7 @@ import {
   StockError,
 } from "@/lib/stock";
 import type { AdjustmentReason } from "@/lib/types";
-import { ADJUSTMENT_REASONS, adjustmentReasonLabel } from "@/lib/types";
+import { ADJUSTMENT_REASONS, adjustmentReasonLabel, needsInventoryRecount } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 type Draft = {
@@ -48,6 +48,8 @@ export default function InventarioPage() {
   const [ok, setOk] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [secondText, setSecondText] = useState<Record<string, string>>({});
+  const [recountedBy, setRecountedBy] = useState("");
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -70,6 +72,16 @@ export default function InventarioPage() {
       })
       .filter((item) => item.delta !== 0);
   }, [sheet, draft]);
+
+  const bigDiffs = diffs.filter((item) => needsInventoryRecount(item.delta));
+  const recountReady =
+    bigDiffs.length === 0 ||
+    (recountedBy.trim().length >= 2 &&
+      bigDiffs.every((item) => {
+        const raw = secondText[item.row.key]?.replace(/\D/g, "") ?? "";
+        if (raw === "") return false;
+        return Number(raw) === item.counted;
+      }));
 
   function setCounted(key: string, systemQty: number, counted: number) {
     setDraft((current) => ({
@@ -97,6 +109,12 @@ export default function InventarioPage() {
       await applyInventory({
         locationId,
         countedBy: panel.name,
+        recountedBy: bigDiffs.length > 0 ? recountedBy : undefined,
+        secondCounts: bigDiffs.map((item) => ({
+          nicheId: item.row.nicheId,
+          lotId: item.row.lotId,
+          countedQty: item.counted,
+        })),
         lines: diffs.map((item) => ({
           nicheId: item.row.nicheId,
           lotId: item.row.lotId,
@@ -105,6 +123,8 @@ export default function InventarioPage() {
         })),
       });
       setDraft({});
+      setSecondText({});
+      setRecountedBy("");
       setConfirm(false);
       setOk(`Ajuste lançado. ${diffs.length} diferença${diffs.length === 1 ? "" : "s"} no estoque.`);
     } catch (err) {
@@ -121,7 +141,7 @@ export default function InventarioPage() {
     <AppShell>
       <PageTitle
         title="Inventário"
-        hint="Conte o que está na câmara ou na loja. A diferença vira ajuste — não precisa fingir venda nem sobra."
+        hint="Conte o que está na câmara ou na loja. A diferença vira ajuste — não precisa fingir venda nem sobra. Se a diferença passar de 5, conte de novo e diga quem conferiu, como no caixa."
       />
 
       {panel?.type === "admin" ? (
@@ -134,6 +154,8 @@ export default function InventarioPage() {
               onClick={() => {
                 setPicked(location.id);
                 setDraft({});
+                setSecondText({});
+                setRecountedBy("");
                 setOk("");
                 setError("");
               }}
@@ -209,9 +231,45 @@ export default function InventarioPage() {
       )}
 
       <div className="mt-6 space-y-3">
+        {bigDiffs.length > 0 ? (
+          <Card className="space-y-4 bg-orange-50 ring-orange-200">
+            <p className="font-extrabold text-stone-900">Conte de novo</p>
+            <p className="text-stone-700">
+              Diferença maior que 5 não fecha com um número só. Segunda contagem e o nome de quem conferiu — o mesmo
+              ritual do caixa.
+            </p>
+            {bigDiffs.map((item) => (
+              <Field
+                key={item.row.key}
+                label={`Segunda contagem · ${item.row.label}`}
+                hint="Tem que bater com o físico. Se achou outro valor, corrija o primeiro e conte outra vez."
+              >
+                <Input
+                  inputMode="numeric"
+                  value={secondText[item.row.key] ?? ""}
+                  placeholder={String(item.counted)}
+                  onChange={(event) =>
+                    setSecondText((current) => ({ ...current, [item.row.key]: event.target.value }))
+                  }
+                />
+              </Field>
+            ))}
+            <Field label="Conferido por" hint="Nome de quem fez a segunda contagem. No demo, digitar basta.">
+              <Input
+                value={recountedBy}
+                onChange={(event) => setRecountedBy(event.target.value)}
+                placeholder="Nome de quem conferiu"
+              />
+            </Field>
+          </Card>
+        ) : null}
         <ErrorBox message={error} />
         <SuccessBox message={ok} />
-        <Button className="w-full sm:w-auto" disabled={saving || diffs.length === 0} onClick={() => setConfirm(true)}>
+        <Button
+          className="w-full sm:w-auto"
+          disabled={saving || diffs.length === 0 || !recountReady}
+          onClick={() => setConfirm(true)}
+        >
           {diffs.length ? `Lançar ${diffs.length} ajuste${diffs.length === 1 ? "" : "s"}` : "Nenhuma diferença"}
         </Button>
       </div>
@@ -237,7 +295,11 @@ export default function InventarioPage() {
       <ConfirmDialog
         open={confirm}
         title="Lançar este inventário?"
-        hint={`${placeName} · responsável ${panel?.name ?? ""}`}
+        hint={
+          bigDiffs.length
+            ? `${placeName} · responsável ${panel?.name ?? ""} · 2ª contagem e um nome`
+            : `${placeName} · responsável ${panel?.name ?? ""}`
+        }
         confirmLabel="Confirmar ajuste"
         confirmVariant="secondary"
         busy={saving}
@@ -250,10 +312,14 @@ export default function InventarioPage() {
               <p className="font-extrabold text-stone-900">{item.row.label}</p>
               <p className="text-sm font-semibold text-stone-600">
                 Sistema {item.row.systemQty} → físico {item.counted} · {adjustmentReasonLabel(item.reason)}
+                {needsInventoryRecount(item.delta) ? " · 2ª contagem" : ""}
               </p>
             </li>
           ))}
         </ul>
+        {bigDiffs.length > 0 ? (
+          <p className="mt-3 font-bold text-stone-800">Conferido por: {recountedBy.trim()}</p>
+        ) : null}
       </ConfirmDialog>
     </AppShell>
   );
@@ -275,6 +341,7 @@ function HistoryCard({ countId }: { countId: string }) {
     <Card>
       <p className="font-extrabold text-stone-900">
         {getLocation(details.count.locationId)?.name ?? details.count.locationId} · {details.count.countedBy}
+        {details.count.recountedBy ? ` · 2ª ${details.count.recountedBy}` : ""}
       </p>
       <p className="text-stone-600">
         {formatDate(details.count.at.slice(0, 10))} · {formatTime(details.count.at)} · {details.lines.length} ajuste
@@ -283,7 +350,8 @@ function HistoryCard({ countId }: { countId: string }) {
       <ul className="mt-2 space-y-1 text-sm font-semibold text-stone-600">
         {details.lines.map((line) => (
           <li key={line.id}>
-            Sistema {line.systemQty} → {line.countedQty} · {adjustmentReasonLabel(line.reason)}
+            Sistema {line.systemQty} → {line.countedQty}
+            {line.secondCount != null ? ` · 2ª ${line.secondCount}` : ""} · {adjustmentReasonLabel(line.reason)}
           </li>
         ))}
       </ul>

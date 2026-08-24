@@ -63,7 +63,7 @@ async function main() {
   } = await import("../src/lib/stock.ts");
   const { openCashSession, registerCashMovement, closeCashSession, reopenCashSession, currentCashSession, sessionLedger } =
     await import("../src/lib/cash.ts");
-  const { createStoreRequest, fulfillRequest, listRequests, cancelRequest } = await import("../src/lib/requests.ts");
+  const { createStoreRequest, fulfillRequest, listRequests, cancelRequest, factoryFreeByNiche } = await import("../src/lib/requests.ts");
   const { registerInternalConsume } = await import("../src/lib/consume.ts");
   const { reportDayPack, reportWindow } = await import("../src/lib/reports.ts");
   const { catalogItems, inventorySheet, setProductActive, loadKardex } = await import("../src/lib/queries.ts");
@@ -95,6 +95,10 @@ async function main() {
   await expectFail("Comprar salgado é recusado", () => receivePurchase({ receivedAt: today, items: [{ nicheId: "cox-mini", qty: 10, unitCost: 0.4 }] }), "fabricado");
   await expectOk("Produzir coxinha na fábrica", () => produceItems({ madeAt: today, items: [{ nicheId: "cox-mini", qty: 100 }] }));
   await expectOk("Comprar Coca na fábrica", () => receivePurchase({ receivedAt: today, items: [{ nicheId: "coca-350", qty: 40, unitCost: 3.1 }] }));
+  const coxLot = (await db.lots.where("nicheId").equals("cox-mini").toArray())[0];
+  const cocaLot = (await db.lots.where("nicheId").equals("coca-350").toArray())[0];
+  record("Produção grava preço de venda no lote", coxLot?.unitPrice === 1.5, `preço=${coxLot?.unitPrice}`);
+  record("Compra grava preço de venda no lote", cocaLot?.unitPrice === 6, `preço=${cocaLot?.unitPrice}`);
 
   await db.products.add({
     id: "prod-suco",
@@ -366,6 +370,49 @@ async function main() {
     checkout({ locationId: "store_1", channel: "caixa", payment: "dinheiro", items: [{ nicheId: "cox-mini", qty: 10 }] }),
   );
 
+  await db.niches.add({
+    id: "cox-festa",
+    productId: "prod-coxinha",
+    name: "Festa",
+    sellPrice: 2,
+    costPrice: 0.55,
+    minStock: 20,
+    minStockFactory: 40,
+    minStockStore: 18,
+    active: true,
+    promoAllowed: false,
+    promoPrice: 0,
+  });
+
+  await expectOk("Produzir coxinha festa para o preço no lote", () =>
+    produceItems({ madeAt: today, items: [{ nicheId: "cox-festa", qty: 12 }] }),
+  );
+  const festaSendId = (await expectOk("Mandar coxinha festa para testar o preço do lote", () =>
+    sendToStore({ toLocationId: "store_1", items: [{ nicheId: "cox-festa", qty: 8 }], sentBy: "Rita" }),
+  )) as string | null;
+  if (festaSendId) {
+    const festaParts = await db.transferItems.where("transferId").equals(festaSendId).toArray();
+    await expectOk("Loja confere a coxinha festa do preço no lote", () =>
+      receiveTransfer({
+        transferId: festaSendId,
+        receivedBy: "Ana",
+        items: festaParts.map((part) => ({ id: part.id, receivedQty: part.qty })),
+      }),
+    );
+  }
+  await db.niches.update("cox-festa", { sellPrice: 9 });
+  const pricedId = (await expectOk("Venda depois de subir o preço do tipo", () =>
+    checkout({ locationId: "store_1", channel: "caixa", payment: "pix", items: [{ nicheId: "cox-festa", qty: 1 }] }),
+  )) as string | null;
+  if (pricedId) {
+    const pricedItems = await db.saleItems.where("saleId").equals(pricedId).toArray();
+    record(
+      "Cupom cobrou o preço do lote, não o tipo novo",
+      pricedItems.length > 0 && pricedItems.every((item) => item.unitPrice === 2),
+      pricedItems.map((item) => item.unitPrice).join(","),
+    );
+  }
+
   const mixedId = (await expectOk("Venda mista (dinheiro + Pix)", () =>
     checkout({
       locationId: "store_1",
@@ -554,18 +601,38 @@ async function main() {
   )) as string | null;
 
   const factoryBeforeSteal = await stockQty("factory", "cox-mini");
-  await expectOk("Envio na mão fura a reserva do pedido (furo conhecido cap. 09)", () =>
-    sendToStore({ toLocationId: "store_1", items: [{ nicheId: "cox-mini", qty: Math.max(1, factoryBeforeSteal) }], sentBy: "Rita" }),
+  const leftoverBeforeSteal = (await factoryFreeByNiche()).get("cox-mini") ?? 0;
+  record(
+    "Pedido da Loja 2 reserva o poço na câmara",
+    leftoverBeforeSteal < factoryBeforeSteal,
+    `fábrica=${factoryBeforeSteal} livres=${leftoverBeforeSteal}`,
   );
+  await expectFail(
+    "Envio na mão não fura a reserva do pedido",
+    () =>
+      sendToStore({
+        toLocationId: "store_1",
+        items: [{ nicheId: "cox-mini", qty: Math.max(1, factoryBeforeSteal) }],
+        sentBy: "Rita",
+      }),
+    "pedido",
+  );
+  if (leftoverBeforeSteal > 0) {
+    await expectOk("Envio na mão manda só o que sobrou da fila", () =>
+      sendToStore({
+        toLocationId: "store_1",
+        items: [{ nicheId: "cox-mini", qty: leftoverBeforeSteal }],
+        sentBy: "Rita",
+      }),
+    );
+  }
   if (reqId) {
-    await expectFail(
-      "Atender o pedido depois do envio na mão falha ou fica sem saldo",
-      () => fulfillRequest(reqId, { "cox-mini": 30 }, "Rita"),
-      "estoque",
+    await expectOk("Atender o pedido da Loja 2 usa a reserva", () =>
+      fulfillRequest(reqId, { "cox-mini": 30 }, "Rita"),
     );
     const open = await listRequests("open");
     const still = open.find((row) => row.id === reqId);
-    record("Pedido da Loja 2 continua aberto depois do furo", Boolean(still), still ? still.status : "sumiu da fila");
+    record("Pedido da Loja 2 sai da fila depois de mandar a reserva", !still, still ? still.status : "saiu");
   }
 
   await expectFail(
@@ -830,6 +897,40 @@ async function main() {
       lines: [{ nicheId: "cox-mini", countedQty: Math.max(0, qty - 1), reason: "contagem" }],
     });
   });
+
+  const qtyRecount = await stockQty("store_1", "cox-mini");
+  const countedBig = Math.max(0, qtyRecount - 10);
+  await expectFail(
+    "Inventário com diferença grande sem 2ª contagem é recusado",
+    () =>
+      applyInventory({
+        locationId: "store_1",
+        countedBy: "Ana Souza",
+        lines: [{ nicheId: "cox-mini", countedQty: countedBig, reason: "contagem" }],
+      }),
+    "conte de novo",
+  );
+  await expectFail(
+    "Inventário com 2ª contagem diferente da primeira é recusado",
+    () =>
+      applyInventory({
+        locationId: "store_1",
+        countedBy: "Ana Souza",
+        recountedBy: "Carla Mendes",
+        secondCounts: [{ nicheId: "cox-mini", countedQty: qtyRecount }],
+        lines: [{ nicheId: "cox-mini", countedQty: countedBig, reason: "contagem" }],
+      }),
+    "bater",
+  );
+  await expectOk("Inventário com diferença grande e 2ª contagem", () =>
+    applyInventory({
+      locationId: "store_1",
+      countedBy: "Ana Souza",
+      recountedBy: "Carla Mendes",
+      secondCounts: [{ nicheId: "cox-mini", countedQty: countedBig }],
+      lines: [{ nicheId: "cox-mini", countedQty: countedBig, reason: "contagem" }],
+    }),
+  );
 
   await expectOk("Fechar suco", () => setProductActive("prod-suco", false));
   const liveClosed = await catalogItems(true);
@@ -1106,11 +1207,14 @@ async function main() {
     from: startOfDayIso(today),
     to: endOfDayIso(today),
   });
-  const kardexCliente = kardexFactory.rows.find((row) => row.type === "cliente");
+  const kardexCliente = kardexFactory.rows.filter((row) => row.type === "cliente");
+  const clienteQty = kardexCliente.reduce((sum, row) => sum + row.qty, 0);
   record(
     "Extrato da fábrica diz Cliente e o nome da padaria",
-    Boolean(kardexCliente?.typeLabel.includes("Padaria")) && Math.abs(kardexCliente?.qty ?? 0) === 20,
-    kardexCliente ? `${kardexCliente.typeLabel} · ${kardexCliente.qty}` : "sumiu",
+    kardexCliente.some((row) => row.typeLabel.includes("Padaria")) && Math.abs(clienteQty) === 20,
+    kardexCliente.length
+      ? `${kardexCliente.map((row) => `${row.typeLabel} · ${row.qty}`).join(" + ")}`
+      : "sumiu",
   );
 
   const storePackAfterCliente = await reportDayPack(reportWindow("today"), "store_1");

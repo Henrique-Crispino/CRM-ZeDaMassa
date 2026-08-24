@@ -23,11 +23,12 @@ import { ReportPreview } from "@/components/ReportPreview";
 import { Button, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { getLocation, getPanel, useLocationCatalog } from "@/lib/locations";
 import { expiryAlertsFor, listTransfers, sellableQty, stockByLocation } from "@/lib/queries";
+import { loadFactoryWell } from "@/lib/requests";
 import { getLocationId } from "@/lib/session";
 import { reportRomaneio, type ReportTable } from "@/lib/reports";
 import { sendToStore, StockError } from "@/lib/stock";
 import { formatDate, formatTime } from "@/lib/money";
-import { productIsLive } from "@/lib/types";
+import { isOpenRequest, productIsLive } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 export default function EnviarPage() {
@@ -35,6 +36,7 @@ export default function EnviarPage() {
   const panel = ready ? getPanel(getLocationId() ?? "") : undefined;
   const { stores } = useLocationCatalog();
   const stock = useLiveQuery(() => (ready ? stockByLocation() : []), [ready]);
+  const well = useLiveQuery(() => (ready ? loadFactoryWell() : undefined), [ready]);
   const pending = useLiveQuery(
     () =>
       ready
@@ -58,6 +60,17 @@ export default function EnviarPage() {
     [ready],
   );
   const expiredFactory = (expiry ?? []).filter((item) => item.level === "expired");
+  const reservedNames = useMemo(() => {
+    if (!well) return [];
+    const names = [...well.storeClaims, ...well.customerClaims]
+      .filter((claim) => isOpenRequest(claim.status) && claim.items.some((line) => line.availableQty > 0))
+      .map((claim) => claim.name);
+    return [...new Set(names)];
+  }, [well]);
+  function freeQty(nicheId: string) {
+    if (!well) return 0;
+    return well.leftover.get(nicheId) ?? 0;
+  }
   const available = useMemo(
     () =>
       (stock ?? []).filter(
@@ -70,9 +83,9 @@ export default function EnviarPage() {
   const selected = useMemo(
     () =>
       available
-        .map((item) => ({ item, qty: qty[item.niche.id] ?? 0 }))
+        .map((item) => ({ item, qty: Math.min(qty[item.niche.id] ?? 0, freeQty(item.niche.id)) }))
         .filter((row) => row.qty > 0),
-    [available, qty],
+    [available, qty, well],
   );
   const selectedUnits = selected.reduce((sum, row) => sum + row.qty, 0);
   const storeName = getLocation(storeId)?.name ?? "loja";
@@ -134,7 +147,7 @@ export default function EnviarPage() {
       <div className="pb-36">
         <PageTitle
           title="Mandar para a loja"
-          hint="Primeiro as quantidades. A loja só aparece na revisão — assim não manda para o lugar errado no meio da conta. O que sair da câmara fica em trânsito até a loja conferir."
+          hint="Primeiro as quantidades. A loja só aparece na revisão — assim não manda para o lugar errado no meio da conta. O que a loja ou o cliente já pediu não sai daqui: só o que sobrou da fila. O que sair da câmara fica em trânsito até a loja conferir."
         />
 
         {(pending ?? []).length > 0 ? (
@@ -178,6 +191,19 @@ export default function EnviarPage() {
           hint="Lote vencido não vai para a loja. Descarte aqui — o que você já contou para mandar continua."
         />
 
+        {reservedNames.length > 0 ? (
+          <div className="mb-4 rounded-3xl bg-orange-50 px-4 py-3 ring-1 ring-orange-200">
+            <p className="font-extrabold text-stone-900">Tem pedido na fila</p>
+            <p className="text-stone-700">
+              {reservedNames.join(" e ")} já reservou o que pediu. Aqui só manda o que sobrou. O pedido sai em
+              Pedidos.
+            </p>
+            <Link href="/pedidos" className="mt-2 inline-flex min-h-11 items-center font-bold text-orange-800">
+              Ver pedidos
+            </Link>
+          </div>
+        ) : null}
+
         <div className="mb-4 space-y-3">
           <SearchField value={search} onChange={setSearch} placeholder="Buscar: coxinha, festa, coca..." />
           <FilterChips value={kind} onChange={setKind} options={pickKindOptions(selected.length)} />
@@ -208,15 +234,17 @@ export default function EnviarPage() {
                     title={item.niche.name}
                     hint={
                       (item.expiredQty.factory ?? 0) > 0
-                        ? `Válidas: ${sellableQty(item, "factory")} · ${item.expiredQty.factory} vencidas`
-                        : `Na fábrica: ${item.qty.factory} un.`
+                        ? `Livres: ${freeQty(item.niche.id)} · válidas ${sellableQty(item, "factory")} · ${item.expiredQty.factory} vencidas`
+                        : reservedNames.length > 0
+                          ? `Livres: ${freeQty(item.niche.id)} · na câmara ${item.qty.factory} un.`
+                          : `Na fábrica: ${item.qty.factory} un.`
                     }
                     selected={(qty[item.niche.id] ?? 0) > 0}
                   >
                     <NumberStepper
                       size="sm"
                       value={qty[item.niche.id] ?? 0}
-                      max={sellableQty(item, "factory")}
+                      max={freeQty(item.niche.id)}
                       onChange={(value) => setQty((current) => ({ ...current, [item.niche.id]: value }))}
                     />
                   </CompactRow>
