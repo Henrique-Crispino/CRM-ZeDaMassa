@@ -441,26 +441,6 @@ export async function ensureAppDefaults() {
     });
   }
 
-  const today = todayDate();
-  const open = (await db.cashSessions.toArray()).filter((row) => !row.closedAt);
-  if (open.length === 0) {
-    const employees = await db.employees.toArray();
-    const stores = (await db.stores.toArray()).filter((store) => store.active);
-    for (const store of stores) {
-      const employee = employees.find((item) => item.active && item.storeId === store.id);
-      if (!employee) continue;
-      await db.cashSessions.add({
-        id: `cash-${store.id}-${today}-manha`,
-        locationId: store.id,
-        period: "manha",
-        employeeId: employee.id,
-        employeeName: employee.name,
-        openedAt: new Date(`${today}T08:00:00`).toISOString(),
-        openingAmount: 150,
-      });
-    }
-  }
-
   const extras = CATALOG.filter((item) =>
     ["limpeza", "descartavel", "embalagem", "insumo"].includes(item.product.category),
   );
