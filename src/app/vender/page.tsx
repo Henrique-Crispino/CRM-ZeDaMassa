@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
+import { DiscardExpiredBanner } from "@/components/DiscardExpiredBanner";
 import { ConfirmDialog, FilterChips, SearchField } from "@/components/pick-flow";
 import { SessionSalesList } from "@/components/SessionSalesList";
 import {
@@ -157,22 +158,10 @@ export default function VenderPage() {
     <AppShell>
       <PageTitle title="Vender" hint="Toque no produto, escolha a quantidade e feche a venda." />
 
-      {expiredHere.length > 0 ? (
-        <Card className="mb-4 bg-red-50 ring-red-200">
-          <p className="font-extrabold text-red-800">
-            {expiredHere.reduce((sum, item) => sum + item.qty, 0)} un. vencidas nesta loja
-          </p>
-          <p className="mt-1 text-stone-700">
-            Lote vencido não entra na venda. Descarte no estoque para baixar a quantidade.
-          </p>
-          <Link
-            href="/estoque"
-            className="mt-3 inline-flex min-h-12 items-center rounded-2xl bg-red-600 px-4 font-bold text-white"
-          >
-            Descartar vencidos
-          </Link>
-        </Card>
-      ) : null}
+      <DiscardExpiredBanner
+        items={expiredHere}
+        hint="Lote vencido não entra na venda. Descarte aqui — a venda que você já montou continua."
+      />
 
       {session ? (
         <Card className="mb-4 bg-emerald-50 ring-emerald-200">

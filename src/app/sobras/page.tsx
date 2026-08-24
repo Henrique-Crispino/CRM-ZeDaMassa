@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
+import { DiscardExpiredBanner } from "@/components/DiscardExpiredBanner";
 import {
   CompactGroup,
   CompactList,
@@ -17,9 +17,9 @@ import {
   pickKindOptions,
   type PickKind,
 } from "@/components/pick-flow";
-import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
+import { Button, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { getPanel } from "@/lib/locations";
-import { sellableQty, stockByLocation } from "@/lib/queries";
+import { expiryAlertsFor, sellableQty, stockByLocation } from "@/lib/queries";
 import { getLocationId } from "@/lib/session";
 import { registerWaste, StockError } from "@/lib/stock";
 import { useReady } from "@/lib/use-ready";
@@ -29,6 +29,10 @@ export default function SobrasPage() {
   const locationId = ready ? getLocationId() : null;
   const panel = locationId ? getPanel(locationId) : undefined;
   const stock = useLiveQuery(() => (ready ? stockByLocation() : []), [ready]);
+  const expiry = useLiveQuery(
+    () => (ready && locationId ? expiryAlertsFor(locationId) : []),
+    [ready, locationId],
+  );
   const [qty, setQty] = useState<Record<string, number>>({});
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState<PickKind>("todos");
@@ -38,10 +42,6 @@ export default function SobrasPage() {
   const [confirm, setConfirm] = useState(false);
 
   const place = locationId ?? "";
-  const expiredUnits = useMemo(
-    () => (stock ?? []).reduce((sum, item) => sum + (place ? (item.expiredQty[place] ?? 0) : 0), 0),
-    [stock, place],
-  );
   const leftoverable = useMemo(
     () => (stock ?? []).filter((item) => place && sellableQty(item, place) > 0),
     [stock, place],
@@ -118,23 +118,13 @@ export default function SobrasPage() {
       <div className="pb-36">
         <PageTitle
           title="Sobra do dia"
-          hint="Só o que ainda vale. Lote vencido não é sobra — descarte no estoque."
+          hint="Só o que ainda vale. Lote vencido não é sobra — descarte aqui, sem sair desta tela."
         />
 
-        {expiredUnits > 0 ? (
-          <Card className="mb-4 bg-red-50 ring-red-200">
-            <p className="font-extrabold text-red-800">{expiredUnits} un. vencidas nesta loja</p>
-            <p className="mt-1 text-stone-700">
-              Isso não entra na sobra do dia. Descarte no estoque para baixar a quantidade e marcar como perda por validade.
-            </p>
-            <Link
-              href="/estoque"
-              className="mt-3 inline-flex min-h-12 items-center rounded-2xl bg-red-600 px-4 font-bold text-white"
-            >
-              Ir ao estoque para descartar
-            </Link>
-          </Card>
-        ) : null}
+        <DiscardExpiredBanner
+          items={expiry ?? []}
+          hint="Isso não entra na sobra do dia. Descarte aqui. A quantidade de sobra que você já marcou continua."
+        />
 
         <div className="mb-4 space-y-3">
           <SearchField value={search} onChange={setSearch} placeholder="Buscar: coxinha, festa, coca..." />
@@ -146,18 +136,8 @@ export default function SobrasPage() {
             title={expiredOnly.length ? "Nada válido para lançar como sobra" : "Esta loja está sem estoque"}
             hint={
               expiredOnly.length
-                ? "O que restou já venceu. Descarte no estoque. Sobra é só o que foi frito e ainda valia."
+                ? "O que restou já venceu. Use Descartar vencidos acima. Sobra é só o que foi frito e ainda valia."
                 : "Quando a fábrica mandar os salgados, eles aparecem aqui."
-            }
-            action={
-              expiredOnly.length ? (
-                <Link
-                  href="/estoque"
-                  className="inline-flex min-h-14 items-center rounded-2xl bg-red-600 px-5 text-lg font-bold text-white"
-                >
-                  Descartar vencidos
-                </Link>
-              ) : undefined
             }
           />
         ) : grouped.length === 0 ? (
@@ -175,7 +155,7 @@ export default function SobrasPage() {
                       title={item.niche.name}
                       hint={
                         expired > 0
-                          ? `Para sobra: ${valid} un. · ${expired} vencidas (descarte no estoque)`
+                          ? `Para sobra: ${valid} un. · ${expired} vencidas (descarte acima)`
                           : `Na loja: ${valid} un.`
                       }
                       selected={(qty[item.niche.id] ?? 0) > 0}
@@ -197,11 +177,6 @@ export default function SobrasPage() {
 
       <StickyActionBar>
         <ErrorBox message={error} />
-        {error.includes("Descarte") ? (
-          <Link href="/estoque" className="inline-flex min-h-12 items-center font-bold text-red-700">
-            Abrir estoque para descartar vencidos
-          </Link>
-        ) : null}
         <SuccessBox message={ok} />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="font-bold text-stone-700">
