@@ -119,7 +119,8 @@ function wasteMoney(qty: number, niche?: Niche, unitCost?: number, unitPrice?: n
 }
 
 function scopeName(scope: StoreScope) {
-  if (scope === "all") return "Rede (todas as lojas)";
+  if (scope === "all") return "Rede (fábrica e lojas)";
+  if (scope === "factory") return "Fábrica";
   return getLocation(scope)?.name ?? scope;
 }
 
@@ -254,7 +255,7 @@ export async function reportClosing(window: ReportWindow, scope: StoreScope): Pr
       "Cupons",
       "Un. vendidas",
       "Faturamento",
-      "CMV",
+      "Custo do que vendeu",
       "Lucro",
       "Margem",
       "Ticket médio",
@@ -285,7 +286,7 @@ export async function reportClosing(window: ReportWindow, scope: StoreScope): Pr
     notes: [
       `Pagamentos: Dinheiro ${money(pay.dinheiro)} (${pct(pay.dinheiro, revenue)}) · Pix ${money(pay.pix)} (${pct(pay.pix, revenue)}) · Cartão ${money(pay.cartao)} (${pct(pay.cartao, revenue)})`,
       `Canais: Caixa ${money(channel.caixa)} · Delivery ${money(channel.delivery)} · Encomenda ${money(channel.encomenda)}`,
-      `CMV é o custo do que vendeu. Taxa de perda = (sobra + vencido) ÷ (vendido + sobra + vencido).`,
+      `Custo do que vendeu. Taxa de perda = (sobra + vencido) ÷ (vendido + sobra + vencido).`,
       `Custo da sobra ${money(leftoverCost)} · custo do vencido ${money(expiredCost)} · custo do consumo interno ${money(consumeCost)} · perdas totais ${money(wasteCost)}`,
       wasteQty > 0
         ? `Deixou de vender ${money(wasteRevenue)} com sobra e validade. Isso não entra no faturamento.`
@@ -349,7 +350,7 @@ export async function reportSales(window: ReportWindow, scope: StoreScope): Prom
       "Unidades",
       "Preço médio",
       "Faturamento",
-      "CMV",
+      "Custo do que vendeu",
       "Lucro",
       "Margem",
       "Part. fat.",
@@ -437,7 +438,9 @@ export async function reportTransfers(window: ReportWindow, scope: StoreScope): 
   const catalog = await catalogItems(false);
   const transfers = (await db.transfers.where("at").between(window.from, window.to, true, true).toArray()).filter(
     (transfer) =>
-      transferKind(transfer) === "envio" && (scope === "all" || transfer.toLocationId === scope),
+    (transfer) =>
+      transferKind(transfer) === "envio" &&
+      (scope === "all" || scope === "factory" || transfer.toLocationId === scope),
   );
   const items = await db.transferItems.toArray();
   const lots = await db.lots.toArray();
@@ -956,7 +959,9 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
   const difference = closed.reduce((sum, ledger) => sum + (ledger.difference ?? 0), 0);
 
   const envios = transfers.filter(
-    (transfer) => transferKind(transfer) === "envio" && (scope === "all" || transfer.toLocationId === scope),
+      (transfer) =>
+        transferKind(transfer) === "envio" &&
+        (scope === "all" || scope === "factory" || transfer.toLocationId === scope),
   );
   let sentQty = 0;
   let arrivedQty = 0;

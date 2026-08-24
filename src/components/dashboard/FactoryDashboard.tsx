@@ -98,7 +98,7 @@ export function FactoryDashboard({
             bars={[{ key: "Vendeu", name: "Vendeu", color: "#ea580c" }]}
           />
         </ChartCard>
-        <ChartCard title="Mais pedidos pelas lojas" empty={data.bestSellers.length === 0}>
+        <ChartCard title="Mais vendido nas lojas" empty={data.bestSellers.length === 0}>
           <SimpleBars
             data={data.bestSellers.map((item) => ({ name: item.label, qty: item.qty }))}
             dataKey="qty"

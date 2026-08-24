@@ -47,7 +47,8 @@ export default function RelatoriosPage() {
   const window = useMemo(() => reportWindow("range", range), [range]);
   const preset = matchReportPreset(range.from, range.to, today);
   const oneDay = window.fromDate === window.toDate;
-  const storeLabel = scope === "all" ? "todas as lojas" : getLocation(scope)?.name ?? scope;
+  const storeLabel =
+    scope === "all" ? "a rede" : scope === "factory" ? "a fábrica" : (getLocation(scope)?.name ?? scope);
   const packBadge = !oneDay
     ? "Intervalo · junta os dias"
     : window.fromDate === today
@@ -109,7 +110,7 @@ export default function RelatoriosPage() {
     <AppShell>
       <PageTitle
         title="Relatórios"
-        hint="De quando até quando, e qual loja. O pacote do dia junta caixa, envio, saídas e inventário numa folha. O resto é o detalhe."
+        hint="De quando até quando, e o recorte: rede, fábrica ou uma loja. O pacote do dia junta caixa, envio, saídas e inventário numa folha. O resto é o detalhe."
       />
 
       <Card className="mb-6 space-y-5">
@@ -153,13 +154,16 @@ export default function RelatoriosPage() {
         </div>
 
         <div>
-          <p className="mb-1 text-base font-bold text-stone-800">Qual loja</p>
+          <p className="mb-1 text-base font-bold text-stone-800">Qual recorte</p>
           <p className="mb-2 text-sm text-stone-500">
-            Fechamento, vendas, perdas e consumo desta loja. Envios olham o destino. Produção é sempre a fábrica.
+            Rede junta fábrica e lojas. Fábrica é a câmara (saída de cliente). Loja é só o balcão. Envios olham o destino, salvo na fábrica. Produção é sempre a fábrica.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant={scope === "all" ? "primary" : "ghost"} className="min-h-12" onClick={() => setScope("all")}>
-              Todas as lojas
+              Rede
+            </Button>
+            <Button type="button" variant={scope === "factory" ? "primary" : "ghost"} className="min-h-12" onClick={() => setScope("factory")}>
+              Fábrica
             </Button>
             {storeLocations().map((store) => (
               <Button
@@ -216,7 +220,7 @@ export default function RelatoriosPage() {
         />
         <ReportCard
           title="Fechamento operacional"
-          hint={`Cupons, CMV, margem, ticket, sobra, vencido, consumo interno e taxa de perda de ${storeLabel}.`}
+          hint={`Cupons, custo do que vendeu, margem, ticket, sobra, vencido, consumo interno e taxa de perda de ${storeLabel}.`}
           uses="Período + loja"
           busy={busy}
           id="close"
@@ -225,7 +229,7 @@ export default function RelatoriosPage() {
         />
         <ReportCard
           title="Vendas por produto"
-          hint={`Unidades, preço médio, CMV, margem e participação no faturamento de ${storeLabel}.`}
+          hint={`Unidades, preço médio, custo do que vendeu, margem e participação no faturamento de ${storeLabel}.`}
           uses="Período + loja"
           busy={busy}
           id="sales"

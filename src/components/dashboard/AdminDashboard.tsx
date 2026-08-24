@@ -120,6 +120,14 @@ export function AdminDashboard({
         <ChartCard title="Venda e perda no tempo" empty={data.daily.every((item) => item.receita === 0 && item.perda === 0)}>
           <TrendLine data={data.daily} />
         </ChartCard>
+        <ChartCard title="De onde veio a venda" empty={data.channels.length === 0}>
+          <SimpleBars
+            data={data.channels.map((item) => ({ name: item.name, total: item.total }))}
+            dataKey="total"
+            name="Reais"
+            color="#d97706"
+          />
+        </ChartCard>
       </div>
 
       <Card className="mb-8 mt-8">

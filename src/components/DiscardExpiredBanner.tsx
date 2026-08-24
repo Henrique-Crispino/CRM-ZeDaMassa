@@ -10,9 +10,11 @@ import { discardExpiredLots, StockError } from "@/lib/stock";
 export function DiscardExpiredBanner({
   items,
   hint,
+  place = "nesta loja",
 }: {
   items: ExpiryAlert[];
   hint: string;
+  place?: string;
 }) {
   const expired = items.filter((item) => item.level === "expired");
   const units = expired.reduce((sum, item) => sum + item.qty, 0);
@@ -57,7 +59,7 @@ export function DiscardExpiredBanner({
     <>
       <Card className="mb-4 bg-red-50 ring-red-200">
         <p className="font-extrabold text-red-800">
-          {units} un. vencidas nesta loja
+          {units} un. vencidas {place}
         </p>
         <p className="mt-1 text-stone-700">{hint}</p>
         <Button className="mt-3" variant="danger" disabled={saving} onClick={() => { setError(""); setOk(""); setConfirm(true); }}>

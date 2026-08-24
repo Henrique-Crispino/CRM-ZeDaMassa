@@ -19,20 +19,28 @@ export default function InicioPage() {
   const [period, setPeriod] = useState<Period>("today");
 
   const data = useLiveQuery(
-    () => (ready && panelId ? loadDashboard(period, panelId) : undefined),
-    [ready, period, panelId],
+    () => (ready && panelId && panel?.type !== "store" ? loadDashboard(period, panelId) : undefined),
+    [ready, period, panelId, panel?.type],
   );
 
   return (
     <AppShell>
-      {!data || !panel ? (
+      {!panel || !panelId ? (
         <p className="text-xl font-bold text-stone-500">Carregando...</p>
       ) : panel.type === "admin" ? (
-        <AdminDashboard data={data} period={period} onPeriod={setPeriod} />
+        !data ? (
+          <p className="text-xl font-bold text-stone-500">Carregando...</p>
+        ) : (
+          <AdminDashboard data={data} period={period} onPeriod={setPeriod} />
+        )
       ) : panel.type === "factory" ? (
-        <FactoryDashboard data={data} period={period} onPeriod={setPeriod} />
+        !data ? (
+          <p className="text-xl font-bold text-stone-500">Carregando...</p>
+        ) : (
+          <FactoryDashboard data={data} period={period} onPeriod={setPeriod} />
+        )
       ) : (
-        <StoreDashboard data={data} period={period} onPeriod={setPeriod} storeName={panel.name} />
+        <StoreDashboard locationId={panelId} storeName={panel.name} />
       )}
     </AppShell>
   );

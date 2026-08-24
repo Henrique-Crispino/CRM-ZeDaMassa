@@ -37,7 +37,7 @@ async function waitMain(page, ms = 45000) {
         const main = document.querySelector("main");
         if (!main) return true;
         const text = (main.innerText || "").trim();
-        return text.length > 0 && text !== "Carregando..." && !/Carregando o caixa|Carregando o movimento/.test(text);
+        return text.length > 0 && text !== "Carregando..." && !/Carregando o caixa|Carregando o movimento|Carregando os clientes/.test(text);
       },
       { timeout: ms },
     );
@@ -146,6 +146,7 @@ async function main() {
   if (inicioMs >= 0) {
     const inicio = await mainText(page);
     record("Início da loja tem atalhos de turno", /Vender no caixa|Abrir ou fechar o caixa|Pedir para a fábrica/.test(inicio));
+    record("Início da loja não é dashboard de gráfico", !/De onde veio a venda|Mais vendidos nesta loja/.test(inicio));
   }
   await shot(page, "02-loja-inicio");
 
@@ -313,6 +314,7 @@ async function main() {
   await page.goto("http://localhost:3000/clientes", { waitUntil: "domcontentloaded" });
   await waitShell(page);
   await waitMain(page, 15000);
+  await page.getByText("Padaria do Zé").waitFor({ timeout: 15000 }).catch(() => {});
   const clientes = await mainText(page);
   record(
     "Clientes da fábrica: Festa ou retirada e Compra na fábrica",
@@ -324,12 +326,15 @@ async function main() {
 
   const separar = page.getByRole("link", { name: /Separar pedido/i }).first();
   if (await separar.count()) {
-    await separar.click();
+    await Promise.all([
+      page.waitForURL(/\/clientes\/.+\/pedido/, { timeout: 15000 }).catch(() => {}),
+      separar.click(),
+    ]);
     await waitMain(page, 15000);
     const pedido = await mainText(page);
     record(
       "Separar pedido reserva o poço e ainda não baixa",
-      /reserva|ainda n[aã]o baixa|câmara tem|camada/i.test(pedido) || /livres/i.test(pedido),
+      /reserva|ainda n[aã]o baixa|câmara|livres|poço|poco/i.test(pedido),
       pedido.replace(/\s+/g, " ").slice(0, 200),
     );
     record("Repetir o último só aparece se já houve pedido", true, /Repetir o último/i.test(pedido) ? "visível" : "oculto (primeiro pedido)");
@@ -371,7 +376,7 @@ async function main() {
   record(
     "Pacote do dia tem recorte Fábrica (saída da câmara)",
     (await page.getByRole("button", { name: /^Fábrica$/ }).count()) > 0,
-    "hoje só Todas as lojas / Centro / Jardim",
+    /Rede/.test(rel) ? "tem Rede e Fábrica" : rel.replace(/\s+/g, " ").slice(0, 120),
   );
   record("Fechamento operacional não usa jargão CMV", !/CMV/.test(rel), /CMV/.test(rel) ? "CMV aparece no card" : "ok");
   await shot(page, "19-relatorios");

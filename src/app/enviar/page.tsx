@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
+import { DiscardExpiredBanner } from "@/components/DiscardExpiredBanner";
 import {
   CompactGroup,
   CompactList,
@@ -21,7 +22,7 @@ import { PageBoard, Pager, usePager } from "@/components/pager";
 import { ReportPreview } from "@/components/ReportPreview";
 import { Button, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { getLocation, getPanel, useLocationCatalog } from "@/lib/locations";
-import { listTransfers, sellableQty, stockByLocation } from "@/lib/queries";
+import { expiryAlertsFor, listTransfers, sellableQty, stockByLocation } from "@/lib/queries";
 import { getLocationId } from "@/lib/session";
 import { reportRomaneio, type ReportTable } from "@/lib/reports";
 import { sendToStore, StockError } from "@/lib/stock";
@@ -52,10 +53,11 @@ export default function EnviarPage() {
   const [confirm, setConfirm] = useState(false);
   const [sheet, setSheet] = useState<ReportTable | null>(null);
 
-  const expiredFactory = useMemo(
-    () => (stock ?? []).reduce((sum, item) => sum + (item.expiredQty.factory ?? 0), 0),
-    [stock],
+  const expiry = useLiveQuery(
+    () => (ready ? expiryAlertsFor("factory") : []),
+    [ready],
   );
+  const expiredFactory = (expiry ?? []).filter((item) => item.level === "expired");
   const available = useMemo(
     () =>
       (stock ?? []).filter(
@@ -170,15 +172,11 @@ export default function EnviarPage() {
           </div>
         ) : null}
 
-        {expiredFactory > 0 ? (
-          <div className="mb-4 rounded-3xl bg-red-50 px-4 py-3 ring-1 ring-red-200">
-            <p className="font-extrabold text-red-800">{expiredFactory} un. vencidas na fábrica</p>
-            <p className="text-stone-700">Lote vencido não vai para a loja. Descarte no estoque para baixar a quantidade.</p>
-            <Link href="/estoque" className="mt-2 inline-flex min-h-11 items-center font-bold text-red-700">
-              Ir ao estoque
-            </Link>
-          </div>
-        ) : null}
+        <DiscardExpiredBanner
+          items={expiredFactory}
+          place="na fábrica"
+          hint="Lote vencido não vai para a loja. Descarte aqui — o que você já contou para mandar continua."
+        />
 
         <div className="mb-4 space-y-3">
           <SearchField value={search} onChange={setSearch} placeholder="Buscar: coxinha, festa, coca..." />
