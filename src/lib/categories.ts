@@ -7,7 +7,20 @@ export const CATEGORIES: { id: Category; label: string }[] = [
   { id: "limpeza", label: "Limpeza" },
   { id: "descartavel", label: "Descartáveis" },
   { id: "embalagem", label: "Embalagens" },
+  { id: "insumo", label: "Insumos" },
 ];
+
+export function isInsumo(category: Category) {
+  return category === "insumo";
+}
+
+export function isSoldAtRegister(category: Category) {
+  return !isInsumo(category);
+}
+
+export function saleCategories() {
+  return CATEGORIES.filter((item) => isSoldAtRegister(item.id));
+}
 
 export function categoryLabel(id: string) {
   return CATEGORIES.find((item) => item.id === id)?.label ?? id;

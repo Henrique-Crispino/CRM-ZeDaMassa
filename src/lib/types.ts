@@ -1,4 +1,4 @@
-export type Category = "salgado" | "bebida" | "limpeza" | "descartavel" | "embalagem";
+export type Category = "salgado" | "bebida" | "limpeza" | "descartavel" | "embalagem" | "insumo";
 export type MovementType = "production" | "send" | "sale" | "sale_void" | "waste" | "internal" | "ajuste" | "purchase" | "return";
 export type AdjustmentReason = "quebra" | "furto" | "erro" | "contagem";
 

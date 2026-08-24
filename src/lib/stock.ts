@@ -1,4 +1,4 @@
-import { isPurchased } from "./categories";
+import { isPurchased, isSoldAtRegister } from "./categories";
 import { currentCashSession, money2 } from "./cash";
 import { getDb } from "./db";
 import { isStore } from "./locations";
@@ -523,6 +523,12 @@ export async function checkout(input: {
   const saleId = newId();
   const at = new Date().toISOString();
   const niches = await db.niches.bulkGet(items.map((item) => item.nicheId));
+  const products = await db.products.bulkGet(niches.map((niche) => niche?.productId ?? ""));
+  for (const product of products) {
+    if (product && !isSoldAtRegister(product.category)) {
+      throw new StockError(`${product.name} é insumo da fábrica. Não vende no caixa.`);
+    }
+  }
 
   await db.transaction(
     "rw",

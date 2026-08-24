@@ -169,8 +169,9 @@ export function ProductForm({
         <div>
           <p className="mb-2 text-base font-bold text-stone-800">O que é?</p>
           <p className="mb-3 text-sm font-semibold text-stone-500">
-            Salgado é produção. Bebida, limpeza, descartável e embalagem entram pela tela de Compras.
-            Bebida pode ter validade — ligue o vencimento se o rótulo tiver data.
+            Salgado é produção. O resto entra em Compras. Insumo (farinha, óleo, recheio) fica na
+            fábrica e não aparece no caixa da loja. Bebida pode ter validade — ligue o vencimento se
+            o rótulo tiver data.
           </p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {CATEGORIES.map((item) => (
@@ -219,7 +220,9 @@ export function ProductForm({
             <p className="text-sm font-semibold leading-relaxed text-stone-500">
               {category === "bebida"
                 ? "Refrigerante que não vence fica assim. Se vence, ligue o controle e coloque os dias."
-                : "Sem validade no lote."}
+                : category === "insumo"
+                  ? "Farinha e óleo entram pela compra. Sem validade no lote, a menos que vocês liguem o vencimento."
+                  : "Sem validade no lote."}
             </p>
           )}
         </div>

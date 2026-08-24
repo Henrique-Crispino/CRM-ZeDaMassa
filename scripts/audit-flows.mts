@@ -164,6 +164,42 @@ async function main() {
     await expectOk("Descarte baixa suco vencido", () => discardExpiredLots({ items: expiredSuco }));
   }
 
+  await db.products.add({
+    id: "prod-farinha",
+    name: "Farinha de trigo",
+    category: "insumo",
+    perishable: false,
+    shelfLifeDays: 0,
+    createdAt: `${today}T10:00:00.000Z`,
+  });
+  await db.niches.add({
+    id: "farinha-25kg",
+    productId: "prod-farinha",
+    name: "Saco 25kg",
+    sellPrice: 85,
+    costPrice: 85,
+    minStock: 2,
+    minStockFactory: 6,
+    minStockStore: 0,
+    active: true,
+    promoAllowed: false,
+    promoPrice: 0,
+  });
+  await expectFail(
+    "Produzir farinha é recusado",
+    () => produceItems({ madeAt: today, items: [{ nicheId: "farinha-25kg", qty: 2 }] }),
+    "não se produz",
+  );
+  await expectOk("Compra de farinha grava o lote", () =>
+    receivePurchase({ receivedAt: today, items: [{ nicheId: "farinha-25kg", qty: 4, unitCost: 80 }] }),
+  );
+  const liveCatalog = await catalogItems(true);
+  record(
+    "Insumo entra no catálogo de compra",
+    liveCatalog.some((item) => item.product.category === "insumo"),
+    "",
+  );
+
   const factoryCox = await stockQty("factory", "cox-mini");
   record("Fábrica tem 100 coxinhas após produzir", factoryCox === 100, `qty=${factoryCox}`);
 
@@ -186,6 +222,18 @@ async function main() {
     "Bruno não abre o caixa da Loja 2",
     () => openCashSession({ locationId: "store_2", period: "manha", employeeId: "emp-bruno", openingAmount: 80 }),
     "não abre",
+  );
+
+  await expectFail(
+    "Venda de farinha no caixa é recusada",
+    () =>
+      checkout({
+        locationId: "store_1",
+        channel: "caixa",
+        payment: "dinheiro",
+        items: [{ nicheId: "farinha-25kg", qty: 1 }],
+      }),
+    "insumo",
   );
 
   const transferId = (await expectOk("Mandar 40 coxinhas para a Loja 1", () =>

@@ -1,4 +1,5 @@
 import { currentCashSession } from "./cash";
+import { isSoldAtRegister } from "./categories";
 import { getDb } from "./db";
 import { catalogItems } from "./queries";
 import { FACTORY_LOCATION, getLocation, isStore, storeLocations } from "./locations";
@@ -214,6 +215,9 @@ export async function registerInternalConsume(input: {
   for (const product of products) {
     if (product && !productIsLive(product)) {
       throw new ConsumeError(closedCatalogMessage(product.name));
+    }
+    if (product && !isSoldAtRegister(product.category)) {
+      throw new ConsumeError(`${product.name} é insumo da fábrica. Não entra no consumo interno.`);
     }
   }
   const dayKey = todayDate();

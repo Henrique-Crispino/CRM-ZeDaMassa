@@ -19,7 +19,7 @@ import {
   SuccessBox,
   cn,
 } from "@/components/ui";
-import { CATEGORIES } from "@/lib/categories";
+import { isSoldAtRegister, saleCategories } from "@/lib/categories";
 import { currentCashSession } from "@/lib/cash";
 import { cashPeriodLabel } from "@/lib/cash";
 import { getPanel } from "@/lib/locations";
@@ -74,6 +74,7 @@ export default function VenderPage() {
     const q = search.trim().toLowerCase();
     return (stock ?? []).filter((item) => {
       if (!productIsLive(item.product) || !item.niche.active) return false;
+      if (!isSoldAtRegister(item.product.category)) return false;
       if (kind !== "todos" && item.product.category !== kind) return false;
       if (q && !item.label.toLowerCase().includes(q)) return false;
       return true;
@@ -192,7 +193,7 @@ export default function VenderPage() {
         <FilterChips
           value={kind}
           onChange={setKind}
-          options={[{ id: "todos", label: "Tudo" }, ...CATEGORIES]}
+          options={[{ id: "todos", label: "Tudo" }, ...saleCategories()]}
         />
       </div>
 

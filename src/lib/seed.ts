@@ -186,6 +186,32 @@ const CATALOG: { product: Product; niches: Niche[] }[] = [
       niche({ id: "marmita-50", productId: "prod-marmita", name: "Pacote 50", sellPrice: 16, costPrice: 7, minStock: 3, minStockFactory: 12, minStockStore: 3, active: true }),
     ],
   },
+  {
+    product: {
+      id: "prod-farinha",
+      name: "Farinha de trigo",
+      category: "insumo",
+      perishable: false,
+      shelfLifeDays: 0,
+      createdAt: "2026-07-01T10:00:00.000Z",
+    },
+    niches: [
+      niche({ id: "farinha-25kg", productId: "prod-farinha", name: "Saco 25kg", sellPrice: 85, costPrice: 85, minStock: 2, minStockFactory: 6, minStockStore: 0, active: true }),
+    ],
+  },
+  {
+    product: {
+      id: "prod-oleo",
+      name: "Óleo de soja",
+      category: "insumo",
+      perishable: false,
+      shelfLifeDays: 0,
+      createdAt: "2026-07-01T10:00:00.000Z",
+    },
+    niches: [
+      niche({ id: "oleo-18l", productId: "prod-oleo", name: "Lata 18L", sellPrice: 95, costPrice: 95, minStock: 1, minStockFactory: 4, minStockStore: 0, active: true }),
+    ],
+  },
 ];
 
 const NICHE_IDS = CATALOG.flatMap((item) => item.niches.map((itemNiche) => itemNiche.id));
@@ -208,6 +234,8 @@ const PLAN: Record<string, { produce: number; store1: number; store2: number }> 
   "det-5l": { produce: 3, store1: 1, store2: 1 },
   "copo-100": { produce: 5, store1: 2, store2: 2 },
   "marmita-50": { produce: 3, store1: 1, store2: 1 },
+  "farinha-25kg": { produce: 6, store1: 0, store2: 0 },
+  "oleo-18l": { produce: 4, store1: 0, store2: 0 },
 };
 
 export const DEFAULT_EMPLOYEES: Employee[] = [
@@ -341,7 +369,7 @@ export async function ensureAppDefaults() {
   }
 
   const extras = CATALOG.filter((item) =>
-    ["limpeza", "descartavel", "embalagem"].includes(item.product.category),
+    ["limpeza", "descartavel", "embalagem", "insumo"].includes(item.product.category),
   );
   for (const item of extras) {
     if (!(await db.products.get(item.product.id))) {
