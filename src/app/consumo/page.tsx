@@ -11,17 +11,22 @@ import {
   consumeWorkplaceLabel,
   consumeWorkplaces,
   listAllowances,
+  listConsumeGroups,
   listConsumeUsers,
   listConsumptions,
+  removeConsumeGroup,
   removeConsumeUser,
   saveAllowance,
+  saveConsumeGroup,
   saveConsumeUser,
 } from "@/lib/consume";
+import { isSoldAtRegister } from "@/lib/categories";
 import { getLocation, useLocationCatalog } from "@/lib/locations";
 import { formatDate, formatTime } from "@/lib/money";
 import { useReady } from "@/lib/use-ready";
 
 const emptyUser = { name: "", login: "", password: "", locationId: "" };
+const emptyGroup = { id: "", name: "", personLimit: 3, nicheIds: [] as string[], enabled: true };
 
 export default function ConsumoAdminPage() {
   const ready = useReady();
@@ -29,12 +34,15 @@ export default function ConsumoAdminPage() {
   const places = consumeWorkplaces();
   const users = useLiveQuery(() => (ready ? listConsumeUsers() : []), [ready]);
   const items = useLiveQuery(() => (ready ? listAllowances() : []), [ready]);
+  const groups = useLiveQuery(() => (ready ? listConsumeGroups() : []), [ready]);
   const history = useLiveQuery(() => (ready ? listConsumptions("admin") : []), [ready]);
   const usersPage = usePager(users ?? [], 8);
   const itemsPage = usePager(items ?? [], 8);
+  const groupsPage = usePager(groups ?? [], 8);
   const historyPage = usePager(history ?? [], 8);
-  const [tab, setTab] = useState<"users" | "products">("users");
+  const [tab, setTab] = useState<"users" | "products" | "groups">("users");
   const [form, setForm] = useState(emptyUser);
+  const [groupForm, setGroupForm] = useState(emptyGroup);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [limits, setLimits] = useState<Record<string, number>>({});
   const [personLimits, setPersonLimits] = useState<Record<string, number>>({});
@@ -56,15 +64,18 @@ export default function ConsumoAdminPage() {
       <AppShell>
         <PageTitle
           title="Consumo interno"
-          hint="A equipe é uma só — a mesma ficha de Equipe. Aqui você liga o consumo, a senha e os produtos. Editar Ana aqui muda o caixa também."
+          hint="A equipe é uma só — a mesma ficha de Equipe. Aqui você liga o consumo, a senha, os produtos e a cota de grupo (3 salgados locais, misturados)."
         />
 
-        <div className="mb-6 grid grid-cols-2 gap-2">
+        <div className="mb-6 flex flex-wrap gap-2">
           <Button type="button" variant={tab === "users" ? "primary" : "ghost"} onClick={() => setTab("users")}>
             Funcionários habilitados
           </Button>
           <Button type="button" variant={tab === "products" ? "primary" : "ghost"} onClick={() => setTab("products")}>
             Produtos liberados
+          </Button>
+          <Button type="button" variant={tab === "groups" ? "primary" : "ghost"} onClick={() => setTab("groups")}>
+            Cota de grupo
           </Button>
         </div>
 
@@ -218,7 +229,7 @@ export default function ConsumoAdminPage() {
               </div>
             )}
           </>
-        ) : (
+        ) : tab === "products" ? (
           <>
             <h2 className="mb-3 mt-4 text-2xl font-extrabold">Produtos liberados</h2>
             {!items?.length ? (
@@ -335,6 +346,163 @@ export default function ConsumoAdminPage() {
                   total={historyPage.total}
                   onPage={historyPage.setPage}
                   word="consumos"
+                />
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <h2 className="mb-3 mt-4 text-2xl font-extrabold">Cota de grupo</h2>
+            <p className="mb-4 max-w-2xl text-base leading-relaxed text-stone-600">
+              Além do teto de cada produto, a cota vale para todos os marcados juntos. Exemplo: até 3
+              salgados locais por pessoa no dia — coxinha, pastel ou kibe, misturados.
+            </p>
+            <Card className="mb-6 space-y-4">
+              <Field label="Nome da cota">
+                <Input
+                  value={groupForm.name}
+                  onChange={(event) => setGroupForm((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="Ex.: Salgados locais"
+                />
+              </Field>
+              <Field
+                label="Cada pessoa / dia neste grupo"
+                hint="A soma conta. 2 pastéis + 1 coxinha = 3. O quarto item para."
+              >
+                <NumberStepper
+                  value={groupForm.personLimit}
+                  min={1}
+                  onChange={(value) => setGroupForm((current) => ({ ...current, personLimit: value }))}
+                />
+              </Field>
+              <div>
+                <p className="mb-2 font-bold">Quais produtos entram nesta cota</p>
+                <p className="mb-2 text-sm text-stone-500">Marque pelo menos dois. Coca e limpeza ficam de fora se você não marcar.</p>
+                <div className="flex flex-wrap gap-2">
+                  {(items ?? [])
+                    .filter((item) => isSoldAtRegister(item.product.category))
+                    .map((item) => {
+                      const on = groupForm.nicheIds.includes(item.niche.id);
+                      return (
+                        <Button
+                          key={item.niche.id}
+                          type="button"
+                          variant={on ? "primary" : "ghost"}
+                          className="min-h-12"
+                          onClick={() =>
+                            setGroupForm((current) => ({
+                              ...current,
+                              nicheIds: on
+                                ? current.nicheIds.filter((id) => id !== item.niche.id)
+                                : [...current.nicheIds, item.niche.id],
+                            }))
+                          }
+                        >
+                          {item.label}
+                        </Button>
+                      );
+                    })}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant={groupForm.enabled ? "primary" : "ghost"}
+                  onClick={() => setGroupForm((current) => ({ ...current, enabled: !current.enabled }))}
+                >
+                  {groupForm.enabled ? "Cota ligada" : "Cota desligada"}
+                </Button>
+                <Button
+                  onClick={async () => {
+                    setError("");
+                    setOk("");
+                    try {
+                      await saveConsumeGroup({
+                        id: groupForm.id || undefined,
+                        name: groupForm.name,
+                        enabled: groupForm.enabled,
+                        personLimit: groupForm.personLimit,
+                        nicheIds: groupForm.nicheIds,
+                      });
+                      setGroupForm(emptyGroup);
+                      setOk(groupForm.id ? "Cota de grupo atualizada." : "Cota de grupo salva.");
+                    } catch (err) {
+                      setError(err instanceof ConsumeError ? err.message : "Não deu para salvar a cota.");
+                    }
+                  }}
+                >
+                  {groupForm.id ? "Salvar cota" : "Criar cota"}
+                </Button>
+                {groupForm.id ? (
+                  <Button type="button" variant="ghost" onClick={() => setGroupForm(emptyGroup)}>
+                    Cancelar
+                  </Button>
+                ) : null}
+              </div>
+            </Card>
+
+            {!groups?.length ? (
+              <Empty
+                title="Nenhuma cota de grupo ainda"
+                hint="Sem isso, o teto continua só por produto: 2 coxinha, 1 pastel, cada um na sua conta."
+              />
+            ) : (
+              <div ref={groupsPage.listRef} className="scroll-mt-36 space-y-3">
+                {groupsPage.rows.map((group) => {
+                  const labels = (items ?? [])
+                    .filter((item) => group.nicheIds.includes(item.niche.id))
+                    .map((item) => item.label);
+                  return (
+                    <Card key={group.id} className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-lg font-extrabold">{group.name}</p>
+                        <p className="text-sm font-semibold text-stone-500">
+                          {group.enabled
+                            ? `${group.personLimit} un. / pessoa / dia · ${labels.join(" · ") || "produtos"}`
+                            : "Desligada"}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="min-h-12"
+                          onClick={() => {
+                            setGroupForm({
+                              id: group.id,
+                              name: group.name,
+                              personLimit: group.personLimit,
+                              nicheIds: group.nicheIds,
+                              enabled: group.enabled,
+                            });
+                            setOk("");
+                            setError("");
+                          }}
+                        >
+                          Editar
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="danger"
+                          className="min-h-12"
+                          onClick={async () => {
+                            await removeConsumeGroup(group.id);
+                            if (groupForm.id === group.id) setGroupForm(emptyGroup);
+                            setOk("Cota de grupo removida.");
+                          }}
+                        >
+                          Remover
+                        </Button>
+                      </div>
+                    </Card>
+                  );
+                })}
+                <Pager
+                  page={groupsPage.page}
+                  pages={groupsPage.pages}
+                  total={groupsPage.total}
+                  onPage={groupsPage.setPage}
+                  word="cotas"
                 />
               </div>
             )}

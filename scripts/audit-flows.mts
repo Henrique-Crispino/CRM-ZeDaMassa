@@ -588,6 +588,87 @@ async function main() {
     record("Rita (fábrica) consome 1 na Loja 1", false, "loja sem saldo para consumo");
   }
 
+  await db.products.add({
+    id: "prod-pastel",
+    name: "Pastel de carne",
+    category: "salgado",
+    perishable: true,
+    shelfLifeDays: 1,
+    createdAt: `${today}T10:00:00.000Z`,
+  });
+  await db.niches.add({
+    id: "pas-local",
+    productId: "prod-pastel",
+    name: "Consumo local",
+    sellPrice: 8,
+    costPrice: 2.5,
+    minStock: 12,
+    minStockFactory: 24,
+    minStockStore: 10,
+    active: true,
+    promoAllowed: false,
+    promoPrice: 0,
+  });
+  await expectOk("Produzir pastel na fábrica", () => produceItems({ madeAt: today, items: [{ nicheId: "pas-local", qty: 20 }] }));
+  const pastelId = (await expectOk("Mandar pastel para a Loja 1", () =>
+    sendToStore({ toLocationId: "store_1", items: [{ nicheId: "pas-local", qty: 10 }], sentBy: "Rita" }),
+  )) as string | null;
+  if (pastelId) {
+    const pastelParts = await db.transferItems.where("transferId").equals(pastelId).toArray();
+    await expectOk("Loja 1 recebe o pastel", () =>
+      receiveTransfer({
+        transferId: pastelId,
+        receivedBy: "Ana",
+        items: pastelParts.map((part) => ({ id: part.id, receivedQty: part.qty })),
+      }),
+    );
+  }
+  await db.internalAllowances.put({ id: "pas-local", nicheId: "pas-local", enabled: true, dailyLimit: 10, personLimit: 3 });
+  await db.internalAllowances.put({ id: "cox-mini", nicheId: "cox-mini", enabled: true, dailyLimit: 5, personLimit: 2 });
+  await db.consumeGroups.put({
+    id: "grp-salgado-local",
+    name: "Salgados locais",
+    enabled: true,
+    personLimit: 3,
+    nicheIds: ["pas-local", "cox-mini"],
+  });
+  await expectFail(
+    "Cota de grupo recusa 2 pastel + 2 coxinha",
+    () =>
+      registerInternalConsume({
+        locationId: "store_1",
+        login: "ana.souza",
+        password: "1234",
+        items: [
+          { nicheId: "pas-local", qty: 2 },
+          { nicheId: "cox-mini", qty: 2 },
+        ],
+      }),
+    "cota",
+  );
+  await expectOk("Ana leva 2 pastéis + 1 coxinha na cota", () =>
+    registerInternalConsume({
+      locationId: "store_1",
+      login: "ana.souza",
+      password: "1234",
+      items: [
+        { nicheId: "pas-local", qty: 2 },
+        { nicheId: "cox-mini", qty: 1 },
+      ],
+    }),
+  );
+  await expectFail(
+    "Quarto salgado da Ana é recusado pela cota",
+    () =>
+      registerInternalConsume({
+        locationId: "store_1",
+        login: "ana.souza",
+        password: "1234",
+        items: [{ nicheId: "pas-local", qty: 1 }],
+      }),
+    "cota",
+  );
+
   const returnId = (await expectOk("Loja devolve 2 para a fábrica", async () => {
     const qty = Math.min(2, await stockQty("store_1", "cox-mini"));
     if (qty < 2) throw new Error("loja sem saldo para devolver 2");

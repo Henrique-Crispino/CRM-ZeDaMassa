@@ -4,6 +4,7 @@ import type {
   AppSetting,
   CashMovement,
   CashSession,
+  ConsumeGroup,
   ConsumeUser,
   Employee,
   InternalAllowance,
@@ -56,6 +57,7 @@ class AppDB extends Dexie {
   employees!: Table<Employee, string>;
   cashSessions!: Table<CashSession, string>;
   internalAllowances!: Table<InternalAllowance, string>;
+  consumeGroups!: Table<ConsumeGroup, string>;
   settings!: Table<AppSetting, string>;
   consumptions!: Table<InternalConsumption, string>;
   consumeUsers!: Table<ConsumeUser, string>;
@@ -233,6 +235,23 @@ class AppDB extends Dexie {
           }
         }
       });
+    this.version(9).stores({
+      ...baseStores,
+      requests: "id, fromLocationId, status, at",
+      requestItems: "id, requestId, nicheId",
+      notifications: "id, audience, at, type",
+      stores: "id, name, active",
+      employees: "id, storeId, locationId, active, name",
+      cashSessions: "id, locationId, period, openedAt, closedAt",
+      internalAllowances: "id, nicheId, enabled",
+      consumeGroups: "id, enabled",
+      settings: "id",
+      consumptions: "id, locationId, nicheId, at, dayKey",
+      consumeUsers: "id, login, locationId, active",
+      cashMovements: "id, sessionId, locationId, type, at",
+      inventoryCounts: "id, locationId, at",
+      inventoryLines: "id, countId, nicheId",
+    });
   }
 }
 

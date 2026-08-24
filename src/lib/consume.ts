@@ -15,7 +15,7 @@ import {
   personLocation,
   savePerson,
 } from "./people";
-import type { ConsumeUser, InternalAllowance } from "./types";
+import type { ConsumeGroup, ConsumeUser, InternalAllowance } from "./types";
 import { closedCatalogMessage, lotCost, productIsLive } from "./types";
 
 export class ConsumeError extends Error {}
@@ -173,6 +173,58 @@ export async function saveAllowance(input: InternalAllowance) {
   });
 }
 
+export async function listConsumeGroups() {
+  const rows = await getDb().consumeGroups.toArray();
+  return rows.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+}
+
+export function liveConsumeGroups(rows: ConsumeGroup[]) {
+  return rows.filter((row) => row.enabled && row.personLimit > 0 && row.nicheIds.length > 0);
+}
+
+export function groupsCovering(nicheId: string, rows: ConsumeGroup[]) {
+  return liveConsumeGroups(rows).filter((row) => row.nicheIds.includes(nicheId));
+}
+
+export async function saveConsumeGroup(input: {
+  id?: string;
+  name: string;
+  enabled: boolean;
+  personLimit: number;
+  nicheIds: string[];
+}) {
+  const name = input.name.trim();
+  const personLimit = Math.max(0, Math.floor(input.personLimit));
+  const nicheIds = [...new Set(input.nicheIds.map((id) => id.trim()).filter(Boolean))];
+  if (!name) throw new ConsumeError("Dê um nome para a cota. Ex.: Salgados locais.");
+  if (input.enabled && personLimit <= 0) {
+    throw new ConsumeError("Informe quantas unidades cada pessoa pode levar neste grupo por dia.");
+  }
+  if (input.enabled && nicheIds.length < 2) {
+    throw new ConsumeError("Uma cota de grupo precisa de pelo menos dois produtos. Senão use o teto do produto.");
+  }
+  const id = input.id?.trim() || newId();
+  await getDb().consumeGroups.put({
+    id,
+    name,
+    enabled: input.enabled,
+    personLimit,
+    nicheIds,
+  });
+  return id;
+}
+
+export async function removeConsumeGroup(id: string) {
+  await getDb().consumeGroups.delete(id);
+}
+
+export function groupQuotaMessage(group: ConsumeGroup, userName: string, used: number, basketQty: number) {
+  if (used > 0) {
+    return `A cota de ${group.name} é ${group.personLimit} por pessoa no dia. ${userName} já levou ${used}.`;
+  }
+  return `A cota de ${group.name} é ${group.personLimit} por pessoa no dia. Este pedido soma ${basketQty}.`;
+}
+
 export async function consumedToday(locationId: string, nicheId: string, dayKey = todayDate()) {
   const rows = await getDb().consumptions.where("dayKey").equals(dayKey).toArray();
   return rows
@@ -183,6 +235,12 @@ export async function consumedToday(locationId: string, nicheId: string, dayKey 
 export async function consumedTodayByUser(userId: string, nicheId: string, dayKey = todayDate()) {
   const rows = await userConsumptionOnDay(userId, dayKey);
   return rows.filter((row) => row.nicheId === nicheId).reduce((sum, row) => sum + row.qty, 0);
+}
+
+export async function consumedInGroupTodayByUser(userId: string, nicheIds: string[], dayKey = todayDate()) {
+  const members = new Set(nicheIds);
+  const rows = await userConsumptionOnDay(userId, dayKey);
+  return rows.filter((row) => members.has(row.nicheId)).reduce((sum, row) => sum + row.qty, 0);
 }
 
 export async function registerInternalConsume(input: {
@@ -240,7 +298,17 @@ export async function registerInternalConsume(input: {
 
   await db.transaction(
     "rw",
-    [db.stock, db.lots, db.movements, db.consumptions, db.internalAllowances, db.niches, db.employees, db.consumeUsers],
+    [
+      db.stock,
+      db.lots,
+      db.movements,
+      db.consumptions,
+      db.internalAllowances,
+      db.consumeGroups,
+      db.niches,
+      db.employees,
+      db.consumeUsers,
+    ],
     async () => {
       for (const item of items) {
         const allowance = await db.internalAllowances.get(item.nicheId);
@@ -260,6 +328,22 @@ export async function registerInternalConsume(input: {
             `${user.name} já pode no máximo ${personCap} deste produto hoje. Já levou ${usedByUser}.`,
           );
         }
+      }
+
+      const groups = liveConsumeGroups(await db.consumeGroups.toArray());
+      for (const group of groups) {
+        const members = new Set(group.nicheIds);
+        const basketQty = items
+          .filter((item) => members.has(item.nicheId))
+          .reduce((sum, item) => sum + item.qty, 0);
+        if (basketQty <= 0) continue;
+        const used = await consumedInGroupTodayByUser(user.id, group.nicheIds, dayKey);
+        if (used + basketQty > group.personLimit) {
+          throw new ConsumeError(groupQuotaMessage(group, user.name, used, basketQty));
+        }
+      }
+
+      for (const item of items) {
         const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, { skipExpired: true });
         for (const chunk of chunks) {
           const lot = await db.lots.get(chunk.lotId);

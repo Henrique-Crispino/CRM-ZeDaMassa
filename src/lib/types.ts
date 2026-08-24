@@ -420,6 +420,14 @@ export type InternalAllowance = {
   personLimit?: number;
 };
 
+export type ConsumeGroup = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  personLimit: number;
+  nicheIds: string[];
+};
+
 export type AppSetting = {
   id: string;
   value: string;

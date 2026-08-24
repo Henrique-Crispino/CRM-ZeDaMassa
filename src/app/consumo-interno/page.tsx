@@ -11,11 +11,15 @@ import { currentCashSession } from "@/lib/cash";
 import {
   ConsumeError,
   consumePlaceName,
+  consumedInGroupTodayByUser,
   consumedToday,
   consumedTodayByUser,
+  groupsCovering,
   isFactoryConsumeStaff,
   listAllowances,
+  listConsumeGroups,
   listConsumeUsers,
+  liveConsumeGroups,
   personDailyCap,
   registerInternalConsume,
   userConsumptionOnDay,
@@ -41,6 +45,7 @@ export default function ConsumoInternoPage() {
     [ready, placeId],
   );
   const allowances = useLiveQuery(() => (ready ? listAllowances() : []), [ready]);
+  const groups = useLiveQuery(() => (ready ? listConsumeGroups() : []), [ready]);
   const stock = useLiveQuery(() => (ready ? stockByLocation() : []), [ready]);
   const used = useLiveQuery(
     () =>
@@ -83,6 +88,19 @@ export default function ConsumoInternoPage() {
         : ({} as Record<string, number>),
     [ready, chosen?.id, allowances],
   );
+  const usedByGroup = useLiveQuery(
+    () =>
+      ready && chosen
+        ? Promise.all(
+            liveConsumeGroups(groups ?? []).map(
+              async (group) => [group.id, await consumedInGroupTodayByUser(chosen.id, group.nicheIds)] as const,
+            ),
+          ).then((rows) => Object.fromEntries(rows) as Record<string, number>)
+        : ({} as Record<string, number>),
+    [ready, chosen?.id, groups],
+  );
+
+  const liveGroups = liveConsumeGroups(groups ?? []);
 
   const released = useMemo(() => {
     return (allowances ?? [])
@@ -101,10 +119,42 @@ export default function ConsumoInternoPage() {
         const alreadyPerson = usedByPerson?.[item.niche.id] ?? 0;
         const storeLeft = Math.max(0, item.allowance.dailyLimit - already);
         const personLeft = chosen ? Math.max(0, personCap - alreadyPerson) : personCap;
-        const remaining = factoryBlocked || cashClosed ? 0 : Math.min(storeLeft, personLeft);
-        return { ...item, available, already, personCap, alreadyPerson, remaining, storeLeft };
+        const covering = groupsCovering(item.niche.id, groups ?? []);
+        const groupLeft = covering.length
+          ? Math.min(
+              ...covering.map((group) => {
+                const usedGroup = chosen ? (usedByGroup?.[group.id] ?? 0) : 0;
+                const othersInCart = group.nicheIds
+                  .filter((id) => id !== item.niche.id)
+                  .reduce((sum, id) => sum + (qty[id] ?? 0), 0);
+                return Math.max(0, group.personLimit - usedGroup - othersInCart);
+              }),
+            )
+          : Infinity;
+        const groupHint = covering
+          .map((group) => {
+            const usedGroup = chosen ? (usedByGroup?.[group.id] ?? 0) : 0;
+            const othersInCart = group.nicheIds
+              .filter((id) => id !== item.niche.id)
+              .reduce((sum, id) => sum + (qty[id] ?? 0), 0);
+            const left = Math.max(0, group.personLimit - usedGroup - othersInCart);
+            return `${group.name} ${left}/${group.personLimit}`;
+          })
+          .join(" · ");
+        const remaining =
+          factoryBlocked || cashClosed ? 0 : Math.min(storeLeft, personLeft, Number.isFinite(groupLeft) ? groupLeft : personLeft);
+        return {
+          ...item,
+          available,
+          already,
+          personCap,
+          alreadyPerson,
+          remaining,
+          storeLeft,
+          groupHint,
+        };
       });
-  }, [allowances, stock, placeId, used, usedByPerson, factoryBlocked, cashClosed, chosen]);
+  }, [allowances, stock, placeId, used, usedByPerson, usedByGroup, groups, factoryBlocked, cashClosed, chosen, qty]);
 
   const selected = released.filter((item) => (qty[item.niche.id] ?? 0) > 0);
 
@@ -141,7 +191,7 @@ export default function ConsumoInternoPage() {
       <AppShell>
         <PageTitle
           title="Consumo interno"
-          hint="Funcionário da loja retira aqui. Funcionário da fábrica também pode, uma vez por dia, em qualquer loja. Só com o caixa aberto."
+          hint="Funcionário da loja retira aqui. Funcionário da fábrica também pode, uma vez por dia, em qualquer loja. Só com o caixa aberto. Cota de grupo (ex.: 3 salgados locais) vale misturada."
         />
 
         {cashClosed ? (
@@ -193,6 +243,22 @@ export default function ConsumoInternoPage() {
                 : `${chosen.name} é da fábrica. Pode retirar nesta loja agora. Depois disso, não retira de novo hoje em nenhuma loja.`}
             </p>
           ) : null}
+          {chosen && !factoryBlocked
+            ? liveGroups.map((group) => {
+                const usedGroup = usedByGroup?.[group.id] ?? 0;
+                const left = Math.max(0, group.personLimit - usedGroup);
+                return (
+                  <p
+                    key={group.id}
+                    className="rounded-2xl bg-stone-50 px-4 py-3 text-sm font-semibold text-stone-800 ring-1 ring-stone-200"
+                  >
+                    {left === 0
+                      ? `${chosen.name} já usou a cota de ${group.name} hoje (${group.personLimit} un.).`
+                      : `${chosen.name} pode até ${left} un. de ${group.name} hoje, misturados.`}
+                  </p>
+                );
+              })
+            : null}
           <Field label="Senha deste funcionário">
             <Input
               type="password"
@@ -217,8 +283,8 @@ export default function ConsumoInternoPage() {
                   <p className="text-lg font-extrabold">{item.label}</p>
                   <p className="text-sm font-semibold text-stone-500">
                     {chosen
-                      ? `Esta pessoa ainda pode ${item.remaining} (teto ${item.personCap}) · loja ${item.storeLeft} · ${item.available} no estoque`
-                      : `Teto da pessoa ${item.personCap} · loja ${item.allowance.dailyLimit} · ${item.available} no estoque`}
+                      ? `Esta pessoa ainda pode ${item.remaining} neste${item.groupHint ? ` · cota ${item.groupHint}` : ""} · loja ${item.storeLeft} · ${item.available} no estoque`
+                      : `Teto da pessoa ${item.personCap}${item.groupHint ? ` · cota ${item.groupHint}` : ""} · loja ${item.allowance.dailyLimit} · ${item.available} no estoque`}
                   </p>
                 </div>
                 <NumberStepper

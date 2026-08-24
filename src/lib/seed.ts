@@ -7,6 +7,7 @@ import { createStoreRequest } from "./requests";
 import type {
   CashMovement,
   CashSession,
+  ConsumeGroup,
   ConsumeUser,
   Employee,
   InternalAllowance,
@@ -249,9 +250,19 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
 export const DEFAULT_CONSUME_USERS: ConsumeUser[] = DEFAULT_EMPLOYEES.filter(personCanConsume).map(asConsumeUser);
 
 const DEFAULT_ALLOWANCES: InternalAllowance[] = [
-  { id: "pas-local", nicheId: "pas-local", enabled: true, dailyLimit: 3, personLimit: 1 },
+  { id: "pas-local", nicheId: "pas-local", enabled: true, dailyLimit: 10, personLimit: 3 },
   { id: "cox-mini", nicheId: "cox-mini", enabled: true, dailyLimit: 5, personLimit: 2 },
   { id: "coca-350", nicheId: "coca-350", enabled: true, dailyLimit: 2, personLimit: 1 },
+];
+
+export const DEFAULT_CONSUME_GROUPS: ConsumeGroup[] = [
+  {
+    id: "grp-salgado-local",
+    name: "Salgados locais",
+    enabled: true,
+    personLimit: 3,
+    nicheIds: ["pas-local", "cox-mini", "kibe-mini", "ris-mini"],
+  },
 ];
 
 function lotExpiry(nicheId: string, madeAt: string) {
@@ -327,6 +338,22 @@ export async function ensureAppDefaults() {
           personLimit: Math.min(1, Math.max(0, row.dailyLimit)),
         });
       }
+    }
+  }
+  if ((await db.consumeGroups.count()) === 0) {
+    for (const group of DEFAULT_CONSUME_GROUPS) {
+      const niches = await db.niches.bulkGet(group.nicheIds);
+      const nicheIds = group.nicheIds.filter((_, index) => niches[index]);
+      if (nicheIds.length >= 2) {
+        await db.consumeGroups.add({ ...group, nicheIds });
+      }
+    }
+    const pastel = await db.internalAllowances.get("pas-local");
+    if (pastel && (pastel.personLimit ?? 0) < 3) {
+      await db.internalAllowances.update("pas-local", {
+        personLimit: 3,
+        dailyLimit: Math.max(pastel.dailyLimit, 10),
+      });
     }
   }
 
@@ -900,6 +927,7 @@ export async function loadDemoData() {
       db.employees,
       db.cashSessions,
       db.internalAllowances,
+      db.consumeGroups,
       db.settings,
       db.consumptions,
       db.consumeUsers,
@@ -926,6 +954,7 @@ export async function loadDemoData() {
         db.employees.clear(),
         db.cashSessions.clear(),
         db.internalAllowances.clear(),
+        db.consumeGroups.clear(),
         db.settings.clear(),
         db.consumptions.clear(),
         db.consumeUsers.clear(),
@@ -947,6 +976,7 @@ export async function loadDemoData() {
       await db.employees.bulkAdd(DEFAULT_EMPLOYEES);
       await db.cashSessions.bulkAdd([...cashSessions.values()]);
       await db.internalAllowances.bulkAdd(DEFAULT_ALLOWANCES);
+      await db.consumeGroups.bulkAdd(DEFAULT_CONSUME_GROUPS);
       await db.consumeUsers.bulkAdd(DEFAULT_CONSUME_USERS);
       await db.consumptions.bulkAdd(consumptions);
       if (cashMovements.length) await db.cashMovements.bulkAdd(cashMovements);
