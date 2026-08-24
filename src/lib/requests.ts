@@ -4,7 +4,7 @@ import { formatTime, newId } from "./money";
 import { catalogItems, sellableQty, stockByLocation } from "./queries";
 import { sendToStore, StockError } from "./stock";
 import type { AppNotification, NotificationAudience, RequestStatus, StockRequest } from "./types";
-import { isOpenRequest, requestStatusLabel } from "./types";
+import { closedCatalogMessage, isOpenRequest, productIsLive, requestStatusLabel } from "./types";
 
 export class RequestError extends Error {}
 
@@ -75,6 +75,12 @@ export async function createStoreRequest(input: {
   const at = new Date().toISOString();
   const storeName = getLocation(input.fromLocationId)?.name ?? "loja";
   const catalog = await catalogItems(false);
+  for (const item of items) {
+    const found = catalog.find((row) => row.niche.id === item.nicheId);
+    if (found && !productIsLive(found.product)) {
+      throw new RequestError(closedCatalogMessage(found.product.name));
+    }
+  }
   const labels = items
     .map((item) => {
       const found = catalog.find((row) => row.niche.id === item.nicheId);

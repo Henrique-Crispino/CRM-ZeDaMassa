@@ -26,6 +26,7 @@ import { getLocationId } from "@/lib/session";
 import { reportRomaneio, type ReportTable } from "@/lib/reports";
 import { sendToStore, StockError } from "@/lib/stock";
 import { formatDate, formatTime } from "@/lib/money";
+import { productIsLive } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 export default function EnviarPage() {
@@ -56,7 +57,11 @@ export default function EnviarPage() {
     [stock],
   );
   const available = useMemo(
-    () => (stock ?? []).filter((item) => sellableQty(item, "factory") > 0 || (item.qty.factory ?? 0) > 0),
+    () =>
+      (stock ?? []).filter(
+        (item) =>
+          productIsLive(item.product) && (sellableQty(item, "factory") > 0 || (item.qty.factory ?? 0) > 0),
+      ),
     [stock],
   );
 

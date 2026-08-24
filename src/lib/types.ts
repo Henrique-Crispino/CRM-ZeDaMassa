@@ -90,7 +90,16 @@ export type Product = {
   perishable: boolean;
   shelfLifeDays: number;
   createdAt: string;
+  active?: boolean;
 };
+
+export function productIsLive(product: Pick<Product, "active">) {
+  return product.active !== false;
+}
+
+export function closedCatalogMessage(name: string) {
+  return `${name}: produto fechado. Não entra na venda, na produção, no pedido nem no envio.`;
+}
 
 export type Niche = {
   id: string;

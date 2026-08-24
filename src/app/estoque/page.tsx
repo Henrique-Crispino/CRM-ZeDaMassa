@@ -10,10 +10,11 @@ import { Button, Card, Empty, ErrorBox, PageTitle, SegmentedControl, SuccessBox 
 import { PageBoard, Pager, usePager } from "@/components/pager";
 import { getPanel, useLocationCatalog, type Location } from "@/lib/locations";
 import { formatDate } from "@/lib/money";
-import { expiryAlertsFor, stockByLocation, type ExpiryAlert } from "@/lib/queries";
+import { expiryAlertsFor, stockByLocation, stockQtyTotal, type ExpiryAlert } from "@/lib/queries";
 import { getLocationId } from "@/lib/session";
 import { discardExpiredLots, StockError } from "@/lib/stock";
 import { isLowAt, minFor } from "@/lib/stock-min";
+import { productIsLive } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 function columnsFor(locations: Location[]) {
@@ -53,7 +54,11 @@ export default function EstoquePage() {
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (stock ?? []).filter((item) => !q || item.label.toLowerCase().includes(q));
+    return (stock ?? []).filter((item) => {
+      if (q && !item.label.toLowerCase().includes(q)) return false;
+      if (!productIsLive(item.product) && stockQtyTotal(item.qty) <= 0) return false;
+      return true;
+    });
   }, [search, stock]);
   const stockPage = usePager(rows, 10, `${search}:${filter}:${view}`);
   const grid = columnsFor(visible);

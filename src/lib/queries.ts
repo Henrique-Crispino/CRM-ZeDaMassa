@@ -7,6 +7,7 @@ import {
   adjustmentReasonLabel,
   isLiveSale,
   movementLabel,
+  productIsLive,
   salePaymentSummary,
   salePayments,
   receivedQtyOf,
@@ -130,6 +131,7 @@ export async function catalogItems(activeOnly = true): Promise<CatalogItem[]> {
     .map((niche) => {
       const product = byId.get(niche.productId);
       if (!product) return null;
+      if (activeOnly && !productIsLive(product)) return null;
       return {
         niche,
         product,
@@ -138,6 +140,23 @@ export async function catalogItems(activeOnly = true): Promise<CatalogItem[]> {
     })
     .filter((item): item is CatalogItem => item !== null)
     .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+}
+
+export function stockQtyTotal(qty: Record<string, number>) {
+  return Object.values(qty).reduce((sum, n) => sum + n, 0);
+}
+
+export function productStockQty(rows: StockView[], productId: string) {
+  return rows
+    .filter((item) => item.product.id === productId)
+    .reduce((sum, item) => sum + stockQtyTotal(item.qty), 0);
+}
+
+export async function setProductActive(productId: string, active: boolean) {
+  const db = getDb();
+  const product = await db.products.get(productId);
+  if (!product) throw new Error("Produto não encontrado.");
+  await db.products.put({ ...product, active });
 }
 
 export async function stockByLocation(): Promise<StockView[]> {
@@ -180,6 +199,7 @@ export async function stockAlerts(scope: "all" | "factory" | string = "all") {
   const storeAlerts: AlertItem[] = [];
 
   for (const item of rows) {
+    if (!productIsLive(item.product)) continue;
     for (const location of LOCATIONS) {
       const qty = sellableQty(item, location.id);
       if (!isLowAt(location, item.niche, qty)) continue;
@@ -563,7 +583,7 @@ export type InventorySheetRow = {
 export async function inventorySheet(locationId: string): Promise<InventorySheetRow[]> {
   const db = getDb();
   const [catalog, rows, lots] = await Promise.all([
-    catalogItems(true),
+    catalogItems(false),
     db.stock.where("locationId").equals(locationId).toArray(),
     db.lots.toArray(),
   ]);
@@ -572,6 +592,8 @@ export async function inventorySheet(locationId: string): Promise<InventorySheet
 
   for (const item of catalog) {
     const here = rows.filter((row) => row.nicheId === item.niche.id && row.qty > 0);
+    const live = productIsLive(item.product) && item.niche.active;
+    if (!live && here.length === 0) continue;
     if (item.product.perishable && here.length > 0) {
       for (const row of here) {
         const lot = lotById.get(row.lotId);

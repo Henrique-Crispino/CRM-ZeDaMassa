@@ -28,7 +28,7 @@ import { expiryAlertsFor, sellableQty, stockByLocation } from "@/lib/queries";
 import { getLocationId } from "@/lib/session";
 import { checkout, StockError } from "@/lib/stock";
 import type { Category, PaymentMethod, SaleChannel } from "@/lib/types";
-import { PAYMENT_METHODS, paymentMethodLabel, promoIsLive, promoStatus } from "@/lib/types";
+import { PAYMENT_METHODS, paymentMethodLabel, productIsLive, promoIsLive, promoStatus } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 const channels: { id: SaleChannel; label: string }[] = [
@@ -73,7 +73,7 @@ export default function VenderPage() {
   const catalog = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (stock ?? []).filter((item) => {
-      if (!item.niche.active) return false;
+      if (!productIsLive(item.product) || !item.niche.active) return false;
       if (kind !== "todos" && item.product.category !== kind) return false;
       if (q && !item.label.toLowerCase().includes(q)) return false;
       return true;

@@ -23,6 +23,7 @@ import {
 import { getPanel } from "@/lib/locations";
 import { getLocationId } from "@/lib/session";
 import { sellableQty, stockByLocation } from "@/lib/queries";
+import { productIsLive } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 export default function ConsumoInternoPage() {
@@ -84,7 +85,7 @@ export default function ConsumoInternoPage() {
 
   const released = useMemo(() => {
     return (allowances ?? [])
-      .filter((item) => item.allowance.enabled && item.allowance.dailyLimit > 0)
+      .filter((item) => productIsLive(item.product) && item.allowance.enabled && item.allowance.dailyLimit > 0)
       .map((item) => {
         const row = stock?.find((entry) => entry.niche.id === item.niche.id);
         const available = row && placeId ? sellableQty(row, placeId) : 0;

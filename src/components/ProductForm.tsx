@@ -2,11 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useLiveQuery } from "dexie-react-hooks";
 import { CATEGORIES, defaultPerishable, defaultShelfLife, isPurchased } from "@/lib/categories";
 import { getDb } from "@/lib/db";
 import { newId } from "@/lib/money";
-import type { Category, Niche, Product } from "@/lib/types";
+import { productStockQty, stockByLocation } from "@/lib/queries";
+import { productIsLive, type Category, type Niche, type Product } from "@/lib/types";
 import { BackLink } from "./BackLink";
+import { ProductCloseControls } from "./ProductCloseControls";
 import { Button, Card, ErrorBox, Field, Input, NumberStepper } from "./ui";
 
 type NicheDraft = {
@@ -50,6 +53,9 @@ export function ProductForm({
   );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const stock = useLiveQuery(() => (product ? stockByLocation() : []), [product?.id]);
+  const closed = Boolean(product && !productIsLive(product));
+  const leftover = product ? productStockQty(stock ?? [], product.id) : 0;
 
   function updateType(index: number, patch: Partial<NicheDraft>) {
     setTypes((current) => current.map((item, i) => (i === index ? { ...item, ...patch } : item)));
@@ -100,6 +106,7 @@ export function ProductForm({
           perishable,
           shelfLifeDays: perishable ? Math.max(1, shelfLifeDays) : 0,
           createdAt: product?.createdAt ?? now,
+          active: product ? productIsLive(product) : true,
         });
 
         for (const item of parsed) {
@@ -131,6 +138,25 @@ export function ProductForm({
 
   return (
     <div className="space-y-5">
+      {product ? (
+        <Card className="space-y-3">
+          {closed ? (
+            <div>
+              <p className="text-lg font-extrabold text-stone-900">Este produto está fechado</p>
+              <p className="mt-1 text-base text-stone-600">
+                Não aparece na venda, na produção, no pedido nem no envio. Histórico e estoque
+                continuam. O que ainda tem sai no inventário ou no descarte.
+              </p>
+            </div>
+          ) : (
+            <p className="text-base text-stone-600">
+              Fechar some do catálogo vivo. Não apaga lote, venda nem extrato.
+            </p>
+          )}
+          <ProductCloseControls product={product} stockQty={leftover} />
+        </Card>
+      ) : null}
+
       <Card className="space-y-5">
         <Field label="Nome do produto" hint="O nome que todo mundo já conhece.">
           <Input

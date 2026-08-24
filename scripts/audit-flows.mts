@@ -65,6 +65,7 @@ async function main() {
   const { createStoreRequest, fulfillRequest, listRequests } = await import("../src/lib/requests.ts");
   const { registerInternalConsume } = await import("../src/lib/consume.ts");
   const { reportDayPack, reportWindow } = await import("../src/lib/reports.ts");
+  const { catalogItems, inventorySheet, setProductActive } = await import("../src/lib/queries.ts");
   const db = getDb();
   const today = todayDate();
 
@@ -520,6 +521,64 @@ async function main() {
       lines: [{ nicheId: "cox-mini", countedQty: Math.max(0, qty - 1), reason: "contagem" }],
     });
   });
+
+  await expectOk("Fechar suco", () => setProductActive("prod-suco", false));
+  const liveClosed = await catalogItems(true);
+  record(
+    "Suco fechado some do catálogo vivo",
+    !liveClosed.some((item) => item.product.id === "prod-suco"),
+    liveClosed.map((item) => item.product.id).join(","),
+  );
+  const historyClosed = await catalogItems(false);
+  record(
+    "Suco fechado continua no histórico",
+    historyClosed.some((item) => item.product.id === "prod-suco"),
+    "",
+  );
+  await expectFail(
+    "Compra de suco fechado é recusada",
+    () =>
+      receivePurchase({
+        receivedAt: today,
+        items: [{ nicheId: "suco-1l", qty: 2, unitCost: 4, expiresAt: addDays(today, 7) }],
+      }),
+    "fechado",
+  );
+  await expectFail(
+    "Envio de suco fechado é recusado",
+    () => sendToStore({ toLocationId: "store_1", items: [{ nicheId: "suco-1l", qty: 1 }], sentBy: "Rita" }),
+    "fechado",
+  );
+  await expectFail(
+    "Pedido de suco fechado é recusado",
+    () => createStoreRequest({ fromLocationId: "store_1", items: [{ nicheId: "suco-1l", qty: 1 }] }),
+    "fechado",
+  );
+
+  await expectOk("Fechar coxinha com saldo", () => setProductActive("prod-coxinha", false));
+  const factorySheet = await inventorySheet("factory");
+  record(
+    "Inventário ainda vê coxinha fechada com saldo",
+    factorySheet.some((row) => row.nicheId === "cox-mini"),
+    factorySheet.map((row) => row.nicheId).join(","),
+  );
+  await expectFail(
+    "Produzir coxinha fechada é recusada",
+    () => produceItems({ madeAt: today, items: [{ nicheId: "cox-mini", qty: 10 }] }),
+    "fechado",
+  );
+  await expectFail(
+    "Venda de coxinha fechada é recusada",
+    () => checkout({ locationId: "store_1", channel: "caixa", payment: "dinheiro", items: [{ nicheId: "cox-mini", qty: 1 }] }),
+    "fechado",
+  );
+  await expectOk("Reativar coxinha", () => setProductActive("prod-coxinha", true));
+  const liveOpen = await catalogItems(true);
+  record(
+    "Coxinha reativada volta ao catálogo vivo",
+    liveOpen.some((item) => item.product.id === "prod-coxinha"),
+    "",
+  );
 
   await expectOk("Pacote do dia gera folha", async () => {
     const pack = await reportDayPack(reportWindow("today"), "store_1");

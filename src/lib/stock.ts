@@ -10,7 +10,9 @@ import {
   PAYMENT_METHODS,
   RETURN_REASONS,
   SALE_VOID_REASONS,
+  closedCatalogMessage,
   lotCost,
+  productIsLive,
   promoIsLive,
   promoStatus,
   transferKind,
@@ -18,6 +20,18 @@ import {
 } from "./types";
 
 export { StockError, stockQty } from "./stock-core";
+
+export async function assertLiveNiches(nicheIds: string[]) {
+  const db = getDb();
+  const unique = [...new Set(nicheIds)];
+  const niches = await db.niches.bulkGet(unique);
+  const products = await db.products.bulkGet(niches.map((niche) => niche?.productId ?? ""));
+  for (const product of products) {
+    if (product && !productIsLive(product)) {
+      throw new StockError(closedCatalogMessage(product.name));
+    }
+  }
+}
 
 export async function produceItems(input: {
   items: { nicheId: string; qty: number }[];
@@ -27,6 +41,8 @@ export async function produceItems(input: {
   if (items.length === 0) {
     throw new StockError("Informe a quantidade que foi produzida.");
   }
+
+  await assertLiveNiches(items.map((item) => item.nicheId));
 
   const db = getDb();
   const refId = newId();
@@ -77,6 +93,8 @@ export async function receivePurchase(input: {
   if (items.length === 0) {
     throw new StockError("Informe o que chegou da compra.");
   }
+
+  await assertLiveNiches(items.map((item) => item.nicheId));
 
   const db = getDb();
   const refId = newId();
@@ -140,6 +158,8 @@ export async function sendToStore(input: {
   if (items.length === 0) {
     throw new StockError("Escolha pelo menos um produto para mandar.");
   }
+
+  await assertLiveNiches(items.map((item) => item.nicheId));
 
   const db = getDb();
   const transferId = newId();
@@ -491,6 +511,8 @@ export async function checkout(input: {
   if (items.length === 0) {
     throw new StockError("Coloque pelo menos um item na venda.");
   }
+
+  await assertLiveNiches(items.map((item) => item.nicheId));
 
   const session = await currentCashSession(input.locationId);
   if (!session) {

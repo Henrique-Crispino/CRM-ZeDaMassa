@@ -8,6 +8,7 @@ import { ProductForm } from "@/components/ProductForm";
 import { BackLink } from "@/components/BackLink";
 import { Empty, PageTitle } from "@/components/ui";
 import { getDb } from "@/lib/db";
+import { productIsLive } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 export default function EditarProdutoPage() {
@@ -27,7 +28,14 @@ export default function EditarProdutoPage() {
       hint="A loja não altera cadastro. Isso fica com a administração e a fábrica."
     >
     <AppShell>
-      <PageTitle title="Editar produto" hint="Mude o nome, os preços, a validade ou acrescente um tipo novo." />
+      <PageTitle
+        title="Editar produto"
+        hint={
+          product && !productIsLive(product)
+            ? "Produto fechado: some da venda. Ainda dá para mudar cadastro e reativar."
+            : "Mude o nome, os preços, a validade ou acrescente um tipo novo. Dá para fechar o produto sem apagar o histórico."
+        }
+      />
       {product ? (
         <ProductForm product={product} niches={niches ?? []} />
       ) : (

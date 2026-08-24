@@ -15,7 +15,7 @@ import {
   savePerson,
 } from "./people";
 import type { ConsumeUser, InternalAllowance } from "./types";
-import { lotCost } from "./types";
+import { closedCatalogMessage, lotCost, productIsLive } from "./types";
 
 export class ConsumeError extends Error {}
 
@@ -209,6 +209,13 @@ export async function registerInternalConsume(input: {
   if (items.length === 0) throw new ConsumeError("Escolha o que vai ser consumido.");
 
   const db = getDb();
+  const niches = await db.niches.bulkGet(items.map((item) => item.nicheId));
+  const products = await db.products.bulkGet(niches.map((niche) => niche?.productId ?? ""));
+  for (const product of products) {
+    if (product && !productIsLive(product)) {
+      throw new ConsumeError(closedCatalogMessage(product.name));
+    }
+  }
   const dayKey = todayDate();
   const refId = newId();
   const at = new Date().toISOString();
