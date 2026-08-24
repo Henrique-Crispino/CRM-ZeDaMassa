@@ -1,6 +1,7 @@
 import { getDb } from "./db";
 import { LOCATIONS, storeLocations, getLocation, type Location } from "./locations";
 import { daysUntil, formatDate, periodRange, todayDate, type Period } from "./money";
+import { fifoLotOrder } from "./stock-core";
 import { factoryMin, isLowAt, storeMin } from "./stock-min";
 import type { MovementType, Niche, Product, ReturnReason, Sale, SaleItem, TransferKind, TransferStatus, Waste } from "./types";
 import {
@@ -30,6 +31,7 @@ export type StockView = CatalogItem & {
   qty: Record<string, number>;
   expiredQty: Record<string, number>;
   shelfPrice: Record<string, number>;
+  shelfLots: Record<string, { qty: number; unitPrice: number }[]>;
 };
 
 export function sellableQty(item: Pick<StockView, "qty" | "expiredQty">, locationId: string) {
@@ -172,7 +174,7 @@ export async function stockByLocation(): Promise<StockView[]> {
   const today = todayDate();
   const qty = new Map<string, number>();
   const expired = new Map<string, number>();
-  const fifo = new Map<string, { sortKey: string; price: number }>();
+  const shelf = new Map<string, { madeAt: string; expiresAt?: string; qty: number; unitPrice: number }[]>();
   const nichePrice = new Map(items.map((item) => [item.niche.id, item.niche.sellPrice]));
 
   for (const row of rows) {
@@ -184,34 +186,49 @@ export async function stockByLocation(): Promise<StockView[]> {
       continue;
     }
     if (row.qty <= 0) continue;
-    const sortKey = `${lot?.expiresAt ?? "9999-12-31"}|${lot?.madeAt ?? "9999-12-31"}|${lot?.id ?? ""}`;
-    const prev = fifo.get(key);
-    if (!prev || sortKey < prev.sortKey) {
-      fifo.set(key, { sortKey, price: lotPrice(lot, nichePrice.get(row.nicheId) ?? 0) });
-    }
+    const list = shelf.get(key) ?? [];
+    list.push({
+      madeAt: lot?.madeAt ?? "9999-12-31",
+      expiresAt: lot?.expiresAt,
+      qty: row.qty,
+      unitPrice: lotPrice(lot, nichePrice.get(row.nicheId) ?? 0),
+    });
+    shelf.set(key, list);
   }
 
-  return items.map((item) => ({
-    ...item,
-    qty: Object.fromEntries(
-      LOCATIONS.map((location) => [
-        location.id,
-        qty.get(`${location.id}:${item.niche.id}`) ?? 0,
-      ]),
-    ) as Record<string, number>,
-    expiredQty: Object.fromEntries(
-      LOCATIONS.map((location) => [
-        location.id,
-        expired.get(`${location.id}:${item.niche.id}`) ?? 0,
-      ]),
-    ) as Record<string, number>,
-    shelfPrice: Object.fromEntries(
-      LOCATIONS.map((location) => [
-        location.id,
-        fifo.get(`${location.id}:${item.niche.id}`)?.price ?? item.niche.sellPrice,
-      ]),
-    ) as Record<string, number>,
-  }));
+  return items.map((item) => {
+    const shelfLots = Object.fromEntries(
+      LOCATIONS.map((location) => {
+        const list = (shelf.get(`${location.id}:${item.niche.id}`) ?? [])
+          .slice()
+          .sort(fifoLotOrder)
+          .map((lot) => ({ qty: lot.qty, unitPrice: lot.unitPrice }));
+        return [location.id, list];
+      }),
+    ) as Record<string, { qty: number; unitPrice: number }[]>;
+    return {
+      ...item,
+      qty: Object.fromEntries(
+        LOCATIONS.map((location) => [
+          location.id,
+          qty.get(`${location.id}:${item.niche.id}`) ?? 0,
+        ]),
+      ) as Record<string, number>,
+      expiredQty: Object.fromEntries(
+        LOCATIONS.map((location) => [
+          location.id,
+          expired.get(`${location.id}:${item.niche.id}`) ?? 0,
+        ]),
+      ) as Record<string, number>,
+      shelfLots,
+      shelfPrice: Object.fromEntries(
+        LOCATIONS.map((location) => [
+          location.id,
+          shelfLots[location.id]?.[0]?.unitPrice ?? item.niche.sellPrice,
+        ]),
+      ) as Record<string, number>,
+    };
+  });
 }
 
 export async function stockAlerts(scope: "all" | "factory" | string = "all") {

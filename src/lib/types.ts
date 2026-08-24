@@ -243,6 +243,47 @@ export function lotPrice(lot?: Pick<Lot, "unitPrice"> | null, nichePrice = 0) {
   return lot?.unitPrice ?? nichePrice;
 }
 
+export type FifoPriceChunk = { qty: number; unitPrice: number };
+
+export function saleLotPrice(
+  lot: Pick<Lot, "unitPrice"> | null | undefined,
+  nichePrice: number,
+  promoPrice: number,
+  usePromo: boolean,
+) {
+  return usePromo ? promoPrice : lotPrice(lot, nichePrice);
+}
+
+export function fifoSaleTotal(chunks: FifoPriceChunk[]) {
+  return chunks.reduce((sum, chunk) => sum + chunk.qty * chunk.unitPrice, 0);
+}
+
+export function takeFifoChunks(lots: FifoPriceChunk[], qty: number): FifoPriceChunk[] {
+  let left = qty;
+  const taken: FifoPriceChunk[] = [];
+  for (const lot of lots) {
+    if (left <= 0) break;
+    const take = Math.min(lot.qty, left);
+    if (take > 0) taken.push({ qty: take, unitPrice: lot.unitPrice });
+    left -= take;
+  }
+  return taken;
+}
+
+export function quoteFifoQty(
+  lots: FifoPriceChunk[],
+  qty: number,
+  usePromo: boolean,
+  promoPrice: number,
+  fallbackPrice: number,
+) {
+  if (qty <= 0) return 0;
+  if (usePromo) return qty * promoPrice;
+  const taken = takeFifoChunks(lots, qty);
+  const used = taken.reduce((sum, chunk) => sum + chunk.qty, 0);
+  return fifoSaleTotal(taken) + Math.max(0, qty - used) * fallbackPrice;
+}
+
 export type StockRow = {
   id: string;
   locationId: string;

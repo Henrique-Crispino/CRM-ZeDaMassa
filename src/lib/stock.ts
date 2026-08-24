@@ -14,6 +14,8 @@ import {
   closedCatalogMessage,
   lotCost,
   lotPrice,
+  fifoSaleTotal,
+  saleLotPrice,
   needsInventoryRecount,
   productIsLive,
   promoIsLive,
@@ -577,12 +579,14 @@ export async function checkout(input: {
           );
         }
         const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, { skipExpired: true });
+        const priced: { qty: number; unitPrice: number }[] = [];
         for (const chunk of chunks) {
           const lot = await db.lots.get(chunk.lotId);
           if (usePromo && niche.promoOnlyExpiringToday && (!lot?.expiresAt || daysUntil(lot.expiresAt) !== 0)) {
             throw new StockError(`${niche.name}: esta promoção só vale para o que vence hoje.`);
           }
-          const unitPrice = usePromo ? niche.promoPrice : lotPrice(lot, niche.sellPrice);
+          const unitPrice = saleLotPrice(lot, niche.sellPrice, niche.promoPrice, usePromo);
+          priced.push({ qty: chunk.qty, unitPrice });
           await changeStock(input.locationId, item.nicheId, chunk.lotId, -chunk.qty);
           await db.saleItems.add({
             id: newId(),
@@ -604,8 +608,8 @@ export async function checkout(input: {
             refId: saleId,
             at,
           });
-          total += chunk.qty * unitPrice;
         }
+        total += fifoSaleTotal(priced);
       }
 
       for (const line of comboLines) {

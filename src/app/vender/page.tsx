@@ -26,6 +26,7 @@ import { getPanel } from "@/lib/locations";
 import { formatBRL, parseMoney } from "@/lib/money";
 import { comboMissingLabel, comboPacksAvailable, listLiveCombos } from "@/lib/combos";
 import { expiryAlertsFor, sellableQty, shelfPriceOf, stockByLocation } from "@/lib/queries";
+import { quoteFifoQty } from "@/lib/types";
 import { getLocationId } from "@/lib/session";
 import { checkout, StockError } from "@/lib/stock";
 import type { Category, PaymentMethod, SaleChannel } from "@/lib/types";
@@ -96,13 +97,17 @@ export default function VenderPage() {
           const item = (stock ?? []).find((row) => row.niche.id === nicheId);
           if (!item) return null;
           const usePromo = Boolean(promo[nicheId] && promoIsLive(item.niche));
-          const unitPrice = usePromo ? item.niche.promoPrice : locationId ? shelfPriceOf(item, locationId) : item.niche.sellPrice;
+          const lots = locationId ? item.shelfLots[locationId] ?? [] : [];
+          const fallback = locationId ? shelfPriceOf(item, locationId) : item.niche.sellPrice;
+          const lineTotal = quoteFifoQty(lots, cartQty, usePromo, item.niche.promoPrice, fallback);
+          const unitPrice = cartQty > 0 ? lineTotal / cartQty : fallback;
           return {
             ...item,
             cartQty,
             available: locationId ? sellableQty(item, locationId) : 0,
             usePromo,
             unitPrice,
+            lineTotal,
           };
         })
         .filter((item): item is NonNullable<typeof item> => item !== null),
@@ -133,7 +138,7 @@ export default function VenderPage() {
     .map((combo) => ({ ...combo, cartQty: comboCart[combo.id] ?? 0 }));
 
   const total =
-    cartItems.reduce((sum, item) => sum + item.cartQty * item.unitPrice, 0) +
+    cartItems.reduce((sum, item) => sum + item.lineTotal, 0) +
     comboCartItems.reduce((sum, item) => sum + item.cartQty * item.price, 0);
   const paymentLines = split
     ? PAYMENT_METHODS.map((item) => ({ method: item.id, amount: parseMoney(splitAmounts[item.id]) })).filter(
@@ -386,7 +391,7 @@ export default function VenderPage() {
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <p className="font-bold">{item.label}</p>
-                    <p className="text-sm text-stone-500">{formatBRL(item.unitPrice)}</p>
+                    <p className="text-sm text-stone-500">{formatBRL(item.lineTotal)}</p>
                   </div>
                   <NumberStepper
                     value={item.cartQty}

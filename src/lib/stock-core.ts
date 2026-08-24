@@ -3,6 +3,15 @@ import { todayDate } from "./money";
 
 export class StockError extends Error {}
 
+export function fifoLotOrder(
+  a: { madeAt: string; expiresAt?: string },
+  b: { madeAt: string; expiresAt?: string },
+) {
+  return (
+    (a.expiresAt ?? "9999-12-31").localeCompare(b.expiresAt ?? "9999-12-31") || a.madeAt.localeCompare(b.madeAt)
+  );
+}
+
 export function stockKey(locationId: string, nicheId: string, lotId: string) {
   return `${locationId}:${nicheId}:${lotId}`;
 }
@@ -49,11 +58,7 @@ export async function oldestLots(
       if (!options?.skipExpired || !item.expiresAt) return true;
       return item.expiresAt >= today;
     })
-    .sort(
-      (a, b) =>
-        (a.expiresAt ?? "9999-12-31").localeCompare(b.expiresAt ?? "9999-12-31") ||
-        a.madeAt.localeCompare(b.madeAt),
-    );
+    .sort(fifoLotOrder);
 
   let missing = qty;
   const taken: { lotId: string; qty: number }[] = [];
