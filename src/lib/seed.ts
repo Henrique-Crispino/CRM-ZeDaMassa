@@ -442,7 +442,13 @@ export async function loadDemoData() {
       const plan = PLAN[nicheId];
       if (!plan) continue;
       const lotId = `lot-${nicheId}-${madeAt}`;
-      lots.push({ id: lotId, nicheId, madeAt, expiresAt: lotExpiry(nicheId, madeAt) });
+      lots.push({
+        id: lotId,
+        nicheId,
+        madeAt,
+        expiresAt: lotExpiry(nicheId, madeAt),
+        unitCost: NICHE_BY_ID.get(nicheId)?.costPrice,
+      });
       addStock("factory", nicheId, lotId, plan.produce);
       movements.push({
         id: newId(),
@@ -601,6 +607,7 @@ export async function loadDemoData() {
             locationId: storeId,
             nicheId: "pas-local",
             lotId: chunk.lotId,
+            unitCost: NICHE_BY_ID.get("pas-local")?.costPrice,
             qty: chunk.qty,
             at: consumeAt,
             dayKey: madeAt,
@@ -666,6 +673,7 @@ export async function loadDemoData() {
     nicheId: "cox-mini",
     madeAt: expiredMade,
     expiresAt: addDays(expiredMade, 2),
+    unitCost: NICHE_BY_ID.get("cox-mini")?.costPrice,
   });
   addStock("store_1", "cox-mini", "lot-expired-cox", 12);
 

@@ -14,7 +14,7 @@ import { cashDifferenceLabel, cashPeriodLabel, sessionLedger } from "./cash";
 import { catalogItems, listProductionLogs, stockByLocation } from "./queries";
 import { factoryMin, storeMin } from "./stock-min";
 import type { Niche } from "./types";
-import { isLiveSale } from "./types";
+import { isLiveSale, lotCost } from "./types";
 
 export type StoreScope = "all" | string;
 
@@ -166,9 +166,10 @@ export async function reportClosing(window: ReportWindow, scope: StoreScope): Pr
   const wasteCost = leftoverCost + expiredCost;
   const wasteRevenue = leftoverRevenue + expiredRevenue;
   const consumeQty = consumptions.reduce((sum, row) => sum + row.qty, 0);
-  const consumeCost = consumptions.reduce((sum, row) => {
+  const lots = await db.lots.bulkGet(consumptions.map((row) => row.lotId));
+  const consumeCost = consumptions.reduce((sum, row, index) => {
     const niche = nicheById.get(row.nicheId)?.niche;
-    return sum + row.qty * (niche?.costPrice ?? 0);
+    return sum + row.qty * (row.unitCost ?? lotCost(lots[index], niche?.costPrice ?? 0));
   }, 0);
 
   const pay = { dinheiro: 0, pix: 0, cartao: 0 };
@@ -420,7 +421,7 @@ export async function reportTransfers(window: ReportWindow, scope: StoreScope): 
     for (const part of parts) {
       const found = catalog.find((item) => item.niche.id === part.nicheId);
       const lot = lotById.get(part.lotId);
-      const cost = part.qty * (found?.niche.costPrice ?? 0);
+      const cost = part.qty * lotCost(lot, found?.niche.costPrice ?? 0);
       totalQty += part.qty;
       totalCost += cost;
       rows.push([
@@ -448,7 +449,9 @@ export async function reportTransfers(window: ReportWindow, scope: StoreScope): 
 }
 
 export async function reportStock(scope: StoreScope): Promise<ReportTable> {
-  const stock = await stockByLocation();
+  const db = getDb();
+  const [stock, stockRows, lots] = await Promise.all([stockByLocation(), db.stock.toArray(), db.lots.toArray()]);
+  const lotById = new Map(lots.map((lot) => [lot.id, lot]));
   const locations =
     scope === "all"
       ? [{ id: "factory", name: "Fábrica", type: "factory" as const }, ...storeLocations()]
@@ -471,13 +474,25 @@ export async function reportStock(scope: StoreScope): Promise<ReportTable> {
       const min = location.id === "factory" ? factoryMin(item.niche) : storeMin(item.niche);
       const low = valid <= min;
       const status = expiredQty > 0 ? "Tem vencido" : low ? "Abaixo do mínimo" : "Ok";
-      const cost = item.niche.costPrice;
+      const here = stockRows.filter(
+        (row) => row.locationId === location.id && row.nicheId === item.niche.id && row.qty > 0,
+      );
+      const stockValue = here.reduce(
+        (sum, row) => sum + row.qty * lotCost(lotById.get(row.lotId), item.niche.costPrice),
+        0,
+      );
+      const expiredValueHere = here.reduce((sum, row) => {
+        const lot = lotById.get(row.lotId);
+        if (!lot?.expiresAt || lot.expiresAt >= todayDate()) return sum;
+        return sum + row.qty * lotCost(lot, item.niche.costPrice);
+      }, 0);
+      const cost = qty ? stockValue / qty : item.niche.costPrice;
       const price = item.niche.sellPrice;
       units += qty;
       sellable += valid;
       expired += expiredQty;
-      value += qty * cost;
-      expiredValue += expiredQty * cost;
+      value += stockValue;
+      expiredValue += expiredValueHere;
       sellValue += valid * price;
       rows.push([
         location.name,
@@ -520,6 +535,7 @@ export async function reportStock(scope: StoreScope): Promise<ReportTable> {
     notes: [
       `Valor de estoque (custo) ${money(value)} · disso ${money(expiredValue)} está vencido.`,
       `Se vender o que ainda vale: ${money(sellValue)}. Lote vencido não entra nessa conta.`,
+      "Custo un. é o do lote (média se houver mais de um). Mudar o custo do tipo só vale para o próximo lote.",
       "Mínimo é o ponto de reposição. Abaixo dele a loja precisa pedir e a fábrica precisa produzir.",
     ],
   };
@@ -559,8 +575,9 @@ export async function reportProduction(window: ReportWindow): Promise<ReportTabl
 export async function reportInternal(window: ReportWindow, scope: StoreScope): Promise<ReportTable> {
   const db = getDb();
   const catalog = await catalogItems(false);
-  const users = await db.consumeUsers.toArray();
+  const [users, allLots] = await Promise.all([db.consumeUsers.toArray(), db.lots.toArray()]);
   const userById = new Map(users.map((user) => [user.id, user]));
+  const lotById = new Map(allLots.map((lot) => [lot.id, lot]));
   const rows = filterStore(
     await db.consumptions.where("at").between(window.from, window.to, true, true).toArray(),
     scope,
@@ -570,7 +587,7 @@ export async function reportInternal(window: ReportWindow, scope: StoreScope): P
   let cost = 0;
   const table = rows.map((row) => {
     const found = catalog.find((item) => item.niche.id === row.nicheId);
-    const unitCost = found?.niche.costPrice ?? 0;
+    const unitCost = row.unitCost ?? lotCost(lotById.get(row.lotId), found?.niche.costPrice ?? 0);
     const origin = row.userId && userById.get(row.userId)?.locationId === "factory" ? "Fábrica" : "Loja";
     qty += row.qty;
     cost += row.qty * unitCost;

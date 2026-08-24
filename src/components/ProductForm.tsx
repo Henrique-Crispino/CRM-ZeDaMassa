@@ -202,7 +202,7 @@ export function ProductForm({
                     placeholder="1,50"
                   />
                 </Field>
-                <Field label="Custo" hint="Quanto custa para fazer. Se não souber, deixe 0.">
+                <Field label="Custo" hint="Quanto custa para fazer. Vale para o próximo lote. O que já foi feito fica com o custo antigo.">
                   <Input
                     inputMode="decimal"
                     value={item.costPrice}

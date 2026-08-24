@@ -4,6 +4,7 @@ import { FACTORY_LOCATION, getLocation, isStore, storeLocations } from "./locati
 import { newId, todayDate } from "./money";
 import { oldestLots, changeStock } from "./stock-core";
 import type { ConsumeUser, InternalAllowance } from "./types";
+import { lotCost } from "./types";
 
 export class ConsumeError extends Error {}
 
@@ -201,6 +202,8 @@ export async function registerInternalConsume(input: {
         }
         const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, { skipExpired: true });
         for (const chunk of chunks) {
+          const lot = await db.lots.get(chunk.lotId);
+          const niche = await db.niches.get(item.nicheId);
           await changeStock(input.locationId, item.nicheId, chunk.lotId, -chunk.qty);
           await db.consumptions.add({
             id: newId(),
@@ -212,6 +215,7 @@ export async function registerInternalConsume(input: {
             dayKey,
             userId: user.id,
             userName: user.name,
+            unitCost: lotCost(lot, niche?.costPrice ?? 0),
           });
           await db.movements.add({
             id: newId(),

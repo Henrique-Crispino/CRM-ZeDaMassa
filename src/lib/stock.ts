@@ -4,7 +4,7 @@ import { isStore } from "./locations";
 import { addDays, newId, todayDate } from "./money";
 import { changeStock, oldestLots, StockError, stockQty } from "./stock-core";
 import type { PaymentMethod, SaleChannel, SaleVoidReason } from "./types";
-import { SALE_VOID_REASONS } from "./types";
+import { SALE_VOID_REASONS, lotCost } from "./types";
 
 export { StockError, stockQty } from "./stock-core";
 
@@ -36,6 +36,7 @@ export async function produceItems(input: {
         nicheId: item.nicheId,
         madeAt: input.madeAt,
         expiresAt,
+        unitCost: niches[index]?.costPrice ?? 0,
       });
       await changeStock("factory", item.nicheId, lotId, item.qty);
       await db.movements.add({
@@ -163,6 +164,7 @@ export async function checkout(input: {
         const unitPrice = usePromo ? niche.promoPrice : niche.sellPrice;
         const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, { skipExpired: true });
         for (const chunk of chunks) {
+          const lot = await db.lots.get(chunk.lotId);
           await changeStock(input.locationId, item.nicheId, chunk.lotId, -chunk.qty);
           await db.saleItems.add({
             id: newId(),
@@ -171,7 +173,7 @@ export async function checkout(input: {
             lotId: chunk.lotId,
             qty: chunk.qty,
             unitPrice,
-            unitCost: niche.costPrice,
+            unitCost: lotCost(lot, niche.costPrice),
             promo: usePromo,
           });
           await db.movements.add({
@@ -285,6 +287,7 @@ export async function registerWaste(input: {
           "Sobra é o que foi frito e não vendeu. Lote vencido não entra aqui. Descarte no estoque.",
       });
       for (const chunk of chunks) {
+        const lot = await db.lots.get(chunk.lotId);
         await changeStock(input.locationId, item.nicheId, chunk.lotId, -chunk.qty);
         await db.wastes.add({
           id: newId(),
@@ -294,7 +297,7 @@ export async function registerWaste(input: {
           qty: chunk.qty,
           reason: "sobra_frito",
           at,
-          unitCost: niche?.costPrice ?? 0,
+          unitCost: lotCost(lot, niche?.costPrice ?? 0),
           unitPrice: niche?.sellPrice ?? 0,
         });
         await db.movements.add({
@@ -343,7 +346,7 @@ export async function discardExpiredLots(input: {
         qty: item.qty,
         reason: "vencido",
         at,
-        unitCost: niche?.costPrice ?? 0,
+        unitCost: lotCost(lot, niche?.costPrice ?? 0),
         unitPrice: niche?.sellPrice ?? 0,
       });
       await db.movements.add({

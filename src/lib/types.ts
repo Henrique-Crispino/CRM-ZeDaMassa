@@ -47,7 +47,12 @@ export type Lot = {
   nicheId: string;
   madeAt: string;
   expiresAt?: string;
+  unitCost?: number;
 };
+
+export function lotCost(lot?: Pick<Lot, "unitCost"> | null, nicheCost = 0) {
+  return lot?.unitCost ?? nicheCost;
+}
 
 export type StockRow = {
   id: string;
@@ -229,4 +234,5 @@ export type InternalConsumption = {
   dayKey: string;
   userId?: string;
   userName?: string;
+  unitCost?: number;
 };
