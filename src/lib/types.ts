@@ -265,6 +265,16 @@ export type Employee = {
 };
 
 export type CashMovementKind = "sangria" | "suprimento";
+export type CashDestination = "cofre" | "deposito";
+
+export const CASH_DESTINATIONS: { id: CashDestination; label: string; hint: string }[] = [
+  { id: "cofre", label: "Cofre", hint: "Fica na loja, fora da gaveta. No demo é só o rótulo." },
+  { id: "deposito", label: "Depósito", hint: "Sai da loja para o banco." },
+];
+
+export function cashDestinationLabel(destination?: CashDestination) {
+  return CASH_DESTINATIONS.find((item) => item.id === destination)?.label ?? "Sem destino";
+}
 
 export type CashMovement = {
   id: string;
@@ -274,6 +284,7 @@ export type CashMovement = {
   amount: number;
   reason: string;
   at: string;
+  destination?: CashDestination;
 };
 
 export type CashSession = {

@@ -700,6 +700,7 @@ export async function loadDemoData() {
         type: "sangria",
         amount: sangria,
         reason: "Recolhimento ao cofre",
+        destination: "cofre",
         at: session.closedAt,
       });
     }

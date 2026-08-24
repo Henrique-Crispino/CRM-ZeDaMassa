@@ -143,7 +143,7 @@ export default function RelatoriosPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <ReportCard
           title="Conferência de caixa"
-          hint="Fundo, espécie, Pix, cartão, sangria, suprimento, saldo esperado, dinheiro apurado e quebra ou sobra."
+          hint="Fundo, espécie, Pix, cartão, sangria com destino (cofre ou depósito), suprimento, esperado, apurado e quebra ou sobra."
           uses="Período + loja"
           busy={busy}
           id="cash"

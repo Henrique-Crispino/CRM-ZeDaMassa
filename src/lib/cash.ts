@@ -2,8 +2,17 @@ import { getDb } from "./db";
 import { isStore } from "./locations";
 import { newId, todayDate } from "./money";
 import { catalogItems } from "./queries";
-import type { CashMovement, CashMovementKind, CashPeriod, CashSession, Employee, PaymentMethod, Sale } from "./types";
-import { isLiveSale } from "./types";
+import type {
+  CashDestination,
+  CashMovement,
+  CashMovementKind,
+  CashPeriod,
+  CashSession,
+  Employee,
+  PaymentMethod,
+  Sale,
+} from "./types";
+import { CASH_DESTINATIONS, isLiveSale } from "./types";
 
 function localDay(iso: string) {
   const date = new Date(iso);
@@ -121,6 +130,7 @@ export async function registerCashMovement(input: {
   type: CashMovementKind;
   amount: number;
   reason: string;
+  destination?: CashDestination;
 }) {
   const db = getDb();
   const session = await db.cashSessions.get(input.sessionId);
@@ -136,6 +146,10 @@ export async function registerCashMovement(input: {
     );
   }
 
+  if (input.type === "sangria" && !CASH_DESTINATIONS.some((item) => item.id === input.destination)) {
+    throw new CashError("A sangria precisa ir para o cofre ou para o depósito. Não existe sangria sem destino.");
+  }
+
   const ledger = await sessionLedger(session.id);
   if (input.type === "sangria" && amount > ledger.expectedCash + 0.001) {
     throw new CashError("A sangria não pode ser maior que o saldo esperado em espécie na gaveta.");
@@ -149,6 +163,7 @@ export async function registerCashMovement(input: {
     amount,
     reason,
     at: new Date().toISOString(),
+    destination: input.type === "sangria" ? input.destination : undefined,
   };
   await db.cashMovements.add(row);
   return row;

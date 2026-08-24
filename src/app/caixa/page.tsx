@@ -33,7 +33,8 @@ import {
 import { getPanel } from "@/lib/locations";
 import { formatBRL, formatDate, formatTime, parseMoney } from "@/lib/money";
 import { getLocationId } from "@/lib/session";
-import type { CashMovementKind, CashPeriod } from "@/lib/types";
+import type { CashDestination, CashMovementKind, CashPeriod } from "@/lib/types";
+import { CASH_DESTINATIONS, cashDestinationLabel } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 export default function CaixaPage() {
@@ -69,6 +70,7 @@ export default function CaixaPage() {
   const [moveType, setMoveType] = useState<CashMovementKind>("sangria");
   const [moveAmount, setMoveAmount] = useState("");
   const [moveReason, setMoveReason] = useState("");
+  const [moveDestination, setMoveDestination] = useState<CashDestination>("cofre");
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
   const [saving, setSaving] = useState(false);
@@ -120,10 +122,15 @@ export default function CaixaPage() {
         type: moveType,
         amount: parseMoney(moveAmount),
         reason: moveReason,
+        destination: moveType === "sangria" ? moveDestination : undefined,
       });
       setMoveAmount("");
       setMoveReason("");
-      setOk(moveType === "sangria" ? "Sangria lançada. O dinheiro saiu da gaveta." : "Suprimento lançado. O troco entrou na gaveta.");
+      setOk(
+        moveType === "sangria"
+          ? `Sangria lançada para o ${cashDestinationLabel(moveDestination).toLowerCase()}. Saiu da gaveta.`
+          : "Suprimento lançado. O troco entrou na gaveta.",
+      );
     } catch (err) {
       setError(err instanceof CashError ? err.message : "Não deu para lançar este movimento.");
     } finally {
@@ -189,7 +196,7 @@ export default function CaixaPage() {
               <Metric label="Pix" hint="Não fica na gaveta" value={formatBRL(ledger.byPayment.pix)} />
               <Metric label="Cartão" hint="Não fica na gaveta" value={formatBRL(ledger.byPayment.cartao)} />
               <Metric label="Suprimentos" hint="Reforço de troco" value={formatBRL(ledger.supplyTotal)} />
-              <Metric label="Sangrias" hint="Retirada para o cofre" value={formatBRL(ledger.sangriaTotal)} />
+              <Metric label="Sangrias" hint="Retirada com destino: cofre ou depósito" value={formatBRL(ledger.sangriaTotal)} />
               <Metric
                 label="Saldo esperado em espécie"
                 hint="Fundo + dinheiro + suprimento − sangria"
@@ -206,7 +213,7 @@ export default function CaixaPage() {
             <Card className="mb-6 space-y-4">
               <p className="text-lg font-extrabold">Movimento de numerário</p>
               <p className="text-stone-600">
-                Sangria tira o excesso da gaveta para o cofre. Suprimento põe troco do cofre na gaveta.
+                Sangria tira o excesso da gaveta. Tem que dizer para onde foi: cofre da loja ou depósito. Suprimento põe troco na gaveta.
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <Button
@@ -236,14 +243,34 @@ export default function CaixaPage() {
                     placeholder="0,00"
                   />
                 </Field>
-                <Field label="Motivo" hint="Ex.: excesso na gaveta, falta de troco, recolhimento ao cofre.">
+                <Field label="Motivo" hint="Ex.: excesso na gaveta, falta de troco, recolhimento.">
                   <Input
                     value={moveReason}
                     onChange={(event) => setMoveReason(event.target.value)}
-                    placeholder={moveType === "sangria" ? "Recolhimento ao cofre" : "Reforço de troco"}
+                    placeholder={moveType === "sangria" ? "Excesso na gaveta" : "Reforço de troco"}
                   />
                 </Field>
               </div>
+              {moveType === "sangria" ? (
+                <div>
+                  <p className="mb-2 text-base font-bold text-stone-800">Para onde foi</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {CASH_DESTINATIONS.map((item) => (
+                      <Button
+                        key={item.id}
+                        type="button"
+                        variant={moveDestination === item.id ? "secondary" : "ghost"}
+                        onClick={() => setMoveDestination(item.id)}
+                      >
+                        {item.label}
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-sm font-semibold text-stone-500">
+                    {CASH_DESTINATIONS.find((item) => item.id === moveDestination)?.hint}
+                  </p>
+                </div>
+              ) : null}
               <Button disabled={saving} variant={moveType === "sangria" ? "secondary" : "primary"} onClick={saveMovement}>
                 {saving ? "Lançando..." : moveType === "sangria" ? "Lançar sangria" : "Lançar suprimento"}
               </Button>
@@ -254,7 +281,10 @@ export default function CaixaPage() {
                       <span>
                         <span className="font-extrabold">{item.type === "sangria" ? "Sangria" : "Suprimento"}</span>
                         <span className="block text-sm font-semibold text-stone-500">
-                          {formatTime(item.at)} · {item.reason}
+                          {formatTime(item.at)}
+                          {item.type === "sangria" ? ` · ${cashDestinationLabel(item.destination)}` : ""}
+                          {" · "}
+                          {item.reason}
                         </span>
                       </span>
                       <span className="font-extrabold">{formatBRL(item.amount)}</span>
@@ -402,6 +432,18 @@ export default function CaixaPage() {
   );
 }
 
+function sangriaHint(movements: { type: string; amount: number; destination?: CashDestination }[]) {
+  const sangrias = movements.filter((item) => item.type === "sangria");
+  if (sangrias.length === 0) return "";
+  const cofre = sangrias.filter((item) => item.destination === "cofre").reduce((sum, item) => sum + item.amount, 0);
+  const deposito = sangrias.filter((item) => item.destination === "deposito").reduce((sum, item) => sum + item.amount, 0);
+  const parts = [
+    cofre > 0 ? `cofre ${formatBRL(cofre)}` : "",
+    deposito > 0 ? `depósito ${formatBRL(deposito)}` : "",
+  ].filter(Boolean);
+  return parts.length ? ` (${parts.join(" · ")})` : "";
+}
+
 function Metric({
   label,
   hint,
@@ -457,7 +499,12 @@ function HistoryCard({
           <p>Fundo {formatBRL(ledger.openingAmount)}</p>
           <p>Espécie {formatBRL(ledger.byPayment.dinheiro)}</p>
           <p>Pix {formatBRL(ledger.byPayment.pix)} · Cartão {formatBRL(ledger.byPayment.cartao)}</p>
-          <p>Sangria {formatBRL(ledger.sangriaTotal)} · Suprimento {formatBRL(ledger.supplyTotal)}</p>
+          <p>
+            Sangria {formatBRL(ledger.sangriaTotal)}
+            {sangriaHint(ledger.movements)}
+            {" · "}
+            Suprimento {formatBRL(ledger.supplyTotal)}
+          </p>
           <p>Esperado {formatBRL(ledger.expectedCash)}</p>
           <p>{counted != null ? `Apurado ${formatBRL(counted)}` : "Sem contagem"}</p>
         </div>

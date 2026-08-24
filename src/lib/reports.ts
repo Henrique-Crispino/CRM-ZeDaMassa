@@ -14,7 +14,7 @@ import { cashDifferenceLabel, cashPeriodLabel, sessionLedger } from "./cash";
 import { catalogItems, listProductionLogs, stockByLocation } from "./queries";
 import { factoryMin, storeMin } from "./stock-min";
 import type { Niche } from "./types";
-import { adjustmentReasonLabel, isLiveSale, lotCost, receivedQtyOf, transferKind, transferStatus, transferStatusLabel } from "./types";
+import { adjustmentReasonLabel, cashDestinationLabel, isLiveSale, lotCost, receivedQtyOf, transferKind, transferStatus, transferStatusLabel } from "./types";
 
 export type StoreScope = "all" | string;
 
@@ -762,8 +762,32 @@ export async function reportCash(window: ReportWindow, scope: StoreScope): Promi
         : `${sessions.length} movimentos · ${closed.length} encerrados · diferença acumulada ${money(totalDiff)}.`,
       "Saldo esperado em espécie = fundo + vendas em dinheiro + suprimento − sangria. Pix e cartão não entram na gaveta.",
       "Quebra = apurado menor que o esperado. Sobra = apurado maior. Caixa bateu = diferença zero.",
+      ...sangriaNotes(ledgers),
     ],
   };
+}
+
+function sangriaNotes(ledgers: Awaited<ReturnType<typeof sessionLedger>>[]) {
+  const moves = ledgers.flatMap((ledger) =>
+    ledger.movements
+      .filter((item) => item.type === "sangria")
+      .map((item) => ({
+        store: getLocation(ledger.session.locationId)?.name ?? ledger.session.locationId,
+        period: cashPeriodLabel(ledger.session.period),
+        amount: item.amount,
+        destination: cashDestinationLabel(item.destination),
+        reason: item.reason,
+      })),
+  );
+  if (moves.length === 0) return ["Nenhuma sangria neste recorte."];
+  const cofre = moves.filter((item) => item.destination === "Cofre").reduce((sum, item) => sum + item.amount, 0);
+  const deposito = moves.filter((item) => item.destination === "Depósito").reduce((sum, item) => sum + item.amount, 0);
+  return [
+    `Sangria com destino: cofre ${money(cofre)} · depósito ${money(deposito)}. Não existe sangria para lugar nenhum.`,
+    ...moves.slice(0, 12).map(
+      (item) => `${item.store} · ${item.period} · ${money(item.amount)} · ${item.destination} · ${item.reason}`,
+    ),
+  ];
 }
 
 export async function reportInventory(window: ReportWindow, scope: StoreScope): Promise<ReportTable> {
