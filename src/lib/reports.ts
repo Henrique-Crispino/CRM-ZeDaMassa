@@ -11,6 +11,7 @@ import {
   type Period,
 } from "./money";
 import { cashDifferenceLabel, cashPeriodLabel, sessionLedger } from "./cash";
+import { personLocation } from "./people";
 import { catalogItems, listProductionLogs, stockByLocation } from "./queries";
 import { factoryMin, storeMin } from "./stock-min";
 import type { Niche } from "./types";
@@ -642,7 +643,7 @@ export async function reportProduction(window: ReportWindow): Promise<ReportTabl
 export async function reportInternal(window: ReportWindow, scope: StoreScope): Promise<ReportTable> {
   const db = getDb();
   const catalog = await catalogItems(false);
-  const [users, allLots] = await Promise.all([db.consumeUsers.toArray(), db.lots.toArray()]);
+  const [users, allLots] = await Promise.all([db.employees.toArray(), db.lots.toArray()]);
   const userById = new Map(users.map((user) => [user.id, user]));
   const lotById = new Map(allLots.map((lot) => [lot.id, lot]));
   const rows = filterStore(
@@ -655,7 +656,8 @@ export async function reportInternal(window: ReportWindow, scope: StoreScope): P
   const table = rows.map((row) => {
     const found = catalog.find((item) => item.niche.id === row.nicheId);
     const unitCost = row.unitCost ?? lotCost(lotById.get(row.lotId), found?.niche.costPrice ?? 0);
-    const origin = row.userId && userById.get(row.userId)?.locationId === "factory" ? "Fábrica" : "Loja";
+    const person = row.userId ? userById.get(row.userId) : undefined;
+    const origin = person && personLocation(person) === "factory" ? "Fábrica" : "Loja";
     qty += row.qty;
     cost += row.qty * unitCost;
     return [

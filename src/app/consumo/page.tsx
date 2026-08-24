@@ -51,7 +51,7 @@ export default function ConsumoAdminPage() {
       <AppShell>
         <PageTitle
           title="Consumo interno"
-          hint="A fábrica não tem estoque de consumo. Quem é da fábrica retira 1 vez por dia em qualquer loja. Quem é da loja retira só na própria loja."
+          hint="A equipe é uma só — a mesma ficha de Equipe. Aqui você liga o consumo, a senha e os produtos. Editar Ana aqui muda o caixa também."
         />
 
         <div className="mb-6 grid grid-cols-2 gap-2">

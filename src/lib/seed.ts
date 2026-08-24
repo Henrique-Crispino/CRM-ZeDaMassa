@@ -1,5 +1,6 @@
 import { CASH_REOPEN_CODE, CASH_REOPEN_SETTING } from "./cash";
 import { getDb } from "./db";
+import { asConsumeUser, mergePeopleIfNeeded, personCanConsume } from "./people";
 import { DEFAULT_STORES, refreshLocations } from "./locations";
 import { addDays, newId, todayDate } from "./money";
 import { createStoreRequest } from "./requests";
@@ -207,19 +208,14 @@ const PLAN: Record<string, { produce: number; store1: number; store2: number }> 
 };
 
 export const DEFAULT_EMPLOYEES: Employee[] = [
-  { id: "emp-ana", name: "Ana Souza", storeId: "store_1", active: true },
-  { id: "emp-bruno", name: "Bruno Lima", storeId: "store_1", active: true },
-  { id: "emp-carla", name: "Carla Mendes", storeId: "store_2", active: true },
-  { id: "emp-diego", name: "Diego Alves", storeId: "store_2", active: true },
+  { id: "emp-ana", name: "Ana Souza", storeId: "store_1", locationId: "store_1", podeCaixa: true, podeConsumo: true, login: "ana.souza", password: "1234", active: true },
+  { id: "emp-bruno", name: "Bruno Lima", storeId: "store_1", locationId: "store_1", podeCaixa: true, podeConsumo: true, login: "bruno.lima", password: "1234", active: true },
+  { id: "emp-carla", name: "Carla Mendes", storeId: "store_2", locationId: "store_2", podeCaixa: true, podeConsumo: true, login: "carla.mendes", password: "1234", active: true },
+  { id: "emp-diego", name: "Diego Alves", storeId: "store_2", locationId: "store_2", podeCaixa: true, podeConsumo: true, login: "diego.alves", password: "1234", active: true },
+  { id: "emp-rita", name: "Rita Gomes", storeId: "", locationId: "factory", podeCaixa: false, podeConsumo: true, login: "rita.gomes", password: "1234", active: true },
 ];
 
-export const DEFAULT_CONSUME_USERS: ConsumeUser[] = [
-  { id: "cuser-ana", name: "Ana Souza", login: "ana.souza", password: "1234", locationId: "store_1", active: true },
-  { id: "cuser-bruno", name: "Bruno Lima", login: "bruno.lima", password: "1234", locationId: "store_1", active: true },
-  { id: "cuser-carla", name: "Carla Mendes", login: "carla.mendes", password: "1234", locationId: "store_2", active: true },
-  { id: "cuser-diego", name: "Diego Alves", login: "diego.alves", password: "1234", locationId: "store_2", active: true },
-  { id: "cuser-rita", name: "Rita Gomes", login: "rita.gomes", password: "1234", locationId: "factory", active: true },
-];
+export const DEFAULT_CONSUME_USERS: ConsumeUser[] = DEFAULT_EMPLOYEES.filter(personCanConsume).map(asConsumeUser);
 
 const DEFAULT_ALLOWANCES: InternalAllowance[] = [
   { id: "pas-local", nicheId: "pas-local", enabled: true, dailyLimit: 3 },
@@ -265,6 +261,7 @@ export async function ensureDemoData() {
 
 export async function ensureAppDefaults() {
   const db = getDb();
+  await mergePeopleIfNeeded();
   if ((await db.stores.count()) === 0) {
     await db.stores.bulkAdd(DEFAULT_STORES);
   } else {
@@ -283,7 +280,9 @@ export async function ensureAppDefaults() {
     await db.employees.bulkAdd(DEFAULT_EMPLOYEES);
   }
   if ((await db.consumeUsers.count()) === 0) {
-    await db.consumeUsers.bulkAdd(DEFAULT_CONSUME_USERS);
+    const existing = await db.employees.toArray();
+    const mirrors = (existing.length ? existing : DEFAULT_EMPLOYEES).filter(personCanConsume).map(asConsumeUser);
+    if (mirrors.length) await db.consumeUsers.bulkAdd(mirrors);
   }
   if ((await db.internalAllowances.count()) === 0) {
     const niches = await db.niches.bulkGet(DEFAULT_ALLOWANCES.map((item) => item.nicheId));
@@ -618,7 +617,7 @@ export async function loadDemoData() {
         const consumeAt = dayAt(daysAgo, 11, 20).toISOString();
         const qty = Math.min(2, available(storeId, "pas-local"));
         for (const chunk of take(storeId, "pas-local", qty)) {
-          const consumer = storeId === "store_1" ? DEFAULT_CONSUME_USERS[0] : DEFAULT_CONSUME_USERS[2];
+          const consumer = storeId === "store_1" ? DEFAULT_EMPLOYEES[0] : DEFAULT_EMPLOYEES[2];
           consumptions.push({
             id: newId(),
             locationId: storeId,

@@ -15,8 +15,8 @@ const items = [
   },
   {
     href: "/funcionarios",
-    title: "Equipe do caixa",
-    hint: "Quem abre e fecha o caixa da manhã e da tarde.",
+    title: "Equipe",
+    hint: "Uma ficha: quem abre o caixa e quem retira consumo interno.",
     icon: Users,
   },
   {
@@ -28,7 +28,7 @@ const items = [
   {
     href: "/consumo",
     title: "Consumo interno",
-    hint: "Funcionários habilitados, senha pessoal e produtos liberados.",
+    hint: "A equipe é a mesma da ficha. Aqui liberam-se produtos e senha de consumo.",
     icon: Coffee,
   },
 ];

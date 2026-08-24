@@ -298,6 +298,11 @@ export type Employee = {
   id: string;
   name: string;
   storeId: string;
+  locationId?: string;
+  podeCaixa?: boolean;
+  podeConsumo?: boolean;
+  login?: string;
+  password?: string;
   active: boolean;
 };
 

@@ -3,6 +3,16 @@ import { catalogItems } from "./queries";
 import { FACTORY_LOCATION, getLocation, isStore, storeLocations } from "./locations";
 import { newId, todayDate } from "./money";
 import { oldestLots, changeStock } from "./stock-core";
+import {
+  asConsumeUser,
+  deactivatePerson,
+  normalizeLogin,
+  PeopleError,
+  personCanCash,
+  personCanConsume,
+  personLocation,
+  savePerson,
+} from "./people";
 import type { ConsumeUser, InternalAllowance } from "./types";
 import { lotCost } from "./types";
 
@@ -30,19 +40,17 @@ export function consumeWorkplaceLabel(locationId: string) {
   return consumePlaceName(locationId);
 }
 
-function normalizeLogin(value: string) {
-  return value.trim().toLowerCase();
-}
-
 export async function listConsumeUsers(locationId?: string) {
-  const rows = await getDb().consumeUsers.toArray();
+  const rows = await getDb().employees.toArray();
   return rows
     .filter((item) => {
-      if (!item.active) return false;
+      if (!item.active || !personCanConsume(item)) return false;
+      const workplace = personLocation(item);
       if (!locationId) return true;
-      if (item.locationId === locationId) return true;
-      return isStore(locationId) && isFactoryConsumeStaff(item.locationId);
+      if (workplace === locationId) return true;
+      return isStore(locationId) && isFactoryConsumeStaff(workplace);
     })
+    .map(asConsumeUser)
     .sort((a, b) => {
       const factoryRank = Number(isFactoryConsumeStaff(b.locationId)) - Number(isFactoryConsumeStaff(a.locationId));
       if (factoryRank !== 0) return factoryRank;
@@ -57,43 +65,43 @@ export async function saveConsumeUser(input: {
   password: string;
   locationId: string;
 }) {
-  const name = input.name.trim();
-  const login = normalizeLogin(input.login);
-  const password = input.password.trim();
-  if (!name) throw new ConsumeError("Escreva o nome do funcionário.");
-  if (login.length < 3) throw new ConsumeError("A identificação precisa ter pelo menos 3 caracteres.");
-  if (!input.id && password.length < 4) throw new ConsumeError("A senha precisa ter pelo menos 4 caracteres.");
-  if (input.id && password && password.length < 4) {
-    throw new ConsumeError("A senha precisa ter pelo menos 4 caracteres.");
+  try {
+    const current = input.id ? await getDb().employees.get(input.id) : undefined;
+    const person = await savePerson({
+      id: input.id,
+      name: input.name,
+      locationId: input.locationId,
+      podeCaixa: current ? personCanCash(current) && personLocation(current) === input.locationId : isStore(input.locationId),
+      podeConsumo: true,
+      login: input.login,
+      password: input.password,
+    });
+    return asConsumeUser(person);
+  } catch (err) {
+    throw err instanceof PeopleError ? new ConsumeError(err.message) : err;
   }
-  if (input.locationId !== "factory" && !isStore(input.locationId)) {
-    throw new ConsumeError("Escolha a loja ou a fábrica deste funcionário.");
-  }
-
-  const db = getDb();
-  const current = input.id ? await db.consumeUsers.get(input.id) : undefined;
-  const taken = (await db.consumeUsers.toArray()).find(
-    (row) => row.active && normalizeLogin(row.login) === login && row.id !== input.id,
-  );
-  if (taken) throw new ConsumeError("Já existe um funcionário com esta identificação.");
-
-  const record: ConsumeUser = {
-    id: input.id ?? newId(),
-    name,
-    login,
-    password: password || current?.password || "",
-    locationId: input.locationId,
-    active: true,
-  };
-  if (!record.password) throw new ConsumeError("Informe a senha deste funcionário.");
-  await db.consumeUsers.put(record);
-  return record;
 }
 
 export async function removeConsumeUser(id: string) {
-  const user = await getDb().consumeUsers.get(id);
-  if (!user) throw new ConsumeError("Funcionário não encontrado.");
-  await getDb().consumeUsers.update(id, { active: false });
+  const person = await getDb().employees.get(id);
+  if (!person) throw new ConsumeError("Funcionário não encontrado.");
+  try {
+    if (person.podeCaixa) {
+      await savePerson({
+        id: person.id,
+        name: person.name,
+        locationId: personLocation(person),
+        podeCaixa: true,
+        podeConsumo: false,
+        login: person.login,
+        password: person.password,
+      });
+      return;
+    }
+    await deactivatePerson(id);
+  } catch (err) {
+    throw err instanceof PeopleError ? new ConsumeError(err.message) : err;
+  }
 }
 
 export async function authenticateConsumeUser(input: { locationId: string; login: string; password: string }) {
@@ -101,16 +109,19 @@ export async function authenticateConsumeUser(input: { locationId: string; login
   const password = input.password.trim();
   if (!login || !password) throw new ConsumeError("Informe a identificação e a senha.");
 
-  const users = await getDb().consumeUsers.toArray();
-  const user = users.find((row) => row.active && normalizeLogin(row.login) === login);
-  if (!user) throw new ConsumeError("Identificação não encontrada.");
-  const samePlace = user.locationId === input.locationId;
-  const factoryAtStore = isFactoryConsumeStaff(user.locationId) && isStore(input.locationId);
+  const people = await getDb().employees.toArray();
+  const person = people.find(
+    (row) => row.active && personCanConsume(row) && normalizeLogin(row.login ?? "") === login,
+  );
+  if (!person) throw new ConsumeError("Identificação não encontrada.");
+  const workplace = personLocation(person);
+  const samePlace = workplace === input.locationId;
+  const factoryAtStore = isFactoryConsumeStaff(workplace) && isStore(input.locationId);
   if (!samePlace && !factoryAtStore) {
     throw new ConsumeError("Este funcionário não está habilitado neste local.");
   }
-  if (user.password !== password) throw new ConsumeError("Senha incorreta.");
-  return user;
+  if (person.password !== password) throw new ConsumeError("Senha incorreta.");
+  return asConsumeUser(person);
 }
 
 export async function userConsumptionOnDay(userId: string, dayKey = todayDate()) {
@@ -187,7 +198,7 @@ export async function registerInternalConsume(input: {
 
   await db.transaction(
     "rw",
-    [db.stock, db.lots, db.movements, db.consumptions, db.internalAllowances, db.niches, db.consumeUsers],
+    [db.stock, db.lots, db.movements, db.consumptions, db.internalAllowances, db.niches, db.employees, db.consumeUsers],
     async () => {
       for (const item of items) {
         const allowance = await db.internalAllowances.get(item.nicheId);

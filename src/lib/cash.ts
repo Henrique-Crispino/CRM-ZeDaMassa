@@ -2,6 +2,7 @@ import { getDb } from "./db";
 import { isStore } from "./locations";
 import { newId, todayDate } from "./money";
 import { catalogItems } from "./queries";
+import { deactivatePerson, PeopleError, personCanCash, personCanConsume, personLocation, savePerson } from "./people";
 import type {
   CashDestination,
   CashMovement,
@@ -65,29 +66,33 @@ export type CashLedger = {
 export async function listEmployees(storeId?: string) {
   const rows = await getDb().employees.toArray();
   return rows
-    .filter((item) => item.active && (!storeId || item.storeId === storeId))
+    .filter((item) => item.active && personCanCash(item) && (!storeId || personLocation(item) === storeId))
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
 export async function saveEmployee(input: { id?: string; name: string; storeId: string }) {
-  const name = input.name.trim();
-  if (!name) throw new CashError("Escreva o nome do funcionário.");
-  if (!isStore(input.storeId)) throw new CashError("Escolha a loja deste funcionário.");
-
-  const record: Employee = {
-    id: input.id ?? newId(),
-    name,
-    storeId: input.storeId,
-    active: true,
-  };
-  await getDb().employees.put(record);
-  return record;
+  try {
+    const current = input.id ? await getDb().employees.get(input.id) : undefined;
+    return await savePerson({
+      id: input.id,
+      name: input.name,
+      locationId: input.storeId,
+      podeCaixa: true,
+      podeConsumo: current ? personCanConsume(current) : false,
+      login: current?.login,
+      password: current?.password,
+    });
+  } catch (err) {
+    throw err instanceof PeopleError ? new CashError(err.message) : err;
+  }
 }
 
 export async function removeEmployee(id: string) {
-  const employee = await getDb().employees.get(id);
-  if (!employee) throw new CashError("Funcionário não encontrado.");
-  await getDb().employees.update(id, { active: false });
+  try {
+    await deactivatePerson(id);
+  } catch (err) {
+    throw err instanceof PeopleError ? new CashError(err.message) : err;
+  }
 }
 
 export async function openCashSession(input: {
@@ -100,8 +105,8 @@ export async function openCashSession(input: {
   const db = getDb();
   const employee = await db.employees.get(input.employeeId);
   if (!employee || !employee.active) throw new CashError("Escolha o funcionário responsável.");
-  if (employee.storeId !== input.locationId) {
-    throw new CashError("Esse funcionário não é desta loja.");
+  if (!personCanCash(employee) || personLocation(employee) !== input.locationId) {
+    throw new CashError("Esse funcionário não abre o caixa desta loja.");
   }
 
   const open = await currentCashSession(input.locationId);

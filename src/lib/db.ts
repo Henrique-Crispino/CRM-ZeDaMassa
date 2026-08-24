@@ -198,6 +198,41 @@ class AppDB extends Dexie {
       inventoryCounts: "id, locationId, at",
       inventoryLines: "id, countId, nicheId",
     });
+    this.version(8)
+      .stores({
+        ...baseStores,
+        requests: "id, fromLocationId, status, at",
+        requestItems: "id, requestId, nicheId",
+        notifications: "id, audience, at, type",
+        stores: "id, name, active",
+        employees: "id, storeId, locationId, active, name",
+        cashSessions: "id, locationId, period, openedAt, closedAt",
+        internalAllowances: "id, nicheId, enabled",
+        settings: "id",
+        consumptions: "id, locationId, nicheId, at, dayKey",
+        consumeUsers: "id, login, locationId, active",
+        cashMovements: "id, sessionId, locationId, type, at",
+        inventoryCounts: "id, locationId, at",
+        inventoryLines: "id, countId, nicheId",
+      })
+      .upgrade(async (tx) => {
+        const { asConsumeUser, mergeEmployeeRows, personCanConsume } = await import("./people");
+        const employees = await tx.table("employees").toArray();
+        const consumeUsers = await tx.table("consumeUsers").toArray();
+        const { people, consumeIdToPersonId } = mergeEmployeeRows(employees, consumeUsers);
+        await tx.table("employees").clear();
+        if (people.length) await tx.table("employees").bulkPut(people);
+        const mirrors = people.filter((person) => person.active && personCanConsume(person) && person.login).map(asConsumeUser);
+        await tx.table("consumeUsers").clear();
+        if (mirrors.length) await tx.table("consumeUsers").bulkPut(mirrors);
+        const rows = await tx.table("consumptions").toArray();
+        for (const row of rows) {
+          const nextId = row.userId ? consumeIdToPersonId.get(row.userId) : undefined;
+          if (nextId && nextId !== row.userId) {
+            await tx.table("consumptions").put({ ...row, userId: nextId });
+          }
+        }
+      });
   }
 }
 
