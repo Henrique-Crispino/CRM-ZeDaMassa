@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import Link from "next/link";
 import { MapPin, Phone } from "lucide-react";
 import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
@@ -202,6 +203,14 @@ export default function ClientesPage() {
                   ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {customerKind(customer) === "volume" ? (
+                    <Link
+                      href={`/clientes/${customer.id}/pedido`}
+                      className="inline-flex min-h-12 items-center rounded-2xl bg-orange-600 px-4 text-base font-bold text-white hover:bg-orange-700 sm:min-h-14 sm:px-5 sm:text-lg"
+                    >
+                      Separar pedido
+                    </Link>
+                  ) : null}
                   <Button
                     type="button"
                     variant="ghost"

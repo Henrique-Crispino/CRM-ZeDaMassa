@@ -46,7 +46,7 @@ async function notify(input: {
   );
 }
 
-function coverageStatus(items: Pick<RequestItemView, "remaining" | "availableQty" | "sentQty">[]): RequestStatus {
+export function coverageStatus(items: Pick<RequestItemView, "remaining" | "availableQty" | "sentQty">[]): RequestStatus {
   const open = items.filter((item) => item.remaining > 0);
   if (open.length === 0) return "sent";
   if (open.every((item) => item.availableQty <= 0)) return "sem_saldo";
@@ -117,66 +117,135 @@ export async function createStoreRequest(input: {
   return requestId;
 }
 
-export async function listRequests(status?: RequestStatus | "open"): Promise<RequestView[]> {
+type WellSource = "store" | "customer";
+
+export type WellClaim = {
+  id: string;
+  source: WellSource;
+  fromLocationId?: string;
+  customerId?: string;
+  name: string;
+  status: RequestStatus;
+  note: string;
+  at: string;
+  resolvedAt?: string;
+  items: RequestItemView[];
+};
+
+function claimLines(
+  rows: { nicheId: string; qty: number; sentQty?: number }[],
+  catalog: Awaited<ReturnType<typeof catalogItems>>,
+  sellable: Map<string, number>,
+): RequestItemView[] {
+  return rows.map((item) => {
+    const found = catalog.find((row) => row.niche.id === item.nicheId);
+    const sentQty = item.sentQty ?? 0;
+    const remaining = Math.max(0, item.qty - sentQty);
+    return {
+      nicheId: item.nicheId,
+      label: found?.label ?? "Produto",
+      qty: item.qty,
+      sentQty,
+      remaining,
+      factoryQty: sellable.get(item.nicheId) ?? 0,
+      availableQty: remaining,
+    };
+  });
+}
+
+export async function loadFactoryWell() {
   const db = getDb();
-  const [requests, items, catalog, stock] = await Promise.all([
-    db.requests.orderBy("at").reverse().toArray(),
+  const [requests, requestItems, orders, orderItems, customers, catalog, stock] = await Promise.all([
+    db.requests.toArray(),
     db.requestItems.toArray(),
+    db.factoryOrders.toArray(),
+    db.factoryOrderItems.toArray(),
+    db.customers.toArray(),
     catalogItems(false),
     stockByLocation(),
   ]);
 
   const sellable = new Map(stock.map((row) => [row.niche.id, sellableQty(row, "factory")]));
-  const pool = new Map(sellable);
+  const leftover = new Map(sellable);
+  const customerName = new Map(customers.map((row) => [row.id, row.name]));
 
-  const views = requests.map((request) => {
-    const lines: RequestItemView[] = items
-      .filter((item) => item.requestId === request.id)
-      .map((item) => {
-        const found = catalog.find((row) => row.niche.id === item.nicheId);
-        const sentQty = item.sentQty ?? 0;
-        const remaining = Math.max(0, item.qty - sentQty);
-        return {
-          nicheId: item.nicheId,
-          label: found?.label ?? "Produto",
-          qty: item.qty,
-          sentQty,
-          remaining,
-          factoryQty: sellable.get(item.nicheId) ?? 0,
-          availableQty: remaining,
-        };
-      });
-    return { request, lines };
-  });
+  const storeClaims: WellClaim[] = requests.map((request) => ({
+    id: request.id,
+    source: "store",
+    fromLocationId: request.fromLocationId,
+    name: getLocation(request.fromLocationId)?.name ?? "Loja",
+    status: request.status,
+    note: request.note,
+    at: request.at,
+    resolvedAt: request.resolvedAt,
+    items: claimLines(
+      requestItems.filter((item) => item.requestId === request.id),
+      catalog,
+      sellable,
+    ),
+  }));
 
-  const openViews = views
-    .filter((view) => isOpenRequest(view.request.status))
-    .sort((a, b) => a.request.at.localeCompare(b.request.at));
+  const customerClaims: WellClaim[] = orders.map((order) => ({
+    id: order.id,
+    source: "customer",
+    customerId: order.customerId,
+    name: customerName.get(order.customerId) ?? "Cliente",
+    status: order.status,
+    note: order.note,
+    at: order.at,
+    resolvedAt: order.resolvedAt,
+    items: claimLines(
+      orderItems.filter((item) => item.orderId === order.id),
+      catalog,
+      sellable,
+    ),
+  }));
 
-  for (const view of openViews) {
-    for (const line of view.lines) {
-      const left = pool.get(line.nicheId) ?? 0;
+  const open = [...storeClaims, ...customerClaims]
+    .filter((claim) => isOpenRequest(claim.status))
+    .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
+
+  for (const claim of open) {
+    for (const line of claim.items) {
+      const left = leftover.get(line.nicheId) ?? 0;
       line.availableQty = Math.min(line.remaining, left);
-      pool.set(line.nicheId, left - line.availableQty);
+      leftover.set(line.nicheId, left - line.availableQty);
     }
   }
 
-  return views
-    .filter(({ request }) => {
+  return { sellable, leftover, storeClaims, customerClaims };
+}
+
+export async function factoryFreeByNiche() {
+  const { leftover } = await loadFactoryWell();
+  return leftover;
+}
+
+function asRequestView(claim: WellClaim): RequestView {
+  const live = isOpenRequest(claim.status) ? coverageStatus(claim.items) : claim.status;
+  return {
+    id: claim.id,
+    fromLocationId: claim.fromLocationId ?? "",
+    status: live,
+    note: claim.note,
+    at: claim.at,
+    resolvedAt: claim.resolvedAt,
+    statusLabel: requestStatusLabel(live),
+    storeName: claim.name,
+    items: claim.items,
+  };
+}
+
+export async function listRequests(status?: RequestStatus | "open"): Promise<RequestView[]> {
+  const { storeClaims } = await loadFactoryWell();
+  return storeClaims
+    .filter((claim) => {
       if (!status) return true;
-      if (status === "open" || status === "pending") return isOpenRequest(request.status);
-      return request.status === status;
+      if (status === "open" || status === "pending") return isOpenRequest(claim.status);
+      return claim.status === status;
     })
-    .map(({ request, lines }) => {
-      const live = isOpenRequest(request.status) ? coverageStatus(lines) : request.status;
-      return {
-        ...request,
-        status: live,
-        statusLabel: requestStatusLabel(live),
-        storeName: getLocation(request.fromLocationId)?.name ?? "Loja",
-        items: lines,
-      };
-    });
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .map(asRequestView);
 }
 
 export async function fulfillRequest(

@@ -38,6 +38,10 @@ export function backTarget(pathname: string, panelType?: string): BackTarget | n
     return { href: "/inicio", label: "Voltar ao início" };
   }
 
+  if (pathname.startsWith("/clientes/") && pathname.endsWith("/pedido")) {
+    return { href: "/clientes", label: "Voltar para clientes" };
+  }
+
   if (pathname === "/produtos/novo" || /^\/produtos\/[^/]+$/.test(pathname)) {
     return { href: "/produtos", label: "Voltar para produtos" };
   }

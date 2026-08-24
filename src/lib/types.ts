@@ -362,8 +362,24 @@ export function requestStatusLabel(status: RequestStatus) {
     cancelled: "Dispensado",
   }[status];
 }
+
+export function factoryOrderStatusLabel(status: RequestStatus) {
+  return {
+    pending: "Aguardando",
+    parcial: "Parcial",
+    sem_saldo: "Falta estoque",
+    sent: "Entregue",
+    cancelled: "Dispensado",
+  }[status];
+}
+
 export type NotificationAudience = "admin" | "factory";
-export type NotificationType = "store_request" | "request_sent" | "request_cancelled";
+export type NotificationType =
+  | "store_request"
+  | "request_sent"
+  | "request_cancelled"
+  | "factory_order"
+  | "factory_order_cancelled";
 
 export type StockRequest = {
   id: string;
@@ -377,6 +393,23 @@ export type StockRequest = {
 export type StockRequestItem = {
   id: string;
   requestId: string;
+  nicheId: string;
+  qty: number;
+  sentQty?: number;
+};
+
+export type FactoryOrder = {
+  id: string;
+  customerId: string;
+  status: RequestStatus;
+  note: string;
+  at: string;
+  resolvedAt?: string;
+};
+
+export type FactoryOrderItem = {
+  id: string;
+  orderId: string;
   nicheId: string;
   qty: number;
   sentQty?: number;

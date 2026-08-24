@@ -63,13 +63,14 @@ async function main() {
   } = await import("../src/lib/stock.ts");
   const { openCashSession, registerCashMovement, closeCashSession, reopenCashSession, currentCashSession, sessionLedger } =
     await import("../src/lib/cash.ts");
-  const { createStoreRequest, fulfillRequest, listRequests } = await import("../src/lib/requests.ts");
+  const { createStoreRequest, fulfillRequest, listRequests, cancelRequest } = await import("../src/lib/requests.ts");
   const { registerInternalConsume } = await import("../src/lib/consume.ts");
   const { reportDayPack, reportWindow } = await import("../src/lib/reports.ts");
   const { catalogItems, inventorySheet, setProductActive } = await import("../src/lib/queries.ts");
   const { saleCategories } = await import("../src/lib/categories.ts");
   const { saveCombo } = await import("../src/lib/combos.ts");
   const { listCustomers, saveCustomer } = await import("../src/lib/customers.ts");
+  const { createFactoryOrder, listFactoryOrders } = await import("../src/lib/factory-orders.ts");
   const { customerKind } = await import("../src/lib/types.ts");
   const db = getDb();
   const today = todayDate();
@@ -981,6 +982,65 @@ async function main() {
     "Marcar o tipo do cliente não baixa estoque",
     factoryAfterKind === factoryBeforeKind && storeAfterKind === storeBeforeKind,
     `fábrica ${factoryBeforeKind}→${factoryAfterKind} loja ${storeBeforeKind}→${storeAfterKind}`,
+  );
+
+  const marcia = found.find((row) => row.name === "Dona Márcia");
+  await expectFail(
+    "Festa não monta pedido da câmara",
+    () => createFactoryOrder({ customerId: marcia?.id ?? "x", items: [{ nicheId: "cox-mini", qty: 10 }] }),
+    "compra na fábrica",
+  );
+  const padaria = bakeries.find((row) => row.name === "Padaria do Zé");
+  await expectFail(
+    "Insumo não entra no pedido da câmara",
+    () => createFactoryOrder({ customerId: padaria?.id ?? "x", items: [{ nicheId: "farinha-25kg", qty: 1 }] }),
+    "não sai da câmara",
+  );
+
+  for (const row of await listRequests("open")) {
+    if (row.items.some((item) => item.nicheId === "cox-mini" && item.remaining > 0)) {
+      await cancelRequest(row.id);
+    }
+  }
+  const have = await stockQty("factory", "cox-mini");
+  if (have < 100) {
+    await expectOk("Produzir para o poço da câmara ter 100", () =>
+      produceItems({ madeAt: today, items: [{ nicheId: "cox-mini", qty: 100 - have }] }),
+    );
+  }
+  const wellStock = await stockQty("factory", "cox-mini");
+  record("Câmara tem 100 coxinhas para o poço", wellStock === 100, `qty=${wellStock}`);
+
+  await expectOk("Loja pede 80 coxinhas no poço", () =>
+    createStoreRequest({ fromLocationId: "store_1", items: [{ nicheId: "cox-mini", qty: 80 }] }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await expectOk("Padaria pede 50 na câmara", () =>
+    createFactoryOrder({ customerId: padaria?.id ?? "x", items: [{ nicheId: "cox-mini", qty: 50 }] }),
+  );
+
+  const storeWell = (await listRequests("open")).find(
+    (row) => row.fromLocationId === "store_1" && row.items.some((item) => item.nicheId === "cox-mini" && item.qty === 80),
+  );
+  const customerWell = (await listFactoryOrders("open")).find((row) => row.customerId === padaria?.id);
+  const storeLine = storeWell?.items.find((item) => item.nicheId === "cox-mini");
+  const customerLine = customerWell?.items.find((item) => item.nicheId === "cox-mini");
+  record(
+    "Pedido mais antigo da loja fica inteiro no poço",
+    storeWell?.status === "pending" && storeLine?.availableQty === 80,
+    `${storeWell?.statusLabel ?? "sumiu"} · reserva ${storeLine?.availableQty}`,
+  );
+  record(
+    "Pedido da padaria fica parcial no poço",
+    customerWell?.status === "parcial" && customerLine?.availableQty === 20,
+    `${customerWell?.statusLabel ?? "sumiu"} · reserva ${customerLine?.availableQty}`,
+  );
+  const wellAfter = await stockQty("factory", "cox-mini");
+  const storeAfterWell = await stockQty("store_1", "cox-mini");
+  record(
+    "Reservar o poço não baixa estoque",
+    wellAfter === 100 && storeAfterWell === storeAfterKind,
+    `fábrica ${wellStock}→${wellAfter} loja ${storeAfterKind}→${storeAfterWell}`,
   );
 
   const passed = rows.filter((row) => row.pass).length;

@@ -10,6 +10,8 @@ import type {
   ConsumeUser,
   Customer,
   Employee,
+  FactoryOrder,
+  FactoryOrderItem,
   InternalAllowance,
   InternalConsumption,
   InventoryCount,
@@ -67,6 +69,8 @@ class AppDB extends Dexie {
   consumptions!: Table<InternalConsumption, string>;
   consumeUsers!: Table<ConsumeUser, string>;
   customers!: Table<Customer, string>;
+  factoryOrders!: Table<FactoryOrder, string>;
+  factoryOrderItems!: Table<FactoryOrderItem, string>;
   cashMovements!: Table<CashMovement, string>;
   inventoryCounts!: Table<InventoryCount, string>;
   inventoryLines!: Table<InventoryLine, string>;
@@ -293,6 +297,28 @@ class AppDB extends Dexie {
       consumptions: "id, locationId, nicheId, at, dayKey",
       consumeUsers: "id, login, locationId, active",
       customers: "id, name, active",
+      cashMovements: "id, sessionId, locationId, type, at",
+      inventoryCounts: "id, locationId, at",
+      inventoryLines: "id, countId, nicheId",
+    });
+    this.version(12).stores({
+      ...baseStores,
+      requests: "id, fromLocationId, status, at",
+      requestItems: "id, requestId, nicheId",
+      notifications: "id, audience, at, type",
+      stores: "id, name, active",
+      employees: "id, storeId, locationId, active, name",
+      cashSessions: "id, locationId, period, openedAt, closedAt",
+      internalAllowances: "id, nicheId, enabled",
+      consumeGroups: "id, enabled",
+      combos: "id, enabled",
+      comboItems: "id, comboId, nicheId",
+      settings: "id",
+      consumptions: "id, locationId, nicheId, at, dayKey",
+      consumeUsers: "id, login, locationId, active",
+      customers: "id, name, active",
+      factoryOrders: "id, customerId, status, at",
+      factoryOrderItems: "id, orderId, nicheId",
       cashMovements: "id, sessionId, locationId, type, at",
       inventoryCounts: "id, locationId, at",
       inventoryLines: "id, countId, nicheId",

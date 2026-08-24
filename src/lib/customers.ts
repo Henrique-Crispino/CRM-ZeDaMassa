@@ -45,6 +45,12 @@ export async function saveCustomer(input: {
   return record.id;
 }
 
+export async function getCustomer(id: string) {
+  const row = await getDb().customers.get(id);
+  if (!row?.active) return undefined;
+  return row;
+}
+
 export async function removeCustomer(id: string) {
   const db = getDb();
   const row = await db.customers.get(id);

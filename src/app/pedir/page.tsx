@@ -26,8 +26,8 @@ import {
   SuccessBox,
 } from "@/components/ui";
 import { getPanel } from "@/lib/locations";
-import { catalogItems, sellableQty, stockByLocation } from "@/lib/queries";
-import { createStoreRequest, listRequests, RequestError } from "@/lib/requests";
+import { catalogItems, stockByLocation } from "@/lib/queries";
+import { createStoreRequest, factoryFreeByNiche, listRequests, RequestError } from "@/lib/requests";
 import { getLocationId } from "@/lib/session";
 import { useReady } from "@/lib/use-ready";
 
@@ -38,6 +38,7 @@ export default function PedirPage() {
   const panel = locationId ? getPanel(locationId) : undefined;
   const catalog = useLiveQuery(() => (ready ? catalogItems() : []), [ready]);
   const stock = useLiveQuery(() => (ready ? stockByLocation() : []), [ready]);
+  const free = useLiveQuery(() => (ready ? factoryFreeByNiche() : new Map<string, number>()), [ready]);
   const mine = useLiveQuery(
     () => (ready && locationId ? listRequests().then((rows) => rows.filter((row) => row.fromLocationId === locationId)) : []),
     [ready, locationId],
@@ -148,7 +149,7 @@ export default function PedirPage() {
                 {group.map((item) => {
                   const row = stock?.find((entry) => entry.niche.id === item.niche.id);
                   const here = row?.qty[locationId ?? ""] ?? 0;
-                  const factory = row ? sellableQty(row, "factory") : 0;
+                  const factory = free?.get(item.niche.id) ?? 0;
                   const chosen = qty[item.niche.id] ?? 0;
                   return (
                     <CompactRow
@@ -230,8 +231,7 @@ export default function PedirPage() {
         title="Enviar este pedido?"
         hint={
           selected.some(([nicheId, value]) => {
-            const row = stock?.find((entry) => entry.niche.id === nicheId);
-            const factory = row ? sellableQty(row, "factory") : 0;
+            const factory = free?.get(nicheId) ?? 0;
             return factory < value;
           })
             ? "A fábrica não tem tudo isso agora. O pedido fica registrado, mas pode não sair inteiro."
@@ -245,8 +245,7 @@ export default function PedirPage() {
         <ul className="divide-y divide-stone-100 rounded-2xl bg-stone-50 px-4">
           {selected.map(([nicheId, value]) => {
             const found = catalog?.find((item) => item.niche.id === nicheId);
-            const row = stock?.find((entry) => entry.niche.id === nicheId);
-            const factory = row ? sellableQty(row, "factory") : 0;
+            const factory = free?.get(nicheId) ?? 0;
             return (
               <li key={nicheId} className="flex justify-between gap-3 py-3">
                 <span className="font-bold text-stone-800">{found?.label ?? "Produto"}</span>

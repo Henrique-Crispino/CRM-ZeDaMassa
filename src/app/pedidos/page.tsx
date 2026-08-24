@@ -1,24 +1,37 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/pick-flow";
 import { ReportPreview } from "@/components/ReportPreview";
 import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { PageBoard, Pager, usePager } from "@/components/pager";
+import { cancelFactoryOrder, FactoryOrderError, listFactoryOrders } from "@/lib/factory-orders";
 import { getPanel } from "@/lib/locations";
 import { reportRomaneio, type ReportTable } from "@/lib/reports";
-import { cancelRequest, fulfillRequest, listRequests, requestWhen, RequestError } from "@/lib/requests";
+import { cancelRequest, fulfillRequest, listRequests, requestWhen, RequestError, type RequestItemView } from "@/lib/requests";
 import { getLocationId } from "@/lib/session";
 import { StockError } from "@/lib/stock";
-import { isOpenRequest } from "@/lib/types";
+import { isOpenRequest, type RequestStatus } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
+
+type QueueRow = {
+  id: string;
+  source: "store" | "customer";
+  name: string;
+  status: RequestStatus;
+  statusLabel: string;
+  at: string;
+  note: string;
+  items: RequestItemView[];
+};
 
 export default function PedidosPage() {
   const ready = useReady();
   const panel = ready ? getPanel(getLocationId() ?? "") : undefined;
   const requests = useLiveQuery(() => (ready ? listRequests() : []), [ready]);
+  const orders = useLiveQuery(() => (ready ? listFactoryOrders() : []), [ready]);
   const canSend = panel?.type === "factory";
   const [qty, setQty] = useState<Record<string, Record<string, number>>>({});
   const [error, setError] = useState("");
@@ -26,10 +39,36 @@ export default function PedidosPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [sheet, setSheet] = useState<ReportTable | null>(null);
-  const pending = (requests ?? []).filter((row) => isOpenRequest(row.status));
-  const others = (requests ?? []).filter((row) => !isOpenRequest(row.status));
+
+  const queue = useMemo<QueueRow[]>(() => {
+    const stores = (requests ?? []).map((row) => ({
+      id: row.id,
+      source: "store" as const,
+      name: row.storeName,
+      status: row.status,
+      statusLabel: row.statusLabel,
+      at: row.at,
+      note: row.note,
+      items: row.items,
+    }));
+    const customers = (orders ?? []).map((row) => ({
+      id: row.id,
+      source: "customer" as const,
+      name: row.customerName,
+      status: row.status,
+      statusLabel: row.statusLabel,
+      at: row.at,
+      note: row.note,
+      items: row.items,
+    }));
+    return [...stores, ...customers].sort((a, b) => b.at.localeCompare(a.at));
+  }, [orders, requests]);
+
+  const pending = queue.filter((row) => isOpenRequest(row.status));
+  const others = queue.filter((row) => !isOpenRequest(row.status));
   const othersPage = usePager(others, 8);
   const pendingPage = usePager(pending, 4);
+  const confirmRow = pending.find((row) => row.id === confirmId);
 
   if (panel && panel.type === "store") {
     return (
@@ -59,15 +98,18 @@ export default function PedidosPage() {
     }
   }
 
-  async function dismiss(requestId: string) {
+  async function dismiss(row: QueueRow) {
     setError("");
     setOk("");
-    setBusy(requestId);
+    setBusy(row.id);
     try {
-      await cancelRequest(requestId);
+      if (row.source === "customer") await cancelFactoryOrder(row.id);
+      else await cancelRequest(row.id);
       setOk("Pedido dispensado.");
     } catch (err) {
-      setError(err instanceof RequestError ? err.message : "Não deu para dispensar.");
+      setError(
+        err instanceof RequestError || err instanceof FactoryOrderError ? err.message : "Não deu para dispensar.",
+      );
     } finally {
       setBusy(null);
     }
@@ -76,94 +118,103 @@ export default function PedidosPage() {
   return (
     <AppShell>
       <PageTitle
-        title="Pedidos das lojas"
+        title="Pedidos"
         hint={
           canSend
-            ? "A loja pediu na mão. O pedido mais antigo segura o saldo. Se outra loja já levou, isto aqui envelhece — não finge que 80 ainda vão sair."
-            : "Aqui o admin vê o que as lojas pediram. Quem manda o estoque é a fábrica."
+            ? "Loja e cliente de volume na mesma fila. O mais antigo segura o saldo válido da câmara. Pedido de cliente ainda não baixa estoque."
+            : "Aqui o admin vê o que as lojas e os clientes pediram. Quem manda o estoque da loja é a fábrica."
         }
       />
       <ErrorBox message={error} />
       <SuccessBox message={ok} />
 
       {pending.length === 0 ? (
-        <Empty title="Nenhum pedido esperando" hint="Quando a loja pedir, aparece aqui e no sino de avisos." />
+        <Empty title="Nenhum pedido esperando" hint="Quando a loja ou o cliente pedir, aparece aqui e no sino de avisos." />
       ) : (
         <div>
           <PageBoard ref={pendingPage.listRef} size={pendingPage.size} rowMin="16rem">
             {pendingPage.rows.map((request) => (
-            <Card
-              key={request.id}
-              className={`space-y-4 ${request.status === "sem_saldo" ? "ring-1 ring-red-100" : ""}`}
-            >
-              <div>
-                <p className="text-xl font-extrabold text-stone-900">
-                  {request.storeName} · {request.statusLabel}
-                </p>
-                <p className="text-stone-500">{requestWhen(request.at)}</p>
-                {request.note ? <p className="mt-2 font-semibold text-stone-700">Recado: {request.note}</p> : null}
-                {request.status === "sem_saldo" ? (
-                  <p className="mt-2 font-bold text-red-700">
-                    A fábrica não tem saldo para este pedido agora. Produza ou o que tinha já foi para outro lugar.
+              <Card
+                key={`${request.source}-${request.id}`}
+                className={`space-y-4 ${request.status === "sem_saldo" ? "ring-1 ring-red-100" : ""}`}
+              >
+                <div>
+                  <p className="text-sm font-extrabold uppercase tracking-wide text-orange-800">
+                    {request.source === "customer" ? "Cliente · câmara" : "Loja"}
                   </p>
-                ) : request.status === "parcial" ? (
-                  <p className="mt-2 font-bold text-orange-800">
-                    Não tem tudo. Mande o que ainda cabe neste pedido — o resto continua aberto.
+                  <p className="text-xl font-extrabold text-stone-900">
+                    {request.name} · {request.statusLabel}
                   </p>
-                ) : null}
-              </div>
-              {request.items.map((item) => {
-                const fallback = Math.min(item.remaining, item.availableQty);
-                return (
-                  <div key={item.nicheId} className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="font-bold">{item.label}</p>
-                      <p className="text-sm text-stone-500">
-                        Pediu {item.qty}
-                        {item.sentQty > 0 ? ` · já mandou ${item.sentQty}` : ""}
-                        {item.remaining > 0 ? ` · falta ${item.remaining}` : ""}
-                      </p>
-                      <p className="text-sm font-semibold text-stone-600">
-                        Fábrica tem {item.factoryQty} válidas · para este pedido {item.availableQty}
-                      </p>
-                    </div>
-                    {canSend ? (
-                      <NumberStepper
-                        value={chosenQty(request.id, item.nicheId, fallback)}
-                        max={Math.max(item.availableQty, 0)}
-                        onChange={(value) =>
-                          setQty((current) => ({
-                            ...current,
-                            [request.id]: { ...current[request.id], [item.nicheId]: value },
-                          }))
-                        }
-                      />
-                    ) : (
-                      <p className="text-xl font-extrabold">{item.remaining}</p>
-                    )}
-                  </div>
-                );
-              })}
-              {canSend ? (
-                <div className="flex flex-wrap gap-3">
-                  <Button
-                    disabled={busy === request.id || request.items.every((item) => item.availableQty <= 0)}
-                    onClick={() => {
-                      setOk("");
-                      setConfirmId(request.id);
-                    }}
-                  >
-                    Revisar e mandar
-                  </Button>
-                  <Button variant="ghost" disabled={busy === request.id} onClick={() => dismiss(request.id)}>
-                    Dispensar
-                  </Button>
+                  <p className="text-stone-500">{requestWhen(request.at)}</p>
+                  {request.note ? <p className="mt-2 font-semibold text-stone-700">Recado: {request.note}</p> : null}
+                  {request.status === "sem_saldo" ? (
+                    <p className="mt-2 font-bold text-red-700">
+                      {request.source === "customer"
+                        ? "A câmara não tem saldo para este pedido agora. Produza ou o que tinha já foi para outro lugar."
+                        : "A fábrica não tem saldo para este pedido agora. Produza ou o que tinha já foi para outro lugar."}
+                    </p>
+                  ) : request.status === "parcial" ? (
+                    <p className="mt-2 font-bold text-orange-800">
+                      Não tem tudo. O mais antigo da fila ficou com o que cabia — o resto continua aberto.
+                    </p>
+                  ) : null}
                 </div>
-              ) : (
-                <p className="text-stone-600">Abra o painel da Fábrica para mandar este pedido.</p>
-              )}
-            </Card>
-          ))}
+                {request.items.map((item) => {
+                  const fallback = Math.min(item.remaining, item.availableQty);
+                  return (
+                    <div key={item.nicheId} className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-bold">{item.label}</p>
+                        <p className="text-sm text-stone-500">
+                          Pediu {item.qty}
+                          {item.sentQty > 0 ? ` · já mandou ${item.sentQty}` : ""}
+                          {item.remaining > 0 ? ` · falta ${item.remaining}` : ""}
+                        </p>
+                        <p className="text-sm font-semibold text-stone-600">
+                          Câmara tem {item.factoryQty} válidas · para este pedido {item.availableQty}
+                        </p>
+                      </div>
+                      {canSend && request.source === "store" ? (
+                        <NumberStepper
+                          value={chosenQty(request.id, item.nicheId, fallback)}
+                          max={Math.max(item.availableQty, 0)}
+                          onChange={(value) =>
+                            setQty((current) => ({
+                              ...current,
+                              [request.id]: { ...current[request.id], [item.nicheId]: value },
+                            }))
+                          }
+                        />
+                      ) : (
+                        <p className="text-xl font-extrabold">{item.availableQty}</p>
+                      )}
+                    </div>
+                  );
+                })}
+                {canSend ? (
+                  <div className="flex flex-wrap gap-3">
+                    {request.source === "store" ? (
+                      <Button
+                        disabled={busy === request.id || request.items.every((item) => item.availableQty <= 0)}
+                        onClick={() => {
+                          setOk("");
+                          setConfirmId(request.id);
+                        }}
+                      >
+                        Revisar e mandar
+                      </Button>
+                    ) : (
+                      <p className="font-semibold text-stone-600">Reservado. Separar e entregar é o próximo passo.</p>
+                    )}
+                    <Button variant="ghost" disabled={busy === request.id} onClick={() => dismiss(request)}>
+                      Dispensar
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="text-stone-600">Abra o painel da Fábrica para tratar este pedido.</p>
+                )}
+              </Card>
+            ))}
           </PageBoard>
           <Pager
             page={pendingPage.page}
@@ -180,9 +231,10 @@ export default function PedidosPage() {
           <h2 className="mb-3 text-2xl font-extrabold">Já resolvidos</h2>
           <PageBoard ref={othersPage.listRef} size={othersPage.size} rowMin="6.5rem">
             {othersPage.rows.map((request) => (
-              <Card key={request.id}>
+              <Card key={`${request.source}-${request.id}`}>
                 <p className="font-extrabold">
-                  {request.storeName} · {request.statusLabel}
+                  {request.source === "customer" ? "Cliente · " : ""}
+                  {request.name} · {request.statusLabel}
                 </p>
                 <p className="text-stone-500">{requestWhen(request.at)}</p>
                 <ul className="mt-1 text-stone-700">
@@ -207,8 +259,8 @@ export default function PedidosPage() {
       ) : null}
 
       <ConfirmDialog
-        open={Boolean(confirmId)}
-        title={`Mandar para a ${pending.find((row) => row.id === confirmId)?.storeName ?? "loja"}?`}
+        open={Boolean(confirmId && confirmRow?.source === "store")}
+        title={`Mandar para a ${confirmRow?.name ?? "loja"}?`}
         hint="Confira as quantidades. Sai da fábrica e fica em trânsito até a loja conferir."
         confirmLabel="Confirmar e mandar"
         busy={busy === confirmId}
@@ -216,7 +268,7 @@ export default function PedidosPage() {
         onCancel={() => setConfirmId(null)}
       >
         <ul className="divide-y divide-stone-100 rounded-2xl bg-stone-50 px-4">
-          {(pending.find((row) => row.id === confirmId)?.items ?? []).map((item) => {
+          {(confirmRow?.items ?? []).map((item) => {
             const sendQty = chosenQty(
               confirmId ?? "",
               item.nicheId,
