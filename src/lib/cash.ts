@@ -20,6 +20,13 @@ function localDay(iso: string) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 }
 
+export function cashDay(iso: string) {
+  return localDay(iso);
+}
+
+export const CASH_REOPEN_SETTING = "cash-reopen-code";
+export const CASH_REOPEN_CODE = "reabrir";
+
 export class CashError extends Error {}
 
 export const CASH_PERIODS: { id: CashPeriod; label: string; hint: string }[] = [
@@ -218,6 +225,65 @@ export async function closeCashSession(input: {
     secondCount,
     recountedBy,
   });
+}
+
+export async function ensureReopenCode() {
+  const db = getDb();
+  const row = await db.settings.get(CASH_REOPEN_SETTING);
+  if (row?.value.trim()) return row.value.trim();
+  await db.settings.put({ id: CASH_REOPEN_SETTING, value: CASH_REOPEN_CODE });
+  return CASH_REOPEN_CODE;
+}
+
+export async function reopenCashSession(input: {
+  sessionId: string;
+  password: string;
+  note: string;
+}) {
+  const db = getDb();
+  const session = await db.cashSessions.get(input.sessionId);
+  if (!session) throw new CashError("Caixa não encontrado.");
+  if (!session.closedAt) throw new CashError("Esse caixa ainda está aberto.");
+  if (localDay(session.openedAt) !== todayDate()) {
+    throw new CashError("Só reabre o caixa do dia. Turno de outro dia fica como está.");
+  }
+
+  const open = await currentCashSession(session.locationId);
+  if (open) {
+    throw new CashError(
+      `Já tem um caixa aberto nesta loja (${cashPeriodLabel(open.period)} · ${open.employeeName}). Feche antes de reabrir outro.`,
+    );
+  }
+
+  const code = await ensureReopenCode();
+  if ((input.password ?? "").trim() !== code) {
+    throw new CashError("Senha de reabertura não confere.");
+  }
+
+  const note = input.note.trim();
+  if (note.length < 3) {
+    throw new CashError("Escreva por que está reabrindo. O dia precisa de um motivo.");
+  }
+
+  const next: CashSession = {
+    ...session,
+    reopenedAt: new Date().toISOString(),
+    reopenNote: note,
+    reopenCount: (session.reopenCount ?? 0) + 1,
+  };
+  delete next.closedAt;
+  delete next.closingAmount;
+  delete next.expectedAmount;
+  delete next.difference;
+  delete next.cashSales;
+  delete next.pixSales;
+  delete next.cardSales;
+  delete next.sangriaTotal;
+  delete next.supplyTotal;
+  delete next.secondCount;
+  delete next.recountedBy;
+  await db.cashSessions.put(next);
+  return next;
 }
 
 export async function currentCashSession(locationId: string) {

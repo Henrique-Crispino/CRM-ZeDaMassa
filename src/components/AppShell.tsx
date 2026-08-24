@@ -63,6 +63,7 @@ const storeLinks = [
 const adminLinks = [
   { href: "/inicio", label: "Painel", icon: BarChart3 },
   { href: "/relatorios", label: "Relatórios", icon: FileDown },
+  { href: "/caixa", label: "Caixa", icon: Wallet },
   { href: "/pedidos", label: "Pedidos", icon: ClipboardList },
   { href: "/produtos", label: "Produtos", icon: Package },
   { href: "/cadastros", label: "Organização", icon: Settings2 },

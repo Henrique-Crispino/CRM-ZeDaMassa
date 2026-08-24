@@ -18,7 +18,9 @@ import {
 } from "@/components/ui";
 import {
   CASH_PERIODS,
+  CASH_REOPEN_CODE,
   CashError,
+  cashDay,
   cashDifferenceLabel,
   cashPeriodLabel,
   closeCashSession,
@@ -29,10 +31,11 @@ import {
   listEmployees,
   openCashSession,
   registerCashMovement,
+  reopenCashSession,
   sessionLedger,
 } from "@/lib/cash";
-import { getPanel } from "@/lib/locations";
-import { formatBRL, formatDate, formatTime, parseMoney } from "@/lib/money";
+import { getPanel, useLocationCatalog } from "@/lib/locations";
+import { formatBRL, formatDate, formatTime, parseMoney, todayDate } from "@/lib/money";
 import { getLocationId } from "@/lib/session";
 import type { CashDestination, CashMovementKind, CashPeriod } from "@/lib/types";
 import { CASH_DESTINATIONS, cashDestinationLabel } from "@/lib/types";
@@ -40,8 +43,12 @@ import { useReady } from "@/lib/use-ready";
 
 export default function CaixaPage() {
   const ready = useReady();
-  const locationId = ready ? getLocationId() : null;
-  const panel = locationId ? getPanel(locationId) : undefined;
+  const panelId = ready ? getLocationId() : null;
+  const panel = panelId ? getPanel(panelId) : undefined;
+  const isAdminPanel = panel?.type === "admin";
+  const { stores } = useLocationCatalog();
+  const [pickedStore, setPickedStore] = useState("");
+  const locationId = isAdminPanel ? pickedStore || stores[0]?.id || null : panelId;
   const employees = useLiveQuery(
     () => (ready && locationId ? listEmployees(locationId) : []),
     [ready, locationId],
@@ -56,7 +63,7 @@ export default function CaixaPage() {
   );
   const ledger = useLiveQuery(
     () => (ready && session ? sessionLedger(session.id) : null),
-    [ready, session?.id, session?.closedAt],
+    [ready, session?.id, session?.closedAt, session?.reopenedAt],
   );
   const previous = useLiveQuery(
     () => (ready && locationId && !session ? lastClosedSession(locationId) : null),
@@ -78,6 +85,14 @@ export default function CaixaPage() {
   const [ok, setOk] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [reopenId, setReopenId] = useState("");
+  const [reopenPassword, setReopenPassword] = useState("");
+  const [reopenNote, setReopenNote] = useState("");
+
+  useEffect(() => {
+    if (!isAdminPanel || pickedStore || !stores[0]) return;
+    setPickedStore(stores[0].id);
+  }, [isAdminPanel, pickedStore, stores]);
 
   const chosenEmployee = useMemo(
     () => (employees ?? []).find((item) => item.id === employeeId) ?? employees?.[0],
@@ -171,17 +186,63 @@ export default function CaixaPage() {
     }
   }
 
+  async function reopenSession() {
+    setError("");
+    setOk("");
+    setSaving(true);
+    try {
+      await reopenCashSession({
+        sessionId: reopenId,
+        password: reopenPassword,
+        note: reopenNote,
+      });
+      setReopenId("");
+      setReopenPassword("");
+      setReopenNote("");
+      setOk("Caixa reaberto. Dá para estornar venda e lançar o apurado de novo.");
+    } catch (err) {
+      setError(err instanceof CashError ? err.message : "Não deu para reabrir o caixa.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const reopenTarget = (history ?? []).find((row) => row.id === reopenId);
+
   return (
     <AccessGate
-      allow={["store"]}
+      allow={["store", "admin"]}
       title="O caixa é da loja"
-      hint="Cada loja abre e fecha o próprio caixa por período, com o funcionário responsável."
+      hint="Cada loja abre e fecha o próprio caixa. A administração reabre o do dia se o apurado saiu errado."
     >
       <AppShell>
         <PageTitle
-          title={`Caixa da ${panel?.name ?? "loja"}`}
-          hint="Abertura com fundo de caixa. Durante o turno: sangria e suprimento. No encerramento: contagem e diferença."
+          title={isAdminPanel ? "Caixa das lojas" : `Caixa da ${panel?.name ?? "loja"}`}
+          hint={
+            isAdminPanel
+              ? "A loja opera o turno. Se o apurado saiu errado, a administração reabre o caixa do dia — sem inventar sangria."
+              : "Abertura com fundo de caixa. Durante o turno: sangria e suprimento. No encerramento: contagem e diferença."
+          }
         />
+
+        {isAdminPanel ? (
+          <div className="mb-5 flex flex-wrap gap-2">
+            {stores.map((store) => (
+              <Button
+                key={store.id}
+                type="button"
+                variant={locationId === store.id ? "primary" : "ghost"}
+                onClick={() => {
+                  setPickedStore(store.id);
+                  setOk("");
+                  setError("");
+                }}
+              >
+                {store.name}
+              </Button>
+            ))}
+          </div>
+        ) : null}
 
         {session ? !ledger ? (
           <Card className="mb-6">
@@ -198,6 +259,13 @@ export default function CaixaPage() {
                 Aberto {formatTime(session.openedAt)} · {ledger.salesCount} cupons · faturamento{" "}
                 {formatBRL(ledger.salesTotal)}
               </p>
+              {session.reopenedAt ? (
+                <p className="font-semibold text-orange-800">
+                  Reaberto {formatTime(session.reopenedAt)}
+                  {session.reopenNote ? ` · ${session.reopenNote}` : ""}
+                  {session.reopenCount && session.reopenCount > 1 ? ` · ${session.reopenCount}×` : ""}
+                </p>
+              ) : null}
             </Card>
 
             <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -375,6 +443,13 @@ export default function CaixaPage() {
               </Button>
             </Card>
           </>
+        ) : isAdminPanel ? (
+          <Card className="mb-6 bg-orange-50 ring-orange-200">
+            <p className="text-lg font-extrabold text-stone-900">Nenhum caixa aberto nesta loja</p>
+            <p className="text-stone-600">
+              A loja abre o turno. Se o apurado do dia saiu errado, reabra no histórico — não lance sangria falsa.
+            </p>
+          </Card>
         ) : (
           <Card className="mb-6 space-y-4">
             <p className="text-lg font-extrabold">Abertura do caixa</p>
@@ -439,7 +514,23 @@ export default function CaixaPage() {
         ) : (
           <div className="space-y-3">
             {history.slice(0, 16).map((row) => (
-              <HistoryCard key={row.id} sessionId={row.id} fallback={row} />
+              <HistoryCard
+                key={row.id}
+                sessionId={row.id}
+                fallback={row}
+                canReopen={
+                  isAdminPanel &&
+                  Boolean(row.closedAt) &&
+                  !session &&
+                  cashDay(row.openedAt) === todayDate()
+                }
+                onReopen={() => {
+                  setReopenId(row.id);
+                  setReopenPassword("");
+                  setReopenNote("");
+                  setError("");
+                }}
+              />
             ))}
           </div>
         )}
@@ -476,6 +567,53 @@ export default function CaixaPage() {
               </li>
             </ul>
           ) : null}
+        </ConfirmDialog>
+
+        <ConfirmDialog
+          open={Boolean(reopenId)}
+          title="Reabrir este caixa?"
+          hint={`Só o caixa do dia. No demo a senha é ${CASH_REOPEN_CODE}. Não é login de verdade.`}
+          confirmLabel="Reabrir caixa"
+          confirmVariant="secondary"
+          confirmDisabled={reopenPassword.trim() === "" || reopenNote.trim().length < 3}
+          busy={saving}
+          onConfirm={reopenSession}
+          onCancel={() => {
+            setReopenId("");
+            setReopenPassword("");
+            setReopenNote("");
+          }}
+        >
+          {reopenTarget ? (
+            <ul className="mb-4 space-y-2 font-semibold text-stone-800">
+              <li>
+                {cashPeriodLabel(reopenTarget.period)} · {reopenTarget.employeeName}
+              </li>
+              <li>Apurado: {reopenTarget.closingAmount != null ? formatBRL(reopenTarget.closingAmount) : "—"}</li>
+              <li>
+                {reopenTarget.difference != null
+                  ? `${cashDifferenceLabel(reopenTarget.difference)}: ${formatBRL(reopenTarget.difference)}`
+                  : "Sem diferença"}
+              </li>
+            </ul>
+          ) : null}
+          <div className="space-y-4">
+            <Field label="Senha da administração" hint="Código em settings. No demo não tem auth de verdade.">
+              <Input
+                type="password"
+                value={reopenPassword}
+                onChange={(event) => setReopenPassword(event.target.value)}
+                placeholder="Senha"
+              />
+            </Field>
+            <Field label="Por que reabre" hint="Fica no turno. Sem motivo não reabre.">
+              <Input
+                value={reopenNote}
+                onChange={(event) => setReopenNote(event.target.value)}
+                placeholder="Apurado digitado errado"
+              />
+            </Field>
+          </div>
         </ConfirmDialog>
       </AppShell>
     </AccessGate>
@@ -517,6 +655,8 @@ function Metric({
 function HistoryCard({
   sessionId,
   fallback,
+  canReopen,
+  onReopen,
 }: {
   sessionId: string;
   fallback: {
@@ -530,7 +670,12 @@ function HistoryCard({
     note?: string;
     secondCount?: number;
     recountedBy?: string;
+    reopenedAt?: string;
+    reopenNote?: string;
+    reopenCount?: number;
   };
+  canReopen?: boolean;
+  onReopen?: () => void;
 }) {
   const ready = useReady();
   const ledger = useLiveQuery(() => (ready ? sessionLedger(sessionId) : null), [ready, sessionId]);
@@ -579,6 +724,20 @@ function HistoryCard({
         </p>
       ) : null}
       {fallback.note ? <p className="mt-1 text-sm text-stone-500">{fallback.note}</p> : null}
+      {(ledger?.session.reopenedAt ?? fallback.reopenedAt) ? (
+        <p className="mt-1 text-sm font-semibold text-orange-800">
+          Reabriu
+          {(ledger?.session.reopenCount ?? fallback.reopenCount) ? ` ${ledger?.session.reopenCount ?? fallback.reopenCount}×` : ""}
+          {(ledger?.session.reopenNote ?? fallback.reopenNote)
+            ? ` · ${ledger?.session.reopenNote ?? fallback.reopenNote}`
+            : ""}
+        </p>
+      ) : null}
+      {canReopen ? (
+        <Button className="mt-3" variant="secondary" onClick={onReopen}>
+          Reabrir o caixa do dia
+        </Button>
+      ) : null}
     </Card>
   );
 }

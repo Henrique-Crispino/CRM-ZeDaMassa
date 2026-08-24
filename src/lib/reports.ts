@@ -696,7 +696,13 @@ export async function reportCash(window: ReportWindow, scope: StoreScope): Promi
     formatDate(ledger.session.openedAt.slice(0, 10)),
     cashPeriodLabel(ledger.session.period),
     ledger.session.employeeName,
-    ledger.session.closedAt ? "Encerrado" : "Aberto",
+    ledger.session.closedAt
+      ? ledger.session.reopenedAt
+        ? "Encerrado (reabriu)"
+        : "Encerrado"
+      : ledger.session.reopenedAt
+        ? "Reaberto"
+        : "Aberto",
     money(ledger.openingAmount),
     money(ledger.byPayment.dinheiro),
     money(ledger.byPayment.pix),
@@ -770,6 +776,7 @@ export async function reportCash(window: ReportWindow, scope: StoreScope): Promi
       "Saldo esperado em espécie = fundo + vendas em dinheiro + suprimento − sangria. Pix e cartão não entram na gaveta.",
       "Quebra = apurado menor que o esperado. Sobra = apurado maior. Caixa bateu = diferença zero.",
       "Quebra ou sobra exige segunda contagem e o nome de quem conferiu. Sem isso o turno não fecha.",
+      ...reopenNotes(ledgers),
       ...sangriaNotes(ledgers),
     ],
   };
@@ -795,6 +802,18 @@ function sangriaNotes(ledgers: Awaited<ReturnType<typeof sessionLedger>>[]) {
     ...moves.slice(0, 12).map(
       (item) => `${item.store} · ${item.period} · ${money(item.amount)} · ${item.destination} · ${item.reason}`,
     ),
+  ];
+}
+
+function reopenNotes(ledgers: Awaited<ReturnType<typeof sessionLedger>>[]) {
+  const rows = ledgers.filter((ledger) => ledger.session.reopenedAt);
+  if (rows.length === 0) return [];
+  return [
+    `${rows.length} caixa${rows.length === 1 ? "" : "s"} reaberto${rows.length === 1 ? "" : "s"} neste recorte. A reabertura fica no turno — não inventa sangria.`,
+    ...rows.slice(0, 8).map((ledger) => {
+      const store = getLocation(ledger.session.locationId)?.name ?? ledger.session.locationId;
+      return `${store} · ${cashPeriodLabel(ledger.session.period)} · ${ledger.session.reopenNote ?? "sem motivo"}`;
+    }),
   ];
 }
 

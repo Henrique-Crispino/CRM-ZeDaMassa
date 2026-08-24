@@ -1,3 +1,4 @@
+import { CASH_REOPEN_CODE, CASH_REOPEN_SETTING } from "./cash";
 import { getDb } from "./db";
 import { DEFAULT_STORES, refreshLocations } from "./locations";
 import { addDays, newId, todayDate } from "./money";
@@ -792,6 +793,7 @@ export async function loadDemoData() {
       await db.consumeUsers.bulkAdd(DEFAULT_CONSUME_USERS);
       await db.consumptions.bulkAdd(consumptions);
       if (cashMovements.length) await db.cashMovements.bulkAdd(cashMovements);
+      await db.settings.put({ id: CASH_REOPEN_SETTING, value: CASH_REOPEN_CODE });
     },
   );
 

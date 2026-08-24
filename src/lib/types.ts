@@ -307,6 +307,9 @@ export type CashSession = {
   note?: string;
   secondCount?: number;
   recountedBy?: string;
+  reopenedAt?: string;
+  reopenNote?: string;
+  reopenCount?: number;
 };
 
 export type InternalAllowance = {
