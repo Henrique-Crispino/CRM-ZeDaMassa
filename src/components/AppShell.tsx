@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Factory,
   Home,
@@ -24,19 +23,20 @@ import {
   ScrollText,
   PackageCheck,
   Undo2,
-  MoreHorizontal,
+  Utensils,
   type LucideIcon,
 } from "lucide-react";
 import { useLocationCatalog } from "@/lib/locations";
 import { clearLocationId, getLocationId } from "@/lib/session";
 import { useReady } from "@/lib/use-ready";
 import { BackLink, backTarget } from "./BackLink";
-import { FACTORY_MORE, FACTORY_MORE_HREFS, STORE_MORE, STORE_MORE_HREFS, moreActive, type MoreItem } from "./nav";
 import { ConfirmDialog } from "./pick-flow";
 import { NotificationBell } from "./NotificationBell";
 import { Button, cn } from "./ui";
 
-const factoryLinks: { href: string; label: string; icon: LucideIcon }[] = [
+type NavItem = { href: string; label: string; icon: LucideIcon };
+
+const factoryTurno: NavItem[] = [
   { href: "/inicio", label: "Início", icon: Home },
   { href: "/pedidos", label: "Pedidos", icon: ClipboardList },
   { href: "/produzir", label: "Produzir", icon: Factory },
@@ -45,7 +45,15 @@ const factoryLinks: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/receber", label: "Receber", icon: PackageCheck },
 ];
 
-const storeLinks: { href: string; label: string; icon: LucideIcon }[] = [
+const factoryRest: NavItem[] = [
+  { href: "/devolver", label: "Devoluções", icon: Undo2 },
+  { href: "/produtos", label: "Produtos", icon: Package },
+  { href: "/estoque", label: "Estoque", icon: Warehouse },
+  { href: "/inventario", label: "Inventário", icon: ClipboardPen },
+  { href: "/kardex", label: "Extrato", icon: ScrollText },
+];
+
+const storeTurno: NavItem[] = [
   { href: "/inicio", label: "Início", icon: Home },
   { href: "/caixa", label: "Caixa", icon: Wallet },
   { href: "/vender", label: "Vender", icon: ShoppingCart },
@@ -54,7 +62,15 @@ const storeLinks: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/sobras", label: "Sobra do dia", icon: Trash2 },
 ];
 
-const adminLinks: { href: string; label: string; icon: LucideIcon }[] = [
+const storeRest: NavItem[] = [
+  { href: "/devolver", label: "Devolver", icon: Undo2 },
+  { href: "/consumo-interno", label: "Consumo interno", icon: Utensils },
+  { href: "/estoque", label: "Estoque", icon: Warehouse },
+  { href: "/inventario", label: "Inventário", icon: ClipboardPen },
+  { href: "/kardex", label: "Extrato", icon: ScrollText },
+];
+
+const adminLinks: NavItem[] = [
   { href: "/inicio", label: "Início", icon: BarChart3 },
   { href: "/relatorios", label: "Relatórios", icon: FileDown },
   { href: "/caixa", label: "Caixa", icon: Wallet },
@@ -75,6 +91,28 @@ function navClass(active: boolean) {
     "inline-flex min-h-12 w-full items-center gap-3 rounded-2xl px-3 text-left text-base font-bold focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200",
     active ? "bg-orange-600 text-white" : "text-stone-800 hover:bg-orange-50",
   );
+}
+
+function linkActive(pathname: string, href: string) {
+  const nested =
+    href === "/cadastros" &&
+    ["/lojas", "/funcionarios", "/promocoes", "/consumo"].some(
+      (path) => pathname === path || pathname.startsWith(`${path}/`),
+    );
+  return nested || pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function SidebarLinks({ links, pathname }: { links: NavItem[]; pathname: string }) {
+  return links.map((link) => {
+    const Icon = link.icon;
+    const active = linkActive(pathname, link.href);
+    return (
+      <Link key={link.href} href={link.href} aria-current={active ? "page" : undefined} className={navClass(active)}>
+        <Icon className="size-5 shrink-0" />
+        {link.label}
+      </Link>
+    );
+  });
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -99,10 +137,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const panel = panels.find((item) => item.id === panelId);
   const role = panel?.type;
-  const links = role === "admin" ? adminLinks : role === "factory" ? factoryLinks : storeLinks;
-  const moreItems = role === "factory" ? FACTORY_MORE : STORE_MORE;
-  const moreHrefs = role === "factory" ? FACTORY_MORE_HREFS : STORE_MORE_HREFS;
-  const showMore = role === "store" || role === "factory";
+  const turno = role === "admin" ? adminLinks : role === "factory" ? factoryTurno : storeTurno;
+  const rest = role === "admin" ? [] : role === "factory" ? factoryRest : storeRest;
   const back = backTarget(pathname, role);
   const here =
     role === "store"
@@ -119,22 +155,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           <p className="mt-1 text-lg font-extrabold leading-tight text-stone-900">{panel?.name}</p>
         </div>
         <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3" aria-label="Menu">
-          {links.map((link) => {
-            const Icon = link.icon;
-            const nested =
-              link.href === "/cadastros" &&
-              ["/lojas", "/funcionarios", "/promocoes", "/consumo"].some(
-                (href) => pathname === href || pathname.startsWith(`${href}/`),
-              );
-            const active = nested || pathname === link.href || pathname.startsWith(`${link.href}/`);
-            return (
-              <Link key={link.href} href={link.href} aria-current={active ? "page" : undefined} className={navClass(active)}>
-                <Icon className="size-5 shrink-0" />
-                {link.label}
-              </Link>
-            );
-          })}
-          {showMore ? <MaisMenu items={moreItems} active={moreActive(pathname, moreHrefs)} /> : null}
+          <SidebarLinks links={turno} pathname={pathname} />
+          {rest.length > 0 ? (
+            <>
+              <div className="my-2 border-t border-orange-100" role="presentation" />
+              <SidebarLinks links={rest} pathname={pathname} />
+            </>
+          ) : null}
         </nav>
         <div className="border-t border-orange-100 p-3">
           <Button variant="ghost" className="w-full justify-start" onClick={() => setLeave(true)}>
@@ -173,103 +200,5 @@ export function AppShell({ children }: { children: ReactNode }) {
         <p className="font-semibold text-stone-700">Agora: {panel?.name}</p>
       </ConfirmDialog>
     </div>
-  );
-}
-
-function MaisMenu({ items, active }: { items: MoreItem[]; active: boolean }) {
-  const [open, setOpen] = useState(false);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-  const pathname = usePathname();
-
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
-
-  useEffect(() => {
-    if (!open) return;
-    function place() {
-      const box = buttonRef.current?.getBoundingClientRect();
-      const menu = menuRef.current;
-      if (!box) return;
-      const width = menu?.offsetWidth || 288;
-      const height = menu?.offsetHeight || 0;
-      let left = box.right + 8;
-      let top = box.top;
-      if (left + width > window.innerWidth - 8) {
-        left = Math.max(8, box.left - width - 8);
-      }
-      if (height && top + height > window.innerHeight - 8) {
-        top = Math.max(8, window.innerHeight - height - 8);
-      }
-      setPos({ top, left });
-    }
-    place();
-    const frame = window.requestAnimationFrame(place);
-    function onDoc(event: MouseEvent) {
-      const node = event.target as Node;
-      if (buttonRef.current?.contains(node) || menuRef.current?.contains(node)) return;
-      setOpen(false);
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-    window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  return (
-    <>
-      <button
-        ref={buttonRef}
-        type="button"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        className={navClass(active || open)}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <MoreHorizontal className="size-5 shrink-0" />
-        Mais
-      </button>
-      {open && typeof document !== "undefined"
-        ? createPortal(
-            <div
-              ref={menuRef}
-              role="menu"
-              style={{ top: pos.top, left: pos.left }}
-              className="fixed z-50 max-h-[calc(100vh-16px)] w-72 overflow-y-auto rounded-2xl bg-white p-2 shadow-xl ring-1 ring-stone-200"
-            >
-              {items.map((item) => {
-                const current = pathname === item.href || pathname.startsWith(`${item.href}/`);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    role="menuitem"
-                    className={cn(
-                      "block rounded-xl px-3 py-3 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200",
-                      current ? "bg-orange-50" : "hover:bg-stone-50",
-                    )}
-                  >
-                    <p className="font-extrabold text-stone-900">{item.label}</p>
-                    <p className="text-sm font-semibold text-stone-500">{item.hint}</p>
-                  </Link>
-                );
-              })}
-            </div>,
-            document.body,
-          )
-        : null}
-    </>
   );
 }

@@ -6,7 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/pick-flow";
 import { ReportPreview } from "@/components/ReportPreview";
 import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
-import { Pager, usePager } from "@/components/pager";
+import { PageBoard, Pager, usePager } from "@/components/pager";
 import { getPanel } from "@/lib/locations";
 import { reportRomaneio, type ReportTable } from "@/lib/reports";
 import { cancelRequest, fulfillRequest, listRequests, requestWhen, RequestError } from "@/lib/requests";
@@ -29,6 +29,7 @@ export default function PedidosPage() {
   const pending = (requests ?? []).filter((row) => isOpenRequest(row.status));
   const others = (requests ?? []).filter((row) => !isOpenRequest(row.status));
   const othersPage = usePager(others, 8);
+  const pendingPage = usePager(pending, 4);
 
   if (panel && panel.type === "store") {
     return (
@@ -88,8 +89,9 @@ export default function PedidosPage() {
       {pending.length === 0 ? (
         <Empty title="Nenhum pedido esperando" hint="Quando a loja pedir, aparece aqui e no sino de avisos." />
       ) : (
-        <div className="space-y-4">
-          {pending.map((request) => (
+        <div>
+          <PageBoard ref={pendingPage.listRef} size={pendingPage.size} rowMin="16rem">
+            {pendingPage.rows.map((request) => (
             <Card
               key={request.id}
               className={`space-y-4 ${request.status === "sem_saldo" ? "ring-1 ring-red-100" : ""}`}
@@ -162,13 +164,21 @@ export default function PedidosPage() {
               )}
             </Card>
           ))}
+          </PageBoard>
+          <Pager
+            page={pendingPage.page}
+            pages={pendingPage.pages}
+            total={pendingPage.total}
+            onPage={pendingPage.setPage}
+            word="pedidos"
+          />
         </div>
       )}
 
       {others.length > 0 ? (
         <section className="mt-10">
           <h2 className="mb-3 text-2xl font-extrabold">Já resolvidos</h2>
-          <div className="space-y-3">
+          <PageBoard ref={othersPage.listRef} size={othersPage.size} rowMin="6.5rem">
             {othersPage.rows.map((request) => (
               <Card key={request.id}>
                 <p className="font-extrabold">
@@ -185,14 +195,14 @@ export default function PedidosPage() {
                 </ul>
               </Card>
             ))}
-            <Pager
-              page={othersPage.page}
-              pages={othersPage.pages}
-              total={othersPage.total}
-              onPage={othersPage.setPage}
-              word="pedidos"
-            />
-          </div>
+          </PageBoard>
+          <Pager
+            page={othersPage.page}
+            pages={othersPage.pages}
+            total={othersPage.total}
+            onPage={othersPage.setPage}
+            word="pedidos"
+          />
         </section>
       ) : null}
 

@@ -166,7 +166,7 @@ export default function ConsumoAdminPage() {
                 hint="Cadastre a identificação e a senha de cada funcionário que pode lançar consumo interno."
               />
             ) : (
-              <div className="space-y-3">
+              <div ref={usersPage.listRef} className="scroll-mt-36 space-y-3">
                 {usersPage.rows.map((user) => (
                   <Card key={user.id} className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -224,7 +224,7 @@ export default function ConsumoAdminPage() {
             {!items?.length ? (
               <Empty title="Cadastre produtos primeiro" />
             ) : (
-              <div className="space-y-3">
+              <div ref={itemsPage.listRef} className="scroll-mt-36 space-y-3">
                 {itemsPage.rows.map((item) => {
                   const limit = limits[item.niche.id] ?? item.allowance.dailyLimit;
                   const personLimit = personLimits[item.niche.id] ?? item.allowance.personLimit ?? 1;
@@ -317,7 +317,7 @@ export default function ConsumoAdminPage() {
             {!history?.length ? (
               <Empty title="Nenhum consumo interno ainda" />
             ) : (
-              <div className="space-y-2">
+              <div ref={historyPage.listRef} className="scroll-mt-36 space-y-2">
                 {historyPage.rows.map((row) => (
                   <Card key={row.id} className="flex flex-wrap items-center justify-between gap-2">
                     <p className="font-bold">

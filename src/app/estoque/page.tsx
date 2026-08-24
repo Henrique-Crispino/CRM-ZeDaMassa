@@ -188,6 +188,7 @@ export default function EstoquePage() {
         <Empty title="Nada com esse nome" hint="Tente outro trecho: coxinha, mini, coca." />
       ) : (
         <>
+          <div ref={stockPage.listRef} className="scroll-mt-36">
           <div className="hidden min-h-[40rem] overflow-x-auto rounded-3xl bg-white ring-1 ring-stone-200 md:block">
             <div
               className={`grid min-w-[640px] ${grid} bg-stone-100 px-4 py-3 text-sm font-extrabold uppercase tracking-wide text-stone-600`}
@@ -260,6 +261,7 @@ export default function EstoquePage() {
               </Card>
             ))}
             </PageBoard>
+          </div>
           </div>
           <Pager
             page={stockPage.page}

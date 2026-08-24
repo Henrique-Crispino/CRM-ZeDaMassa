@@ -17,6 +17,7 @@ import {
   pickKindOptions,
   type PickKind,
 } from "@/components/pick-flow";
+import { PageBoard, Pager, usePager } from "@/components/pager";
 import { ReportPreview } from "@/components/ReportPreview";
 import { Button, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { getLocation, getPanel, useLocationCatalog } from "@/lib/locations";
@@ -39,6 +40,7 @@ export default function EnviarPage() {
         : [],
     [ready],
   );
+  const pendingPage = usePager(pending ?? [], 6);
   const [storeId, setStoreId] = useState("");
   const [qty, setQty] = useState<Record<string, number>>({});
   const [search, setSearch] = useState("");
@@ -133,9 +135,9 @@ export default function EnviarPage() {
             <p className="font-extrabold text-stone-900">
               {(pending ?? []).length} envio{(pending ?? []).length === 1 ? "" : "s"} em trânsito
             </p>
-            <ul className="mt-2 space-y-1 text-stone-700">
-              {(pending ?? []).slice(0, 4).map((row) => (
-                <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 font-semibold">
+            <PageBoard ref={pendingPage.listRef} size={pendingPage.size} rowMin="3.25rem" className="mt-2">
+              {pendingPage.rows.map((row) => (
+                <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 font-semibold">
                   <span>
                     {row.storeName} · {row.sentQty} un. · {formatDate(row.at)} {formatTime(row.at)}
                   </span>
@@ -146,9 +148,16 @@ export default function EnviarPage() {
                   >
                     Romaneio
                   </button>
-                </li>
+                </div>
               ))}
-            </ul>
+            </PageBoard>
+            <Pager
+              page={pendingPage.page}
+              pages={pendingPage.pages}
+              total={pendingPage.total}
+              onPage={pendingPage.setPage}
+              word="envios"
+            />
             <p className="mt-2 text-stone-600">Ainda não conta como estoque da loja. A loja confere em Receber.</p>
             <Link href="/receber" className="mt-2 inline-flex min-h-11 items-center font-bold text-orange-800">
               Ver recebimentos

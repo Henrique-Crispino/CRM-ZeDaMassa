@@ -10,8 +10,12 @@ import { addDays, todayDate } from "@/lib/money";
 import {
   downloadCsv,
   fileName,
+  clampReportDate,
+  matchReportPreset,
+  orderedReportDates,
   reportCash,
   reportClosing,
+  reportDatePresets,
   reportDayPack,
   reportInternal,
   reportInventory,
@@ -21,9 +25,9 @@ import {
   reportTransfers,
   reportWaste,
   reportWindow,
+  type ReportPresetId,
   type ReportTable,
   type StoreScope,
-  type WhenKind,
 } from "@/lib/reports";
 import { getLocationId } from "@/lib/session";
 import { useReady } from "@/lib/use-ready";
@@ -31,16 +35,45 @@ import { useReady } from "@/lib/use-ready";
 export default function RelatoriosPage() {
   const ready = useReady();
   const panel = ready ? getPanel(getLocationId() ?? "") : undefined;
-  const [when, setWhen] = useState<WhenKind>("today");
-  const [from, setFrom] = useState(addDays(todayDate(), -6));
-  const [to, setTo] = useState(todayDate());
+  const today = todayDate();
+  const [from, setFrom] = useState(today);
+  const [to, setTo] = useState(today);
   const [scope, setScope] = useState<StoreScope>("all");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<ReportTable | null>(null);
 
-  const window = useMemo(() => reportWindow(when, { from, to }), [when, from, to]);
-  const storeLabel = scope === "all" ? "toda a rede" : getLocation(scope)?.name ?? scope;
+  const range = useMemo(() => orderedReportDates(from, to, today), [from, to, today]);
+  const window = useMemo(() => reportWindow("range", range), [range]);
+  const preset = matchReportPreset(range.from, range.to, today);
+  const oneDay = window.fromDate === window.toDate;
+  const storeLabel = scope === "all" ? "todas as lojas" : getLocation(scope)?.name ?? scope;
+  const packBadge = !oneDay
+    ? "Intervalo · junta os dias"
+    : window.fromDate === today
+      ? "Hoje · uma folha"
+      : window.fromDate === addDays(today, -1)
+        ? "Ontem · uma folha"
+        : "Um dia · uma folha";
+
+  function applyFrom(value: string) {
+    const nextFrom = clampReportDate(value, today);
+    setFrom(nextFrom);
+    if (nextFrom > to) setTo(nextFrom);
+  }
+
+  function applyTo(value: string) {
+    const nextTo = clampReportDate(value, today);
+    setTo(nextTo);
+    if (nextTo < from) setFrom(nextTo);
+  }
+
+  function applyPreset(id: ReportPresetId) {
+    const next = reportDatePresets(today).find((item) => item.id === id);
+    if (!next) return;
+    setFrom(next.from);
+    setTo(next.to);
+  }
 
   if (panel && panel.type !== "admin") {
     return (
@@ -76,54 +109,57 @@ export default function RelatoriosPage() {
     <AppShell>
       <PageTitle
         title="Relatórios"
-        hint="Um recorte só: quando e onde. O pacote do dia junta caixa, envio, saídas e inventário numa folha. O resto é o detalhe."
+        hint="De quando até quando, e qual loja. O pacote do dia junta caixa, envio, saídas e inventário numa folha. O resto é o detalhe."
       />
 
       <Card className="mb-6 space-y-5">
         <div>
-          <p className="mb-1 text-base font-bold text-stone-800">1. Quando</p>
-          <p className="mb-2 text-sm text-stone-500">Vale para fechamento, vendas, perdas, envios, produção e consumo.</p>
+          <p className="mb-1 text-base font-bold text-stone-800">De quando até quando</p>
+          <p className="mb-3 text-sm text-stone-500">
+            Vale para fechamento, vendas, perdas, envios, produção e consumo. Posição de estoque é foto agora — não usa essas datas.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="De">
+              <Input
+                type="date"
+                max={today}
+                value={from}
+                onChange={(event) => applyFrom(event.target.value)}
+              />
+            </Field>
+            <Field label="Até">
+              <Input
+                type="date"
+                max={today}
+                value={to}
+                onChange={(event) => applyTo(event.target.value)}
+              />
+            </Field>
+          </div>
+          <p className="mb-2 mt-4 text-sm font-bold text-stone-700">Atalhos</p>
           <div className="flex flex-wrap gap-2">
-            {(
-              [
-                ["today", "Hoje"],
-                ["week", "7 dias"],
-                ["month", "30 dias"],
-                ["range", "Escolher datas"],
-              ] as const
-            ).map(([id, label]) => (
+            {reportDatePresets(today).map((item) => (
               <Button
-                key={id}
+                key={item.id}
                 type="button"
-                variant={when === id ? "primary" : "ghost"}
+                variant={preset === item.id ? "primary" : "ghost"}
                 className="min-h-12"
-                onClick={() => setWhen(id)}
+                onClick={() => applyPreset(item.id)}
               >
-                {label}
+                {item.label}
               </Button>
             ))}
           </div>
-          {when === "range" ? (
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <Field label="De">
-                <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-              </Field>
-              <Field label="Até">
-                <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
-              </Field>
-            </div>
-          ) : null}
-          <p className="mt-2 text-sm font-semibold text-stone-600">Recorte: {window.label}</p>
         </div>
 
         <div>
-          <p className="mb-1 text-base font-bold text-stone-800">2. Onde</p>
+          <p className="mb-1 text-base font-bold text-stone-800">Qual loja</p>
           <p className="mb-2 text-sm text-stone-500">
-            Filtra loja em fechamento, vendas, perdas e consumo. Envios usam a loja de destino. Produção é sempre a fábrica.
+            Fechamento, vendas, perdas e consumo desta loja. Envios olham o destino. Produção é sempre a fábrica.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant={scope === "all" ? "primary" : "ghost"} className="min-h-12" onClick={() => setScope("all")}>
-              Rede
+              Todas as lojas
             </Button>
             {storeLocations().map((store) => (
               <Button
@@ -138,17 +174,22 @@ export default function RelatoriosPage() {
             ))}
           </div>
         </div>
+
+        <p className="rounded-2xl bg-stone-100 px-4 py-3 text-base font-semibold text-stone-800">
+          Estes papéis usam {window.label} · {storeLabel}
+        </p>
         {error ? <p className="font-semibold text-red-700">{error}</p> : null}
       </Card>
 
       <Card className="mb-6 ring-2 ring-orange-300">
-        <p className="text-xs font-extrabold uppercase tracking-wide text-orange-700">
-          {when === "today" ? "Hoje · uma folha" : "Uma folha do recorte"}
-        </p>
+        <p className="text-xs font-extrabold uppercase tracking-wide text-orange-700">{packBadge}</p>
         <h2 className="mt-1 text-2xl font-extrabold text-stone-900">Pacote do dia</h2>
         <p className="mt-1 text-stone-600">
           Caixa (espécie, Pix, cartão, sangria, suprimento, quebra ou sobra), o que a fábrica mandou e a loja confirmou,
-          vendeu / sobra / vencido / consumo. Se teve inventário, sistema × físico. Melhor em Hoje — 7 ou 30 dias junta o período.
+          vendeu / sobra / vencido / consumo. Se teve inventário, sistema × físico.
+          {oneDay
+            ? " Folha deste dia."
+            : " Esta folha junta o intervalo. Para o fechamento de um dia, escolha Hoje ou Ontem."}
         </p>
         <p className="mt-2 text-sm font-semibold text-stone-500">Usa: {window.label} · {storeLabel}</p>
         <div className="mt-4 flex flex-wrap gap-2">

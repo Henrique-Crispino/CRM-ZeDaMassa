@@ -35,8 +35,8 @@ export function PeriodTabs({
       {(
         [
           ["today", "Hoje"],
-          ["week", "7 dias"],
-          ["month", "30 dias"],
+          ["week", "Últimos 7 dias"],
+          ["month", "Últimos 30 dias"],
         ] as const
       ).map(([id, label]) => (
         <Button
@@ -190,7 +190,7 @@ export function AlertList({
         <p className="mt-4 text-lg font-semibold text-emerald-700">{empty}</p>
       ) : (
         <>
-          <PageBoard size={list.size} rowMin="4.75rem" className="mt-4">
+          <PageBoard ref={list.listRef} size={list.size} rowMin="4.75rem" className="mt-4">
             {list.rows.map((item) => (
               <div
                 key={`${item.locationId}-${item.nicheId}`}

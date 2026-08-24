@@ -45,7 +45,7 @@ export default function NotificacoesPage() {
         <Empty title="Nenhum aviso ainda" hint="Quando uma loja pedir produto, o aviso aparece aqui." />
       ) : (
         <div>
-          <PageBoard size={list.size} rowMin="8.25rem">
+          <PageBoard ref={list.listRef} size={list.size} rowMin="8.25rem">
             {list.rows.map((item) => (
               <Card key={item.id} className={item.readAt ? "h-full" : "h-full ring-2 ring-orange-300"}>
                 <p className="text-xl font-extrabold text-stone-900">{item.title}</p>

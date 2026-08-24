@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/pick-flow";
 import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
-import { Pager, usePager } from "@/components/pager";
+import { PageBoard, Pager, usePager } from "@/components/pager";
 import { getPanel } from "@/lib/locations";
 import { formatDate, formatTime } from "@/lib/money";
 import { listTransfers, type TransferView } from "@/lib/queries";
@@ -40,6 +40,7 @@ export default function ReceberPage() {
     [transfers],
   );
   const historyPage = usePager(history, 8);
+  const pendingPage = usePager(pending, 6);
   const selected = pending.find((row) => row.id === picked);
 
   const review = useMemo(() => {
@@ -107,10 +108,10 @@ export default function ReceberPage() {
       ) : null}
 
       {pending.length > 0 && !selected ? (
-        <ul className="mb-8 space-y-3">
-          {pending.map((row) => (
-            <li key={row.id}>
-              <Card>
+        <div className="mb-8">
+          <PageBoard ref={pendingPage.listRef} size={pendingPage.size} rowMin="9.5rem">
+            {pendingPage.rows.map((row) => (
+              <Card key={row.id}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xl font-extrabold text-stone-900">{row.storeName}</p>
@@ -137,9 +138,16 @@ export default function ReceberPage() {
                   </Button>
                 </div>
               </Card>
-            </li>
-          ))}
-        </ul>
+            ))}
+          </PageBoard>
+          <Pager
+            page={pendingPage.page}
+            pages={pendingPage.pages}
+            total={pendingPage.total}
+            onPage={pendingPage.setPage}
+            word="envios"
+          />
+        </div>
       ) : null}
 
       {selected ? (
@@ -203,6 +211,7 @@ export default function ReceberPage() {
       {history.length > 0 ? (
         <section>
           <h2 className="mb-3 text-2xl font-extrabold text-stone-900">Já conferidos</h2>
+          <div ref={historyPage.listRef} className="scroll-mt-36">
           <ul className="space-y-3">
             {historyPage.rows.map((row) => (
               <li key={row.id}>
@@ -210,6 +219,7 @@ export default function ReceberPage() {
               </li>
             ))}
           </ul>
+          </div>
           <Pager
             page={historyPage.page}
             pages={historyPage.pages}

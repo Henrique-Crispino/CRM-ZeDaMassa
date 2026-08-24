@@ -145,6 +145,7 @@ function ExpiryGroup({
         </span>
       </div>
       <PageBoard
+        ref={page.listRef}
         size={page.size}
         cols={compact ? 1 : 2}
         rowMin={compact ? "9.25rem" : "10.5rem"}

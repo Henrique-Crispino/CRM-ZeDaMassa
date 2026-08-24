@@ -89,7 +89,7 @@ export default function KardexPage() {
         <SearchField value={search} onChange={setSearch} placeholder="Procurar produto..." />
       </div>
 
-      <div className="mb-6">
+      <div ref={productPage.listRef} className="mb-6 scroll-mt-36">
         <div className="flex flex-wrap gap-2">
           {productPage.rows.map((item) => (
             <Button
@@ -132,6 +132,7 @@ export default function KardexPage() {
             <Empty title="Nenhum movimento neste recorte" hint="Mude as datas ou escolha outro produto." />
           ) : (
             <>
+              <div ref={movePage.listRef} className="scroll-mt-36">
               <ul className="space-y-3">
                 {movePage.rows.map((row) => (
                   <li key={row.id}>
@@ -159,6 +160,7 @@ export default function KardexPage() {
                   </li>
                 ))}
               </ul>
+              </div>
               <Pager
                 page={movePage.page}
                 pages={movePage.pages}

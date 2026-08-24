@@ -194,7 +194,7 @@ export default function ComprasPage() {
           {!logs?.length ? (
             <Empty title="Nenhuma compra lançada ainda" />
           ) : (
-            <div className="space-y-3">
+            <div ref={logsPage.listRef} className="scroll-mt-36 space-y-3">
               {logsPage.rows.map((log) => (
                 <Card key={log.refId}>
                   <p className="font-extrabold text-stone-900">

@@ -190,7 +190,7 @@ export default function CaixaTurnoPage() {
         <Empty title="Nenhum caixa registrado ainda" />
       ) : (
         <div>
-          <PageBoard size={historyPage.size} rowMin="7.25rem">
+          <PageBoard ref={historyPage.listRef} size={historyPage.size} rowMin="7.25rem">
             {historyPage.rows.map((row) => (
               <HistoryCard
                 key={row.id}

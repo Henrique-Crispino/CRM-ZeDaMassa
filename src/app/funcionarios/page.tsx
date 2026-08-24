@@ -180,7 +180,7 @@ export default function FuncionariosPage() {
         {!active.length ? (
           <Empty title="Ninguém cadastrado ainda" hint="Cadastre quem abre o caixa e quem retira consumo interno." />
         ) : (
-          <div className="space-y-3">
+          <div ref={list.listRef} className="scroll-mt-36 space-y-3">
             {list.rows.map((item) => (
               <Card key={item.id} className="flex flex-wrap items-center justify-between gap-3">
                 <div>

@@ -1,6 +1,7 @@
 import { getDb } from "./db";
 import { getLocation, storeLocations } from "./locations";
 import {
+  addDays,
   endOfDayIso,
   formatBRL,
   formatDate,
@@ -20,6 +21,32 @@ import { adjustmentReasonLabel, cashDestinationLabel, isLiveSale, lotCost, recei
 export type StoreScope = "all" | string;
 
 export type WhenKind = Period | "range";
+
+export type ReportPresetId = "today" | "yesterday" | "week" | "month";
+
+export function reportDatePresets(today = todayDate()) {
+  return [
+    { id: "today" as const, label: "Hoje", from: today, to: today },
+    { id: "yesterday" as const, label: "Ontem", from: addDays(today, -1), to: addDays(today, -1) },
+    { id: "week" as const, label: "Últimos 7 dias", from: addDays(today, -6), to: today },
+    { id: "month" as const, label: "Últimos 30 dias", from: addDays(today, -29), to: today },
+  ];
+}
+
+export function matchReportPreset(from: string, to: string, today = todayDate()) {
+  return reportDatePresets(today).find((preset) => preset.from === from && preset.to === to)?.id ?? null;
+}
+
+export function clampReportDate(value: string, today = todayDate()) {
+  if (!value) return today;
+  return value > today ? today : value;
+}
+
+export function orderedReportDates(from: string, to: string, today = todayDate()) {
+  const start = clampReportDate(from, today);
+  const end = clampReportDate(to, today);
+  return start <= end ? { from: start, to: end } : { from: end, to: start };
+}
 
 export type ReportWindow = {
   from: string;
@@ -48,7 +75,7 @@ export function reportWindow(kind: WhenKind, range?: { from: string; to: string 
       to: endOfDayIso(toDate),
       fromDate,
       toDate,
-      label: fromDate === toDate ? `Dia ${formatDate(fromDate)}` : `${formatDate(fromDate)} a ${formatDate(toDate)}`,
+      label: fromDate === toDate ? formatDate(fromDate) : `${formatDate(fromDate)} a ${formatDate(toDate)}`,
     };
   }
   if (kind === "today") {

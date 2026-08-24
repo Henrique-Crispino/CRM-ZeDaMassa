@@ -74,7 +74,7 @@ export function SessionSalesList({
         <p className="font-semibold text-stone-500">Nenhuma venda neste caixa ainda.</p>
       ) : (
         <>
-          <PageBoard size={pager.size} rowMin="5.75rem">
+          <PageBoard ref={pager.listRef} size={pager.size} rowMin="5.75rem">
             {pager.rows.map((ticket) => {
               const live = isLiveSale(ticket.sale);
               return (

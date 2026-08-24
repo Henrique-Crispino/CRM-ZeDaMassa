@@ -76,7 +76,7 @@ export default function ProdutosPage() {
         <Empty title="Nada com esse nome" hint="Tente outro trecho: coxinha, mini, coca." />
       ) : (
         <div>
-          <PageBoard size={list.size} rowMin="8.5rem">
+          <PageBoard ref={list.listRef} size={list.size} rowMin="8.5rem">
             {list.rows.map((product) => {
               const types = (niches ?? []).filter((niche) => niche.productId === product.id);
               return (

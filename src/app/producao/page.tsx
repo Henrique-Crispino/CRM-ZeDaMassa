@@ -89,7 +89,7 @@ export default function ProducaoPage() {
             }
           />
         ) : (
-          <div className="space-y-3">
+          <div ref={list.listRef} className="scroll-mt-36 space-y-3">
             {list.rows.map((log) => (
               <Card key={log.refId}>
                 <div className="flex flex-wrap items-start justify-between gap-3">

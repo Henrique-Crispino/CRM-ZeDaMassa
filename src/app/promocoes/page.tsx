@@ -124,7 +124,7 @@ export default function PromocoesPage() {
         {!items?.length ? (
           <Empty title="Cadastre produtos primeiro" hint="Sem produto, não tem promoção." />
         ) : (
-          <div className="mt-4 space-y-3">
+          <div ref={list.listRef} className="mt-4 scroll-mt-36 space-y-3">
             {list.rows.map((item) => {
               const value = prices[item.niche.id] ?? String(item.niche.promoPrice || "").replace(".", ",");
               const status = promoStatus(item.niche);

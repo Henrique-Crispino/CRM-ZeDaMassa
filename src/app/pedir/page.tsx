@@ -175,7 +175,7 @@ export default function PedirPage() {
             <summary className="cursor-pointer text-lg font-extrabold text-stone-900">
               Pedidos já feitos ({mine?.length})
             </summary>
-            <div className="mt-3 space-y-3">
+            <div ref={minePage.listRef} className="mt-3 scroll-mt-36 space-y-3">
               {minePage.rows.map((request) => (
                 <Card key={request.id} className="p-4">
                   <p className="font-extrabold">

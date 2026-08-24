@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
+import { PageBoard, Pager, usePager } from "@/components/pager";
 import { Card } from "@/components/ui";
 import { listRequests, requestWhen } from "@/lib/requests";
 import { useReady } from "@/lib/use-ready";
@@ -14,6 +15,7 @@ export function PendingRequests({ canSend }: { canSend: boolean }) {
   );
 
   const rows = pending ?? [];
+  const list = usePager(rows, 4, String(rows.length));
 
   return (
     <Card className="mb-6">
@@ -34,18 +36,27 @@ export function PendingRequests({ canSend }: { canSend: boolean }) {
         </Link>
       </div>
       {rows.length > 0 ? (
-        <ul className="mt-4 space-y-2">
-          {rows.slice(0, 4).map((request) => (
-            <li key={request.id} className="rounded-2xl bg-orange-50 px-4 py-3 font-semibold text-stone-800">
-              {request.storeName} · {request.statusLabel} ·{" "}
-              {request.items.map((item) => `${item.remaining} ${item.label}`).join(", ")}
-              <span className="block text-sm font-medium text-stone-500">
-                {requestWhen(request.at)}
-                {request.status === "sem_saldo" ? " · sem saldo na fábrica" : ""}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <PageBoard ref={list.listRef} size={list.size} rowMin="4.5rem" className="mt-4">
+            {list.rows.map((request) => (
+              <div key={request.id} className="rounded-2xl bg-orange-50 px-4 py-3 font-semibold text-stone-800">
+                {request.storeName} · {request.statusLabel} ·{" "}
+                {request.items.map((item) => `${item.remaining} ${item.label}`).join(", ")}
+                <span className="block text-sm font-medium text-stone-500">
+                  {requestWhen(request.at)}
+                  {request.status === "sem_saldo" ? " · sem saldo na fábrica" : ""}
+                </span>
+              </div>
+            ))}
+          </PageBoard>
+          <Pager
+            page={list.page}
+            pages={list.pages}
+            total={list.total}
+            onPage={list.setPage}
+            word="pedidos"
+          />
+        </>
       ) : null}
     </Card>
   );

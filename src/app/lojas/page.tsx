@@ -104,7 +104,7 @@ export default function LojasPage() {
         {visible.length === 0 ? (
           <Empty title="Nenhuma loja ativa" hint="Cadastre a primeira loja para vender." />
         ) : (
-          <div className="space-y-3">
+          <div ref={list.listRef} className="scroll-mt-36 space-y-3">
             {list.rows.map((store) => (
               <Card key={store.id} className="flex flex-wrap items-start justify-between gap-3">
                 <div>

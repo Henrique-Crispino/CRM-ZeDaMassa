@@ -220,7 +220,7 @@ export default function InventarioPage() {
       {!history?.length ? (
         <Empty title="Nenhum inventário lançado ainda" hint="A primeira contagem vira o histórico." />
       ) : (
-        <div className="space-y-3">
+        <div ref={historyPage.listRef} className="scroll-mt-36 space-y-3">
           {historyPage.rows.map((row) => (
             <HistoryCard key={row.id} countId={row.id} />
           ))}

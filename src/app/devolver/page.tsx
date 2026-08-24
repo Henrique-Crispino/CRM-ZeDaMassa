@@ -16,7 +16,7 @@ import {
   pickKindOptions,
   type PickKind,
 } from "@/components/pick-flow";
-import { Pager, usePager } from "@/components/pager";
+import { PageBoard, Pager, usePager } from "@/components/pager";
 import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { getPanel } from "@/lib/locations";
 import { formatDate, formatTime } from "@/lib/money";
@@ -180,6 +180,7 @@ function StoreReturn({ locationId }: { locationId: string }) {
       {(mine ?? []).length > 0 ? (
         <section className="mt-8">
           <h2 className="mb-3 text-2xl font-extrabold text-stone-900">Já devolvidas</h2>
+          <div ref={minePage.listRef} className="scroll-mt-36">
           <ul className="space-y-3">
             {minePage.rows.map((row) => (
               <li key={row.id}>
@@ -187,6 +188,7 @@ function StoreReturn({ locationId }: { locationId: string }) {
               </li>
             ))}
           </ul>
+          </div>
           <Pager
             page={minePage.page}
             pages={minePage.pages}
@@ -257,6 +259,7 @@ function FactoryReturn() {
     [transfers],
   );
   const historyPage = usePager(history, 8);
+  const pendingPage = usePager(pending, 6);
   const selected = pending.find((row) => row.id === picked);
 
   const review = useMemo(() => {
@@ -309,10 +312,10 @@ function FactoryReturn() {
       ) : null}
 
       {pending.length > 0 && !selected ? (
-        <ul className="mb-8 space-y-3">
-          {pending.map((row) => (
-            <li key={row.id}>
-              <Card>
+        <div className="mb-8">
+          <PageBoard ref={pendingPage.listRef} size={pendingPage.size} rowMin="9.5rem">
+            {pendingPage.rows.map((row) => (
+              <Card key={row.id}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xl font-extrabold text-stone-900">{row.storeName}</p>
@@ -343,9 +346,16 @@ function FactoryReturn() {
                   </Button>
                 </div>
               </Card>
-            </li>
-          ))}
-        </ul>
+            ))}
+          </PageBoard>
+          <Pager
+            page={pendingPage.page}
+            pages={pendingPage.pages}
+            total={pendingPage.total}
+            onPage={pendingPage.setPage}
+            word="devoluções"
+          />
+        </div>
       ) : null}
 
       {selected ? (
@@ -413,6 +423,7 @@ function FactoryReturn() {
       {history.length > 0 ? (
         <section>
           <h2 className="mb-3 text-2xl font-extrabold text-stone-900">Já conferidas</h2>
+          <div ref={historyPage.listRef} className="scroll-mt-36">
           <ul className="space-y-3">
             {historyPage.rows.map((row) => (
               <li key={row.id}>
@@ -420,6 +431,7 @@ function FactoryReturn() {
               </li>
             ))}
           </ul>
+          </div>
           <Pager
             page={historyPage.page}
             pages={historyPage.pages}
