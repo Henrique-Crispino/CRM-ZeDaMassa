@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { ConfirmDialog } from "@/components/pick-flow";
 import { SessionSalesList } from "@/components/SessionSalesList";
 import { PageBoard, Pager, usePager } from "@/components/pager";
-import { CashMetric, OpenSessionCard, useCashWorkspace } from "@/components/caixa/workspace";
+import { CashLoading, CashMetric, OpenSessionCard, useCashWorkspace } from "@/components/caixa/workspace";
 import { Button, Card, Empty, ErrorBox, Field, Input, SuccessBox } from "@/components/ui";
 import {
   CASH_PERIODS,
@@ -30,6 +30,7 @@ export default function CaixaTurnoPage() {
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
   const [saving, setSaving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [reopenId, setReopenId] = useState("");
   const [reopenPassword, setReopenPassword] = useState("");
   const [reopenNote, setReopenNote] = useState("");
@@ -58,8 +59,10 @@ export default function CaixaTurnoPage() {
         employeeId: chosenEmployee.id,
         openingAmount: parseMoney(opening),
       });
+      setConfirmOpen(false);
       setOk("Caixa aberto. As vendas deste turno ficam neste movimento.");
     } catch (err) {
+      setConfirmOpen(false);
       setError(err instanceof CashError ? err.message : "Não deu para abrir o caixa.");
     } finally {
       setSaving(false);
@@ -92,7 +95,9 @@ export default function CaixaTurnoPage() {
 
   return (
     <>
-      {session ? !ledger ? (
+      {session === undefined ? (
+        <CashLoading />
+      ) : session ? !ledger ? (
         <Card className="mb-6">
           <p className="text-lg font-bold text-stone-600">Carregando o movimento do caixa...</p>
         </Card>
@@ -143,14 +148,16 @@ export default function CaixaTurnoPage() {
             ))}
           </div>
           <p className="text-sm text-stone-500">{CASH_PERIODS.find((item) => item.id === period)?.hint}</p>
-          {(employees ?? []).length === 0 ? (
+          {employees === undefined ? (
+            <p className="font-semibold text-stone-600">Carregando a equipe...</p>
+          ) : employees.length === 0 ? (
             <Empty
               title="Cadastre a equipe desta loja"
               hint="A administração inclui os funcionários em Equipe. Sem isso, o caixa não abre."
             />
           ) : (
             <div className="grid gap-2 sm:grid-cols-2">
-              {(employees ?? []).map((item) => (
+              {employees.map((item) => (
                 <Button
                   key={item.id}
                   type="button"
@@ -179,14 +186,18 @@ export default function CaixaTurnoPage() {
           </Field>
           <ErrorBox message={error} />
           <SuccessBox message={ok} />
-          <Button disabled={saving || !(employees ?? []).length} onClick={openSession}>
-            {saving ? "Abrindo..." : "Abrir caixa"}
+          <Button disabled={saving || !(employees ?? []).length} onClick={() => setConfirmOpen(true)}>
+            Abrir caixa
           </Button>
         </Card>
       )}
 
       <h2 className="mb-3 text-2xl font-extrabold">Histórico desta loja</h2>
-      {!history?.length ? (
+      {history === undefined ? (
+        <Card className="mb-6">
+          <p className="text-lg font-bold text-stone-600">Carregando o histórico do caixa...</p>
+        </Card>
+      ) : history.length === 0 ? (
         <Empty title="Nenhum caixa registrado ainda" />
       ) : (
         <div>
@@ -199,7 +210,7 @@ export default function CaixaTurnoPage() {
                 canReopen={
                   isAdminPanel &&
                   Boolean(row.closedAt) &&
-                  !session &&
+                  session === null &&
                   cashDay(row.openedAt) === todayDate()
                 }
                 onReopen={() => {
@@ -220,6 +231,23 @@ export default function CaixaTurnoPage() {
           />
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Abrir o caixa?"
+        hint="O fundo entra na gaveta. As vendas deste turno ficam neste movimento."
+        confirmLabel="Confirmar e abrir"
+        confirmDisabled={!chosenEmployee}
+        busy={saving}
+        onConfirm={openSession}
+        onCancel={() => setConfirmOpen(false)}
+      >
+        <ul className="space-y-2 font-semibold text-stone-800">
+          <li>{cashPeriodLabel(period)}</li>
+          <li>{chosenEmployee?.name ?? "Sem quem abre"}</li>
+          <li>Fundo {formatBRL(parseMoney(opening))}</li>
+        </ul>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={Boolean(reopenId)}

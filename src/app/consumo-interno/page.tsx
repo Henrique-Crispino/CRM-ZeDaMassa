@@ -41,7 +41,7 @@ export default function ConsumoInternoPage() {
     [ready, placeId],
   );
   const session = useLiveQuery(
-    () => (ready && placeId ? currentCashSession(placeId) : null),
+    () => (ready && placeId ? currentCashSession(placeId) : undefined),
     [ready, placeId],
   );
   const allowances = useLiveQuery(() => (ready ? listAllowances() : []), [ready]);

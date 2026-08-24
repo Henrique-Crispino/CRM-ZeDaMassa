@@ -7,6 +7,7 @@ import {
   Contact,
   Factory,
   Home,
+  Menu,
   Package,
   ShoppingCart,
   Truck,
@@ -26,6 +27,7 @@ import {
   Undo2,
   Utensils,
   PackageOpen,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useLocationCatalog } from "@/lib/locations";
@@ -36,14 +38,14 @@ import { ConfirmDialog } from "./pick-flow";
 import { NotificationBell } from "./NotificationBell";
 import { Button, cn } from "./ui";
 
-type NavItem = { href: string; label: string; icon: LucideIcon };
+type NavItem = { href: string; label: string; short?: string; icon: LucideIcon };
 
 const factoryTurno: NavItem[] = [
   { href: "/inicio", label: "Início", icon: Home },
   { href: "/pedidos", label: "Pedidos", icon: ClipboardList },
   { href: "/produzir", label: "Produzir", icon: Factory },
   { href: "/compras", label: "Compras", icon: ShoppingBag },
-  { href: "/enviar", label: "Mandar p/ loja", icon: Truck },
+  { href: "/enviar", label: "Mandar p/ loja", short: "Mandar", icon: Truck },
   { href: "/receber", label: "Receber", icon: PackageCheck },
 ];
 
@@ -61,9 +63,9 @@ const storeTurno: NavItem[] = [
   { href: "/inicio", label: "Início", icon: Home },
   { href: "/caixa", label: "Caixa", icon: Wallet },
   { href: "/vender", label: "Vender", icon: ShoppingCart },
-  { href: "/pedir", label: "Pedir mais", icon: ClipboardList },
+  { href: "/pedir", label: "Pedir mais", short: "Pedir", icon: ClipboardList },
   { href: "/receber", label: "Receber", icon: PackageCheck },
-  { href: "/sobras", label: "Sobra do dia", icon: Trash2 },
+  { href: "/sobras", label: "Sobra do dia", short: "Sobra", icon: Trash2 },
 ];
 
 const storeRest: NavItem[] = [
@@ -120,6 +122,53 @@ function SidebarLinks({ links, pathname }: { links: NavItem[]; pathname: string 
   });
 }
 
+function MenuPanel({
+  name,
+  turno,
+  rest,
+  pathname,
+  onLeave,
+  onClose,
+}: {
+  name: string;
+  turno: NavItem[];
+  rest: NavItem[];
+  pathname: string;
+  onLeave: () => void;
+  onClose?: () => void;
+}) {
+  return (
+    <>
+      <div className="flex items-start justify-between gap-2 border-b border-orange-100 px-4 py-4">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wide text-orange-700">Controle da fábrica</p>
+          <p className="mt-1 text-lg font-extrabold leading-tight text-stone-900">{name}</p>
+        </div>
+        {onClose ? (
+          <Button type="button" variant="ghost" className="shrink-0 px-3" aria-label="Fechar menu" onClick={onClose}>
+            <X className="size-5" />
+          </Button>
+        ) : null}
+      </div>
+      <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3" aria-label="Menu">
+        <SidebarLinks links={turno} pathname={pathname} />
+        {rest.length > 0 ? (
+          <>
+            <div className="my-2 border-t border-orange-100" role="presentation" />
+            <SidebarLinks links={rest} pathname={pathname} />
+          </>
+        ) : null}
+      </nav>
+      <div className="border-t border-orange-100 p-3">
+        <Button variant="ghost" className="w-full justify-start" onClick={onLeave}>
+          <LogOut className="size-5" />
+          Trocar de lugar
+        </Button>
+      </div>
+    </>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const ready = useReady();
   const pathname = usePathname();
@@ -127,10 +176,24 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { panels } = useLocationCatalog();
   const panelId = ready ? getLocationId() : null;
   const [leave, setLeave] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     if (ready && !getLocationId()) router.replace("/");
   }, [ready, router]);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [menuOpen]);
 
   if (!ready || !panelId) {
     return (
@@ -145,6 +208,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const turno = role === "admin" ? adminLinks : role === "factory" ? factoryTurno : storeTurno;
   const rest = role === "admin" ? [] : role === "factory" ? factoryRest : storeRest;
   const back = backTarget(pathname, role);
+  const hasBottomNav = role !== "admin";
   const here =
     role === "store"
       ? `Você está na ${panel?.name}`
@@ -153,41 +217,91 @@ export function AppShell({ children }: { children: ReactNode }) {
         : "Você está na administração";
 
   return (
-    <div className="flex min-h-screen bg-orange-50">
-      <aside className="sticky top-0 z-30 flex h-screen w-60 shrink-0 flex-col border-r border-orange-100 bg-white print:hidden">
-        <div className="border-b border-orange-100 px-4 py-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-orange-700">Controle da fábrica</p>
-          <p className="mt-1 text-lg font-extrabold leading-tight text-stone-900">{panel?.name}</p>
-        </div>
-        <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3" aria-label="Menu">
-          <SidebarLinks links={turno} pathname={pathname} />
-          {rest.length > 0 ? (
-            <>
-              <div className="my-2 border-t border-orange-100" role="presentation" />
-              <SidebarLinks links={rest} pathname={pathname} />
-            </>
-          ) : null}
-        </nav>
-        <div className="border-t border-orange-100 p-3">
-          <Button variant="ghost" className="w-full justify-start" onClick={() => setLeave(true)}>
-            <LogOut className="size-5" />
-            Trocar de lugar
-          </Button>
-        </div>
+    <div className={cn("flex min-h-screen bg-orange-50", hasBottomNav && "shell-turno")}>
+      <aside className="sticky top-0 z-30 hidden h-screen w-60 shrink-0 flex-col border-r border-orange-100 bg-white md:flex print:hidden">
+        <MenuPanel
+          name={panel?.name ?? ""}
+          turno={turno}
+          rest={rest}
+          pathname={pathname}
+          onLeave={() => setLeave(true)}
+        />
       </aside>
+
+      {menuOpen ? (
+        <div className="fixed inset-0 z-[45] md:hidden print:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Fechar menu"
+            onClick={() => setMenuOpen(false)}
+          />
+          <aside className="relative flex h-full w-[min(20rem,88vw)] flex-col bg-white shadow-xl">
+            <MenuPanel
+              name={panel?.name ?? ""}
+              turno={turno}
+              rest={rest}
+              pathname={pathname}
+              onLeave={() => {
+                setMenuOpen(false);
+                setLeave(true);
+              }}
+              onClose={() => setMenuOpen(false)}
+            />
+          </aside>
+        </div>
+      ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 border-b border-orange-100 bg-white/95 px-4 py-3 backdrop-blur print:hidden">
           <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              {back ? <BackLink href={back.href} label={back.label} className="mb-2" /> : null}
-              <p className="truncate text-xl font-extrabold text-stone-900">{here}</p>
+            <div className="flex min-w-0 items-start gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                className="shrink-0 px-3 md:hidden"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((open) => !open)}
+              >
+                {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+                Menu
+              </Button>
+              <div className="min-w-0">
+                {back ? <BackLink href={back.href} label={back.label} className="mb-2" /> : null}
+                <p className="truncate text-xl font-extrabold text-stone-900">{here}</p>
+              </div>
             </div>
             {role === "admin" || role === "factory" ? <NotificationBell audience={role} /> : null}
           </div>
         </header>
-        <main className="px-4 py-6">{children}</main>
+        <main className={cn("px-4 py-6", hasBottomNav ? "pb-24 md:pb-6" : null)}>{children}</main>
       </div>
+
+      {hasBottomNav ? (
+        <nav
+          className="fixed inset-x-0 bottom-0 z-30 flex h-16 border-t border-orange-100 bg-white/95 md:hidden print:hidden"
+          aria-label="Turno"
+        >
+          {turno.map((link) => {
+            const Icon = link.icon;
+            const active = linkActive(pathname, link.href);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-0.5 text-center text-[11px] font-bold leading-tight",
+                  active ? "text-orange-700" : "text-stone-600",
+                )}
+              >
+                <Icon className="size-5 shrink-0" />
+                <span className="max-w-full truncate">{link.short ?? link.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      ) : null}
 
       <ConfirmDialog
         open={leave}

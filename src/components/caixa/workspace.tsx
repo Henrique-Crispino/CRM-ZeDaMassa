@@ -31,6 +31,7 @@ type CashWorkspaceValue = {
   isAdminPanel: boolean;
   storeName: string;
   locationId: string | null;
+  sessionPending: boolean;
   employees: Awaited<ReturnType<typeof listEmployees>> | undefined;
   session: Awaited<ReturnType<typeof currentCashSession>> | undefined;
   history: Awaited<ReturnType<typeof listCashSessions>> | undefined;
@@ -75,15 +76,15 @@ export function CashWorkspace({ children }: { children: ReactNode }) {
   const storeName = stores.find((store) => store.id === locationId)?.name ?? panel?.name ?? "loja";
 
   const employees = useLiveQuery(
-    () => (ready && locationId ? listEmployees(locationId) : []),
+    () => (ready && locationId ? listEmployees(locationId) : undefined),
     [ready, locationId],
   );
   const session = useLiveQuery(
-    () => (ready && locationId ? currentCashSession(locationId) : null),
+    () => (ready && locationId ? currentCashSession(locationId) : undefined),
     [ready, locationId],
   );
   const history = useLiveQuery(
-    () => (ready && locationId ? listCashSessions(locationId) : []),
+    () => (ready && locationId ? listCashSessions(locationId) : undefined),
     [ready, locationId],
   );
   const ledger = useLiveQuery(
@@ -91,9 +92,10 @@ export function CashWorkspace({ children }: { children: ReactNode }) {
     [ready, session?.id, session?.closedAt, session?.reopenedAt],
   );
   const previous = useLiveQuery(
-    () => (ready && locationId && !session ? lastClosedSession(locationId) : null),
-    [ready, locationId, session?.id],
+    () => (ready && locationId && session === null ? lastClosedSession(locationId) : undefined),
+    [ready, locationId, session === null],
   );
+  const sessionPending = session === undefined;
 
   return (
     <CashWorkspaceContext.Provider
@@ -102,6 +104,7 @@ export function CashWorkspace({ children }: { children: ReactNode }) {
         isAdminPanel,
         storeName,
         locationId,
+        sessionPending,
         employees,
         session,
         history,
@@ -161,6 +164,14 @@ export function CashWorkspace({ children }: { children: ReactNode }) {
 
       {children}
     </CashWorkspaceContext.Provider>
+  );
+}
+
+export function CashLoading() {
+  return (
+    <Card className="mb-6">
+      <p className="text-lg font-bold text-stone-600">Carregando o caixa...</p>
+    </Card>
   );
 }
 

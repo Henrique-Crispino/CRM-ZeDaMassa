@@ -46,7 +46,7 @@ export default function VenderPage() {
   const panel = locationId ? getPanel(locationId) : undefined;
   const stock = useLiveQuery(() => (ready ? stockByLocation() : []), [ready]);
   const session = useLiveQuery(
-    () => (ready && locationId ? currentCashSession(locationId) : null),
+    () => (ready && locationId ? currentCashSession(locationId) : undefined),
     [ready, locationId],
   );
   const expiry = useLiveQuery(
@@ -201,7 +201,11 @@ export default function VenderPage() {
         hint="Lote vencido não entra na venda. Descarte aqui — a venda que você já montou continua."
       />
 
-      {session ? (
+      {session === undefined ? (
+        <Card className="mb-4">
+          <p className="font-extrabold text-stone-600">Carregando o caixa...</p>
+        </Card>
+      ) : session ? (
         <Card className="mb-4 bg-emerald-50 ring-emerald-200">
           <p className="font-extrabold text-emerald-900">
             Caixa aberto · {cashPeriodLabel(session.period)} · {session.employeeName}

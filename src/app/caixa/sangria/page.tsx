@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/pick-flow";
-import { CashClosed, OpenSessionCard, useCashWorkspace } from "@/components/caixa/workspace";
+import { CashClosed, CashLoading, OpenSessionCard, useCashWorkspace } from "@/components/caixa/workspace";
 import { Button, Card, ErrorBox, Field, Input, SuccessBox } from "@/components/ui";
 import { CashError, registerCashMovement } from "@/lib/cash";
 import { formatBRL, formatTime, parseMoney } from "@/lib/money";
@@ -20,7 +20,11 @@ export default function CaixaSangriaPage() {
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
 
-  if (!session) {
+  if (session === undefined) {
+    return <CashLoading />;
+  }
+
+  if (session === null) {
     return (
       <CashClosed
         title="O caixa está fechado"

@@ -105,7 +105,7 @@ export function CompactList({ children }: { children: ReactNode }) {
 
 export function StickyActionBar({ children }: { children: ReactNode }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-orange-100 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(0,0,0,0.06)] backdrop-blur">
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-orange-100 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(0,0,0,0.06)] backdrop-blur md:left-60 [.shell-turno_&]:bottom-16 md:[.shell-turno_&]:bottom-0">
       <div className="mx-auto max-w-6xl space-y-2">{children}</div>
     </div>
   );
