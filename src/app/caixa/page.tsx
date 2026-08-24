@@ -23,6 +23,7 @@ import {
   cashPeriodLabel,
   closeCashSession,
   currentCashSession,
+  needsCashRecount,
   lastClosedSession,
   listCashSessions,
   listEmployees,
@@ -66,6 +67,8 @@ export default function CaixaPage() {
   const [employeeId, setEmployeeId] = useState("");
   const [opening, setOpening] = useState("150,00");
   const [closing, setClosing] = useState("");
+  const [secondCount, setSecondCount] = useState("");
+  const [recountedBy, setRecountedBy] = useState("");
   const [note, setNote] = useState("");
   const [moveType, setMoveType] = useState<CashMovementKind>("sangria");
   const [moveAmount, setMoveAmount] = useState("");
@@ -90,6 +93,9 @@ export default function CaixaPage() {
 
   const counted = parseMoney(closing);
   const previewDifference = ledger ? counted - ledger.expectedCash : 0;
+  const mustRecount = Boolean(closing) && needsCashRecount(previewDifference);
+  const recountReady =
+    !mustRecount || (secondCount !== "" && Math.abs(parseMoney(secondCount) - counted) < 0.005 && recountedBy.trim().length >= 2);
 
   async function openSession() {
     if (!locationId || !chosenEmployee) return;
@@ -147,9 +153,13 @@ export default function CaixaPage() {
       await closeCashSession({
         sessionId: session.id,
         closingAmount: parseMoney(closing),
+        secondCount: mustRecount ? parseMoney(secondCount) : undefined,
+        recountedBy: mustRecount ? recountedBy : undefined,
         note,
       });
       setClosing("");
+      setSecondCount("");
+      setRecountedBy("");
       setNote("");
       setConfirmClose(false);
       setOk("Caixa encerrado. O próximo turno já pode abrir o período dele.");
@@ -313,13 +323,39 @@ export default function CaixaPage() {
               {closing ? (
                 <p
                   className={
-                    Math.abs(previewDifference) < 0.005
-                      ? "font-extrabold text-emerald-800"
-                      : "font-extrabold text-red-700"
+                    mustRecount ? "font-extrabold text-red-700" : "font-extrabold text-emerald-800"
                   }
                 >
                   {cashDifferenceLabel(previewDifference)}: {formatBRL(previewDifference)}
                 </p>
+              ) : null}
+              {mustRecount ? (
+                <>
+                  <Card className="bg-orange-50 ring-orange-200">
+                    <p className="font-extrabold text-stone-900">Conte de novo</p>
+                    <p className="text-stone-600">
+                      Quebra ou sobra não fecha com um número só. Segunda contagem e o nome de quem conferiu.
+                    </p>
+                  </Card>
+                  <Field
+                    label="Segunda contagem"
+                    hint="Tem que bater com o apurado. Se achou outro valor, corrija o apurado e conte outra vez."
+                  >
+                    <Input
+                      inputMode="decimal"
+                      value={secondCount}
+                      onChange={(event) => setSecondCount(event.target.value)}
+                      placeholder={closing}
+                    />
+                  </Field>
+                  <Field label="Conferido por" hint="Nome de quem fez a segunda contagem. No demo, digitar basta.">
+                    <Input
+                      value={recountedBy}
+                      onChange={(event) => setRecountedBy(event.target.value)}
+                      placeholder="Nome de quem conferiu"
+                    />
+                  </Field>
+                </>
               ) : null}
               <Field label="Ocorrência (opcional)" hint="Use se houver quebra, sobra ou qualquer observação do turno.">
                 <Input
@@ -330,7 +366,11 @@ export default function CaixaPage() {
               </Field>
               <ErrorBox message={error} />
               <SuccessBox message={ok} />
-              <Button disabled={saving || closing === ""} variant="secondary" onClick={() => setConfirmClose(true)}>
+              <Button
+                disabled={saving || closing === "" || !recountReady}
+                variant="secondary"
+                onClick={() => setConfirmClose(true)}
+              >
                 Conferir e encerrar
               </Button>
             </Card>
@@ -407,7 +447,11 @@ export default function CaixaPage() {
         <ConfirmDialog
           open={confirmClose}
           title="Encerrar este caixa?"
-          hint="A conferência compara o dinheiro apurado com o saldo esperado em espécie."
+          hint={
+            mustRecount
+              ? "Duas contagens e um nome. Sem isso a quebra ou sobra não fecha."
+              : "A conferência compara o dinheiro apurado com o saldo esperado em espécie."
+          }
           confirmLabel="Encerrar caixa"
           busy={saving}
           onConfirm={closeSession}
@@ -421,7 +465,13 @@ export default function CaixaPage() {
               <li>Sangrias: {formatBRL(ledger.sangriaTotal)}</li>
               <li>Saldo esperado: {formatBRL(ledger.expectedCash)}</li>
               <li>Dinheiro apurado: {formatBRL(counted)}</li>
-              <li className={Math.abs(previewDifference) < 0.005 ? "text-emerald-800" : "text-red-700"}>
+              {mustRecount ? (
+                <>
+                  <li>Segunda contagem: {formatBRL(parseMoney(secondCount))}</li>
+                  <li>Conferido por: {recountedBy.trim()}</li>
+                </>
+              ) : null}
+              <li className={mustRecount ? "text-red-700" : "text-emerald-800"}>
                 {cashDifferenceLabel(previewDifference)}: {formatBRL(previewDifference)}
               </li>
             </ul>
@@ -478,6 +528,8 @@ function HistoryCard({
     closingAmount?: number;
     difference?: number;
     note?: string;
+    secondCount?: number;
+    recountedBy?: string;
   };
 }) {
   const ready = useReady();
@@ -517,6 +569,13 @@ function HistoryCard({
       {fallback.closedAt && difference != null ? (
         <p className={`mt-2 font-extrabold ${Math.abs(difference) < 0.005 ? "text-emerald-800" : "text-red-700"}`}>
           {cashDifferenceLabel(difference)}: {formatBRL(difference)}
+        </p>
+      ) : null}
+      {(ledger?.session.recountedBy ?? fallback.recountedBy) ? (
+        <p className="mt-1 text-sm font-semibold text-stone-600">
+          2ª contagem {formatBRL(ledger?.session.secondCount ?? fallback.secondCount ?? 0)}
+          {" · conferido por "}
+          {ledger?.session.recountedBy ?? fallback.recountedBy}
         </p>
       ) : null}
       {fallback.note ? <p className="mt-1 text-sm text-stone-500">{fallback.note}</p> : null}

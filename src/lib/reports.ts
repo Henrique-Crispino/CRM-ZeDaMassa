@@ -707,6 +707,11 @@ export async function reportCash(window: ReportWindow, scope: StoreScope): Promi
     ledger.countedCash != null ? money(ledger.countedCash) : "—",
     ledger.difference != null ? money(ledger.difference) : "—",
     ledger.difference != null ? cashDifferenceLabel(ledger.difference) : "—",
+    ledger.session.recountedBy
+      ? `${ledger.session.recountedBy}${ledger.session.secondCount != null ? ` · 2ª ${money(ledger.session.secondCount)}` : ""}`
+      : ledger.difference != null && Math.abs(ledger.difference) >= 0.005
+        ? "Sem 2ª contagem"
+        : "—",
   ]);
 
   const closed = ledgers.filter((item) => item.difference != null);
@@ -733,6 +738,7 @@ export async function reportCash(window: ReportWindow, scope: StoreScope): Promi
       "Dinheiro apurado",
       "Diferença",
       "Resultado",
+      "2ª contagem / conferido por",
     ],
     rows: rows.length
       ? [
@@ -753,6 +759,7 @@ export async function reportCash(window: ReportWindow, scope: StoreScope): Promi
             money(closed.reduce((sum, item) => sum + (item.countedCash ?? 0), 0)),
             money(totalDiff),
             closed.length ? cashDifferenceLabel(totalDiff) : "—",
+            "",
           ],
         ]
       : rows,
@@ -762,6 +769,7 @@ export async function reportCash(window: ReportWindow, scope: StoreScope): Promi
         : `${sessions.length} movimentos · ${closed.length} encerrados · diferença acumulada ${money(totalDiff)}.`,
       "Saldo esperado em espécie = fundo + vendas em dinheiro + suprimento − sangria. Pix e cartão não entram na gaveta.",
       "Quebra = apurado menor que o esperado. Sobra = apurado maior. Caixa bateu = diferença zero.",
+      "Quebra ou sobra exige segunda contagem e o nome de quem conferiu. Sem isso o turno não fecha.",
       ...sangriaNotes(ledgers),
     ],
   };

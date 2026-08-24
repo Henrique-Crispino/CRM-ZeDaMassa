@@ -305,6 +305,8 @@ export type CashSession = {
   sangriaTotal?: number;
   supplyTotal?: number;
   note?: string;
+  secondCount?: number;
+  recountedBy?: string;
 };
 
 export type InternalAllowance = {

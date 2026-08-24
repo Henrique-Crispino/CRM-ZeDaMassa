@@ -169,9 +169,15 @@ export async function registerCashMovement(input: {
   return row;
 }
 
+export function needsCashRecount(difference: number) {
+  return Math.abs(difference) >= 0.005;
+}
+
 export async function closeCashSession(input: {
   sessionId: string;
   closingAmount: number;
+  secondCount?: number;
+  recountedBy?: string;
   note?: string;
 }) {
   const db = getDb();
@@ -181,6 +187,22 @@ export async function closeCashSession(input: {
   const ledger = await sessionLedger(session.id);
   const closingAmount = money2(Math.max(0, input.closingAmount));
   const difference = money2(closingAmount - ledger.expectedCash);
+
+  let secondCount: number | undefined;
+  let recountedBy: string | undefined;
+  if (needsCashRecount(difference)) {
+    if (input.secondCount == null || Number.isNaN(input.secondCount)) {
+      throw new CashError("Quebra ou sobra: conte o dinheiro de novo antes de encerrar.");
+    }
+    secondCount = money2(Math.max(0, input.secondCount));
+    if (Math.abs(secondCount - closingAmount) >= 0.005) {
+      throw new CashError("A segunda contagem tem que bater com a primeira. Se achou outro valor, corrija o apurado e conte de novo.");
+    }
+    recountedBy = input.recountedBy?.trim() ?? "";
+    if (recountedBy.length < 2) {
+      throw new CashError("Quem conferiu a segunda contagem? Escreva o nome.");
+    }
+  }
 
   await db.cashSessions.update(session.id, {
     closedAt: new Date().toISOString(),
@@ -193,6 +215,8 @@ export async function closeCashSession(input: {
     sangriaTotal: ledger.sangriaTotal,
     supplyTotal: ledger.supplyTotal,
     note: input.note?.trim() ?? "",
+    secondCount,
+    recountedBy,
   });
 }
 
