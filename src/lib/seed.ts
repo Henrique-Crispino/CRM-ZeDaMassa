@@ -291,6 +291,17 @@ export const DEFAULT_CUSTOMERS: Customer[] = [
     phone: "(11) 98888-1010",
     note: "Festa sábado. Retirada na fábrica.",
     address: "",
+    kind: "festa",
+    active: true,
+    createdAt: `${todayDate()}T10:00:00.000Z`,
+  },
+  {
+    id: "cust-padaria-ze",
+    name: "Padaria do Zé",
+    phone: "(11) 97777-2020",
+    note: "Compra grande. Retira na câmara.",
+    address: "Rua do Forno, 40",
+    kind: "volume",
     active: true,
     createdAt: `${todayDate()}T10:00:00.000Z`,
   },
@@ -399,6 +410,17 @@ export async function ensureAppDefaults() {
 
   if ((await db.customers.count()) === 0) {
     await db.customers.bulkAdd(DEFAULT_CUSTOMERS);
+  } else {
+    const rows = await db.customers.toArray();
+    for (const row of rows) {
+      if (row.kind !== "festa" && row.kind !== "volume") {
+        await db.customers.update(row.id, { kind: "festa" });
+      }
+    }
+    if (!rows.some((row) => row.id === "cust-padaria-ze")) {
+      const padaria = DEFAULT_CUSTOMERS.find((item) => item.id === "cust-padaria-ze");
+      if (padaria) await db.customers.add(padaria);
+    }
   }
 
   const cox = await db.niches.get("cox-mini");

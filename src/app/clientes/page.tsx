@@ -9,13 +9,15 @@ import { Pager, usePager } from "@/components/pager";
 import { SearchField } from "@/components/pick-flow";
 import { Button, Card, Empty, ErrorBox, Field, Input, PageTitle, SuccessBox } from "@/components/ui";
 import { CustomerError, listCustomers, removeCustomer, saveCustomer } from "@/lib/customers";
+import { CUSTOMER_KINDS, customerKind, customerKindLabel, type CustomerKind } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
-const emptyForm = { id: "", name: "", phone: "", note: "", address: "" };
+const emptyForm = { id: "", name: "", phone: "", note: "", address: "", kind: "festa" as CustomerKind };
 
 export default function ClientesPage() {
   const ready = useReady();
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<CustomerKind | "todos">("todos");
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
@@ -23,13 +25,13 @@ export default function ClientesPage() {
   const customers = useLiveQuery(() => (ready ? listCustomers() : []), [ready]);
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const rows = customers ?? [];
-    if (!q) return rows;
-    return rows.filter((row) =>
-      [row.name, row.phone, row.note, row.address].some((field) => field.toLowerCase().includes(q)),
-    );
-  }, [customers, search]);
-  const list = usePager(visible, 8);
+    return (customers ?? []).filter((row) => {
+      if (filter !== "todos" && customerKind(row) !== filter) return false;
+      if (!q) return true;
+      return [row.name, row.phone, row.note, row.address].some((field) => field.toLowerCase().includes(q));
+    });
+  }, [customers, filter, search]);
+  const list = usePager(visible, 8, `${filter}|${search}`);
 
   function resetForm() {
     setForm(emptyForm);
@@ -40,12 +42,12 @@ export default function ClientesPage() {
     <AccessGate
       allow={["admin", "factory"]}
       title="Clientes ficam na fábrica"
-      hint="A loja não cadastra cliente. Quem encomenda festa ou retirada entra na fábrica."
+      hint="A loja não cadastra cliente. Quem encomenda festa ou compra em quantidade entra na fábrica."
     >
       <AppShell>
         <PageTitle
           title="Clientes"
-          hint="Nome, telefone e um recado. Serve para achar quem encomenda festa — não é funil, nota fiscal nem crédito."
+          hint="Festa ou compra na fábrica. Ainda sem baixar estoque. Sem nota fiscal e sem crédito."
         />
 
         <Card className="mb-6 space-y-4">
@@ -56,6 +58,26 @@ export default function ClientesPage() {
               placeholder="Ex.: Dona Márcia"
             />
           </Field>
+          <div>
+            <p className="mb-2 font-bold">Como este cliente compra</p>
+            <div className="flex flex-wrap gap-2">
+              {CUSTOMER_KINDS.map((item) => (
+                <Button
+                  key={item.id}
+                  type="button"
+                  variant={form.kind === item.id ? "primary" : "ghost"}
+                  className="min-h-12"
+                  onClick={() => setForm((current) => ({ ...current, kind: item.id }))}
+                >
+                  {item.label}
+                </Button>
+              ))}
+            </div>
+            <p className="mt-2 text-sm text-stone-500">
+              Festa é retirada pontual. Compra na fábrica é quantidade grande, direto da câmara — o pedido vem no próximo
+              passo.
+            </p>
+          </div>
           <Field label="Telefone">
             <Input
               value={form.phone}
@@ -93,8 +115,15 @@ export default function ClientesPage() {
                     phone: form.phone,
                     note: form.note,
                     address: form.address,
+                    kind: form.kind,
                   });
-                  setOk(form.id ? "Cadastro atualizado." : "Cliente na lista. A fábrica acha pelo nome ou telefone.");
+                  setOk(
+                    form.id
+                      ? "Cadastro atualizado."
+                      : form.kind === "volume"
+                        ? "Cliente marcado para compra na fábrica. O pedido ainda não baixa estoque."
+                        : "Cliente na lista. A fábrica acha pelo nome ou telefone.",
+                  );
                   resetForm();
                 } catch (err) {
                   setError(err instanceof CustomerError ? err.message : "Não deu para salvar o cliente.");
@@ -113,19 +142,41 @@ export default function ClientesPage() {
           </div>
         </Card>
 
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Button type="button" variant={filter === "todos" ? "primary" : "ghost"} onClick={() => setFilter("todos")}>
+            Tudo
+          </Button>
+          {CUSTOMER_KINDS.map((item) => (
+            <Button
+              key={item.id}
+              type="button"
+              variant={filter === item.id ? "primary" : "ghost"}
+              onClick={() => setFilter(item.id)}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
         <div className="mb-4">
           <SearchField value={search} onChange={setSearch} placeholder="Achar por nome, telefone ou recado..." />
         </div>
 
         {!customers?.length ? (
-          <Empty title="Nenhum cliente ainda" hint="Cadastre quem encomenda festa ou retirada. Ex.: Dona Márcia — festa sábado." />
+          <Empty title="Nenhum cliente ainda" hint="Cadastre quem encomenda festa ou quem compra na fábrica." />
         ) : visible.length === 0 ? (
           <Empty
-            title={`Nada com “${search.trim()}”`}
-            hint="Limpe a busca ou tente o telefone."
+            title={search.trim() ? `Nada com “${search.trim()}”` : "Ninguém neste tipo"}
+            hint={search.trim() ? "Limpe a busca ou tente o telefone." : "Volte em Tudo para ver a lista inteira."}
             action={
-              <Button type="button" variant="ghost" onClick={() => setSearch("")}>
-                Limpar busca
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setSearch("");
+                  setFilter("todos");
+                }}
+              >
+                Limpar
               </Button>
             }
           />
@@ -134,6 +185,9 @@ export default function ClientesPage() {
             {list.rows.map((customer) => (
               <Card key={customer.id} className="flex flex-wrap items-start justify-between gap-3">
                 <div>
+                  <p className="text-sm font-extrabold uppercase tracking-wide text-orange-800">
+                    {customerKindLabel(customerKind(customer))}
+                  </p>
                   <p className="text-xl font-extrabold text-stone-900">{customer.name}</p>
                   {customer.note ? <p className="mt-1 font-semibold text-stone-600">{customer.note}</p> : null}
                   <p className="mt-2 flex items-center gap-2 text-stone-700">
@@ -159,6 +213,7 @@ export default function ClientesPage() {
                         phone: customer.phone,
                         note: customer.note,
                         address: customer.address,
+                        kind: customerKind(customer),
                       });
                       setOk("");
                       setError("");

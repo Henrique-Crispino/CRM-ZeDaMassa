@@ -70,6 +70,7 @@ async function main() {
   const { saleCategories } = await import("../src/lib/categories.ts");
   const { saveCombo } = await import("../src/lib/combos.ts");
   const { listCustomers, saveCustomer } = await import("../src/lib/customers.ts");
+  const { customerKind } = await import("../src/lib/types.ts");
   const db = getDb();
   const today = todayDate();
 
@@ -918,6 +919,68 @@ async function main() {
     "Rita acha Dona Márcia na lista",
     found.some((row) => row.name === "Dona Márcia" && row.note.toLowerCase().includes("festa")),
     found.map((row) => row.name).join(","),
+  );
+  record(
+    "Dona Márcia é festa, não compra na fábrica",
+    found.some((row) => row.name === "Dona Márcia" && customerKind(row) === "festa"),
+    found.map((row) => `${row.name}:${customerKind(row)}`).join(","),
+  );
+
+  await db.customers.add({
+    id: "cust-old-sem-kind",
+    name: "Seu João",
+    phone: "",
+    note: "cadastro antigo",
+    address: "",
+    active: true,
+    createdAt: `${today}T10:00:00.000Z`,
+  });
+  record(
+    "Cliente antigo sem tipo conta como festa",
+    customerKind(await db.customers.get("cust-old-sem-kind")) === "festa",
+    "",
+  );
+
+  const factoryBeforeKind = await stockQty("factory", "cox-mini");
+  const storeBeforeKind = await stockQty("store_1", "cox-mini");
+  await expectOk("Rita marca Padaria do Zé como compra na fábrica", () =>
+    saveCustomer({
+      name: "Padaria do Zé",
+      phone: "(11) 97777-2020",
+      note: "compra grande",
+      kind: "volume",
+    }),
+  );
+  const bakeries = await listCustomers("padaria", "volume");
+  record(
+    "Padaria do Zé aparece em Compra na fábrica",
+    bakeries.some((row) => row.name === "Padaria do Zé" && customerKind(row) === "volume"),
+    bakeries.map((row) => `${row.name}:${customerKind(row)}`).join(","),
+  );
+  const festaOnly = await listCustomers("", "festa");
+  record(
+    "Filtro festa esconde a padaria",
+    !festaOnly.some((row) => row.name === "Padaria do Zé") && festaOnly.some((row) => row.name === "Dona Márcia"),
+    festaOnly.map((row) => row.name).join(","),
+  );
+  const carlosId = (await saveCustomer({
+    name: "Bar do Carlos",
+    note: "festa",
+    kind: "festa",
+  })) as string;
+  await saveCustomer({ id: carlosId, name: "Bar do Carlos", kind: "volume" });
+  const carlos = await listCustomers("carlos");
+  record(
+    "Rita muda festa para compra na fábrica",
+    carlos.some((row) => row.id === carlosId && customerKind(row) === "volume"),
+    carlos.map((row) => `${row.name}:${customerKind(row)}`).join(","),
+  );
+  const factoryAfterKind = await stockQty("factory", "cox-mini");
+  const storeAfterKind = await stockQty("store_1", "cox-mini");
+  record(
+    "Marcar o tipo do cliente não baixa estoque",
+    factoryAfterKind === factoryBeforeKind && storeAfterKind === storeBeforeKind,
+    `fábrica ${factoryBeforeKind}→${factoryAfterKind} loja ${storeBeforeKind}→${storeAfterKind}`,
   );
 
   const passed = rows.filter((row) => row.pass).length;

@@ -180,15 +180,32 @@ export type ComboItem = {
   qty: number;
 };
 
+export type CustomerKind = "festa" | "volume";
+
+export const CUSTOMER_KINDS: { id: CustomerKind; label: string }[] = [
+  { id: "festa", label: "Festa ou retirada" },
+  { id: "volume", label: "Compra na fábrica" },
+];
+
 export type Customer = {
   id: string;
   name: string;
   phone: string;
   note: string;
   address: string;
+  kind?: CustomerKind;
   active: boolean;
   createdAt: string;
 };
+
+export function customerKind(row?: Pick<Customer, "kind"> | null): CustomerKind {
+  return row?.kind === "volume" ? "volume" : "festa";
+}
+
+export function customerKindLabel(kind?: CustomerKind | null) {
+  const id = kind === "volume" ? "volume" : "festa";
+  return CUSTOMER_KINDS.find((item) => item.id === id)?.label ?? "Festa ou retirada";
+}
 
 export function comboAsPromo(combo: Pick<Combo, "enabled" | "price" | "promoFrom" | "promoTo">) {
   return {

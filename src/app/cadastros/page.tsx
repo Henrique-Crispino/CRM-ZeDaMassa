@@ -34,7 +34,7 @@ const items = [
   {
     href: "/clientes",
     title: "Clientes",
-    hint: "Nome, telefone e recado de quem encomenda festa. Sem nota e sem crédito.",
+    hint: "Festa ou compra na fábrica. Nome, telefone e recado. Sem nota e sem crédito.",
     icon: Contact,
   },
 ];
