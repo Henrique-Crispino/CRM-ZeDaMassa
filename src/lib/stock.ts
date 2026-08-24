@@ -212,6 +212,11 @@ export async function receiveTransfer(input: {
     if (!qtyById.has(part.id)) {
       throw new StockError("Confera todos os itens deste envio.");
     }
+    if ((qtyById.get(part.id) ?? 0) > part.qty) {
+      throw new StockError(
+        "Não dá para conferir mais do que a fábrica mandou. O que veio a mais não entra aqui — isso é inventário.",
+      );
+    }
   }
 
   const at = new Date().toISOString();
@@ -228,7 +233,8 @@ export async function receiveTransfer(input: {
       let divergente = false;
       for (const part of parts) {
         const receivedQty = qtyById.get(part.id) ?? 0;
-        if (receivedQty !== part.qty) divergente = true;
+        const returnedQty = part.qty - receivedQty;
+        if (returnedQty > 0) divergente = true;
         if (receivedQty > 0) {
           await changeStock(transfer.toLocationId, part.nicheId, part.lotId, receivedQty);
           await db.movements.add({
@@ -237,6 +243,19 @@ export async function receiveTransfer(input: {
             nicheId: part.nicheId,
             lotId: part.lotId,
             qty: receivedQty,
+            type: "send",
+            refId: transfer.id,
+            at,
+          });
+        }
+        if (returnedQty > 0) {
+          await changeStock("factory", part.nicheId, part.lotId, returnedQty);
+          await db.movements.add({
+            id: newId(),
+            locationId: "factory",
+            nicheId: part.nicheId,
+            lotId: part.lotId,
+            qty: returnedQty,
             type: "send",
             refId: transfer.id,
             at,

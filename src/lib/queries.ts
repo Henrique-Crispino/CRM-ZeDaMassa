@@ -695,6 +695,9 @@ export async function loadKardex(input: {
         who = "Fábrica";
         note = `Mandou para ${dest}`;
         if (transfer && transferStatus(transfer) === "em_transito") note += " · ainda em trânsito";
+      } else if (movement.locationId === "factory") {
+        who = transfer?.receivedBy ?? dest;
+        note = `Voltou da conferência · não chegou na ${dest}`;
       } else {
         who = transfer?.receivedBy ?? locationName;
         note = `Recebeu da ${getLocation(transfer?.fromLocationId ?? "factory")?.name ?? "fábrica"}`;

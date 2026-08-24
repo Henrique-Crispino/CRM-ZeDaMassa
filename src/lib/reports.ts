@@ -482,7 +482,7 @@ export async function reportTransfers(window: ReportWindow, scope: StoreScope): 
     rows: rows.length ? [...rows, ["TOTAL", "", "", "", "", totalQty, "", "", money(totalCost)]] : rows,
     notes: [
       rows.length === 0 ? "Nenhum envio neste recorte." : `${totalQty} un. saíram da fábrica · custo de reposição ${money(totalCost)}.`,
-      "Mandou é o que saiu da fábrica. Chegou é o que a loja conferiu. Em trânsito ainda não é estoque da loja.",
+      "Mandou é o que saiu da fábrica. Chegou é o que a loja conferiu. O que faltou volta para a câmara. Em trânsito ainda não é estoque da loja.",
       "Para o papel que vai com o motorista, use o romaneio do envio em Mandar para a loja.",
     ],
   };
@@ -1010,7 +1010,7 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
       [
         "Envio",
         "Divergência",
-        gap === 0 ? "Bateu" : `${gap > 0 ? "Faltou" : "Sobra"} ${Math.abs(gap)} un.`,
+        gap === 0 ? "Bateu" : gap > 0 ? `Faltou ${gap} un. · voltou à fábrica` : `Sobra ${Math.abs(gap)} un.`,
       ],
     );
   }
@@ -1045,7 +1045,7 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
     notes: [
       "Uma folha para o dono. Não substitui o detalhe de cada relatório.",
       "Espécie no caixa é só a parte em dinheiro. Pix e cartão não entram na gaveta.",
-      "Mandou é o que saiu da câmara. Confirmou é o que a loja conferiu. Em trânsito ainda não é estoque da loja.",
+      "Mandou é o que saiu da câmara. Confirmou é o que a loja conferiu. O que faltou volta para a fábrica. Em trânsito ainda não é estoque da loja.",
       "Sobra não é vencido. Inventário não é venda.",
       closed.length < ledgers.length ? "Tem caixa ainda aberto neste recorte: o apurado fica em branco até encerrar." : "",
     ].filter(Boolean),

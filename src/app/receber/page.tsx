@@ -67,7 +67,9 @@ export default function ReceberPage() {
       setPicked("");
       setOk(
         hasGap
-          ? `Conferido com divergência. Entrou o que chegou — o que faltou ou veio a mais ficou visível neste envio.`
+          ? `Conferido. Entrou o que chegou. ${review
+              .filter((row) => row.delta < 0)
+              .reduce((sum, row) => sum + Math.abs(row.delta), 0)} un. voltaram para a fábrica.`
           : `Conferido. ${selected.sentQty} un. entraram no estoque da ${selected.storeName}.`,
       );
     } catch (err) {
@@ -82,7 +84,7 @@ export default function ReceberPage() {
     <AppShell>
       <PageTitle
         title="Receber envio"
-        hint="O que saiu da fábrica ainda não é estoque da loja. Conte o que chegou. Faltou ou veio a mais vira divergência, não sumiço."
+        hint="O que saiu da fábrica ainda não é estoque da loja. Conte o que chegou, até o romaneio. O que faltou volta para a câmara. Veio a mais não inventa estoque nesta tela."
       />
 
       {storeLocked ? (
@@ -183,15 +185,16 @@ export default function ReceberPage() {
                       <p className="text-sm font-semibold text-stone-500">{item.lotHint}</p>
                       <p className="font-semibold text-stone-600">No envio: {item.qty} un.</p>
                       {delta < 0 ? (
-                        <p className="font-bold text-red-700">Faltaram {Math.abs(delta)}</p>
-                      ) : delta > 0 ? (
-                        <p className="font-bold text-orange-800">Vieram {delta} a mais</p>
+                        <p className="font-bold text-red-700">
+                          Faltaram {Math.abs(delta)} · voltam para a fábrica
+                        </p>
                       ) : (
                         <p className="font-semibold text-emerald-800">Bateu com o envio</p>
                       )}
                     </div>
                     <NumberStepper
                       value={arrived}
+                      max={item.qty}
                       onChange={(value) => setDraft((current) => ({ ...current, [item.id]: value }))}
                     />
                   </div>
@@ -235,7 +238,7 @@ export default function ReceberPage() {
         title={hasGap ? "Conferir com divergência?" : `Entrar ${selected?.sentQty ?? 0} un. no estoque?`}
         hint={
           hasGap
-            ? "O que chegou entra na loja. O que faltou ou veio a mais fica marcado neste envio — não some."
+            ? "O que chegou entra na loja. O que faltou volta para a fábrica, no mesmo lote. Não some."
             : "Aí sim vira estoque vendável desta loja."
         }
         confirmLabel="Confirmar recebimento"
@@ -279,6 +282,9 @@ function HistoryCard({ row }: { row: TransferView }) {
             .map((item) => (
               <li key={item.id} className="font-bold text-red-700">
                 {item.label}: envio {item.qty} · chegou {item.receivedQty ?? 0}
+                {(item.qty - (item.receivedQty ?? 0)) > 0
+                  ? ` · ${item.qty - (item.receivedQty ?? 0)} voltaram à fábrica`
+                  : ""}
               </li>
             ))}
         </ul>
