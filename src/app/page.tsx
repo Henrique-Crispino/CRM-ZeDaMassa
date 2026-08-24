@@ -22,10 +22,10 @@ export default function HomePage() {
           Controle da fábrica
         </p>
         <h1 className="mt-2 text-4xl font-extrabold leading-tight text-stone-900">
-          Qual painel você quer abrir?
+          Onde você trabalha agora?
         </h1>
         <p className="mt-3 max-w-xl text-lg leading-relaxed text-stone-600">
-          Cada botão abre o lugar de trabalho. Os dados deste computador ficam neste navegador.
+          Cada botão abre um lugar. Os dados deste computador ficam neste navegador. Não é senha — é só para não misturar fábrica e loja.
         </p>
 
         <div className="mt-8 space-y-3">

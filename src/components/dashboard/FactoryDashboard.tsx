@@ -29,7 +29,7 @@ export function FactoryDashboard({
   return (
     <div>
       <PageTitle
-        title="Painel da fábrica"
+        title="Fábrica"
         hint="Produza, mande para as lojas e veja o que está faltando — na câmara da fábrica e em cada loja."
       />
       <ActionGrid

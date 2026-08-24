@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Factory,
   Home,
@@ -29,11 +29,12 @@ import { useLocationCatalog } from "@/lib/locations";
 import { clearLocationId, getLocationId } from "@/lib/session";
 import { useReady } from "@/lib/use-ready";
 import { BackLink, backTarget } from "./BackLink";
+import { ConfirmDialog } from "./pick-flow";
 import { NotificationBell } from "./NotificationBell";
 import { Button, cn } from "./ui";
 
 const factoryLinks = [
-  { href: "/inicio", label: "Painel", icon: Home },
+  { href: "/inicio", label: "Início", icon: Home },
   { href: "/pedidos", label: "Pedidos", icon: ClipboardList },
   { href: "/produzir", label: "Produzir", icon: Factory },
   { href: "/compras", label: "Compras", icon: ShoppingBag },
@@ -47,7 +48,7 @@ const factoryLinks = [
 ];
 
 const storeLinks = [
-  { href: "/inicio", label: "Painel", icon: Home },
+  { href: "/inicio", label: "Início", icon: Home },
   { href: "/caixa", label: "Caixa", icon: Wallet },
   { href: "/vender", label: "Vender", icon: ShoppingCart },
   { href: "/pedir", label: "Pedir mais", icon: ClipboardList },
@@ -59,7 +60,7 @@ const storeLinks = [
 const storeMoreHrefs = ["/mais", "/devolver", "/consumo-interno", "/estoque", "/inventario", "/kardex"];
 
 const adminLinks = [
-  { href: "/inicio", label: "Painel", icon: BarChart3 },
+  { href: "/inicio", label: "Início", icon: BarChart3 },
   { href: "/relatorios", label: "Relatórios", icon: FileDown },
   { href: "/caixa", label: "Caixa", icon: Wallet },
   { href: "/pedidos", label: "Pedidos", icon: ClipboardList },
@@ -80,6 +81,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { panels } = useLocationCatalog();
   const panelId = ready ? getLocationId() : null;
+  const [leave, setLeave] = useState(false);
 
   useEffect(() => {
     if (ready && !getLocationId()) router.replace("/");
@@ -97,6 +99,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const links = panel?.type === "admin" ? adminLinks : panel?.type === "factory" ? factoryLinks : storeLinks;
   const wide = panel?.type === "admin";
   const back = backTarget(pathname, panel?.type);
+  const here =
+    panel?.type === "store"
+      ? `Você está na ${panel.name}`
+      : panel?.type === "factory"
+        ? "Você está na fábrica"
+        : "Você está na administração";
 
   return (
     <div className="min-h-screen bg-orange-50">
@@ -111,22 +119,15 @@ export function AppShell({ children }: { children: ReactNode }) {
             <p className="text-sm font-semibold uppercase tracking-wide text-orange-700">
               Controle da fábrica
             </p>
-            <p className="text-xl font-extrabold text-stone-900">Painel: {panel?.name}</p>
+            <p className="text-xl font-extrabold text-stone-900">{here}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {panel?.type === "admin" || panel?.type === "factory" ? (
               <NotificationBell audience={panel.type} />
             ) : null}
-            <Button
-              variant="ghost"
-              className="min-h-12 text-base"
-              onClick={() => {
-                clearLocationId();
-                router.push("/");
-              }}
-            >
+            <Button variant="ghost" className="min-h-12 text-base" onClick={() => setLeave(true)}>
               <LogOut className="size-5" />
-              Trocar painel
+              Trocar de lugar
             </Button>
           </div>
         </div>
@@ -159,6 +160,21 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
       </header>
       <main className={cn("mx-auto px-4 py-6", wide ? "max-w-7xl" : "max-w-6xl")}>{children}</main>
+      <ConfirmDialog
+        open={leave}
+        title={`Sair ${panel?.type === "store" ? `da ${panel.name}` : panel?.type === "factory" ? "da fábrica" : "da administração"}?`}
+        hint="Você vai escolher outro lugar. Isto não é senha. Os dados deste computador continuam aqui."
+        confirmLabel="Trocar de lugar"
+        confirmVariant="secondary"
+        cancelLabel="Ficar aqui"
+        onConfirm={() => {
+          clearLocationId();
+          router.push("/");
+        }}
+        onCancel={() => setLeave(false)}
+      >
+        <p className="font-semibold text-stone-700">Agora: {panel?.name}</p>
+      </ConfirmDialog>
     </div>
   );
 }

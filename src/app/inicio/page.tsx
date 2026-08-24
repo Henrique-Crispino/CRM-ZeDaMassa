@@ -26,7 +26,7 @@ export default function InicioPage() {
   return (
     <AppShell>
       {!data || !panel ? (
-        <p className="text-xl font-bold text-stone-500">Carregando o painel...</p>
+        <p className="text-xl font-bold text-stone-500">Carregando...</p>
       ) : panel.type === "admin" ? (
         <AdminDashboard data={data} period={period} onPeriod={setPeriod} />
       ) : panel.type === "factory" ? (

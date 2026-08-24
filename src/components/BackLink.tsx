@@ -15,7 +15,7 @@ export function backTarget(pathname: string, panelType?: string): BackTarget | n
   }
 
   if (pathname === "/mais") {
-    return { href: "/inicio", label: "Voltar ao painel" };
+    return { href: "/inicio", label: "Voltar ao início" };
   }
 
   if (
@@ -38,7 +38,7 @@ export function backTarget(pathname: string, panelType?: string): BackTarget | n
   }
 
   if (pathname === "/notificacoes") {
-    return { href: "/inicio", label: "Voltar ao painel" };
+    return { href: "/inicio", label: "Voltar ao início" };
   }
 
   if (pathname === "/produzir" && panelType === "admin") {
@@ -49,7 +49,7 @@ export function backTarget(pathname: string, panelType?: string): BackTarget | n
     return { href: "/produzir", label: "Voltar para produzir" };
   }
 
-  return { href: "/inicio", label: "Voltar ao painel" };
+  return { href: "/inicio", label: "Voltar ao início" };
 }
 
 export function BackLink({

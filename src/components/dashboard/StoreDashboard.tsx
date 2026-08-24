@@ -30,7 +30,7 @@ export function StoreDashboard({
   return (
     <div>
       <PageTitle
-        title={`Painel da ${storeName}`}
+        title={storeName}
         hint="Venda no caixa e, no fim do dia, lance o que foi frito e não vendeu."
       />
       <ActionGrid
