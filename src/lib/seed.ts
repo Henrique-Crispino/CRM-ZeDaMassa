@@ -218,9 +218,9 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
 export const DEFAULT_CONSUME_USERS: ConsumeUser[] = DEFAULT_EMPLOYEES.filter(personCanConsume).map(asConsumeUser);
 
 const DEFAULT_ALLOWANCES: InternalAllowance[] = [
-  { id: "pas-local", nicheId: "pas-local", enabled: true, dailyLimit: 3 },
-  { id: "cox-mini", nicheId: "cox-mini", enabled: true, dailyLimit: 5 },
-  { id: "coca-350", nicheId: "coca-350", enabled: true, dailyLimit: 2 },
+  { id: "pas-local", nicheId: "pas-local", enabled: true, dailyLimit: 3, personLimit: 1 },
+  { id: "cox-mini", nicheId: "cox-mini", enabled: true, dailyLimit: 5, personLimit: 2 },
+  { id: "coca-350", nicheId: "coca-350", enabled: true, dailyLimit: 2, personLimit: 1 },
 ];
 
 function lotExpiry(nicheId: string, madeAt: string) {
@@ -288,6 +288,15 @@ export async function ensureAppDefaults() {
     const niches = await db.niches.bulkGet(DEFAULT_ALLOWANCES.map((item) => item.nicheId));
     const existing = DEFAULT_ALLOWANCES.filter((_, index) => niches[index]);
     if (existing.length) await db.internalAllowances.bulkAdd(existing);
+  } else {
+    const rows = await db.internalAllowances.toArray();
+    for (const row of rows) {
+      if (row.enabled && (row.personLimit == null || row.personLimit <= 0)) {
+        await db.internalAllowances.update(row.id, {
+          personLimit: Math.min(1, Math.max(0, row.dailyLimit)),
+        });
+      }
+    }
   }
 
   const cox = await db.niches.get("cox-mini");

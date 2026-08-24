@@ -685,6 +685,7 @@ export async function reportInternal(window: ReportWindow, scope: StoreScope): P
         ? "Nenhum consumo interno neste recorte."
         : `${qty} un. · ${people} pessoas · custo ${money(cost)}. Saiu do estoque da loja, não da fábrica.`,
       "Origem Fábrica = funcionário da fábrica que retirou 1× ao dia em alguma loja.",
+      "Cada pessoa tem teto diário no produto. O teto da loja é o global. Consumo só com caixa aberto.",
     ],
   };
 }

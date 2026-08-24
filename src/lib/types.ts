@@ -359,6 +359,7 @@ export type InternalAllowance = {
   nicheId: string;
   enabled: boolean;
   dailyLimit: number;
+  personLimit?: number;
 };
 
 export type AppSetting = {

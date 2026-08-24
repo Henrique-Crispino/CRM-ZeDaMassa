@@ -33,6 +33,7 @@ export default function ConsumoAdminPage() {
   const [form, setForm] = useState(emptyUser);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [limits, setLimits] = useState<Record<string, number>>({});
+  const [personLimits, setPersonLimits] = useState<Record<string, number>>({});
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
 
@@ -215,6 +216,7 @@ export default function ConsumoAdminPage() {
               <div className="space-y-3">
                 {items.map((item) => {
                   const limit = limits[item.niche.id] ?? item.allowance.dailyLimit;
+                  const personLimit = personLimits[item.niche.id] ?? item.allowance.personLimit ?? 1;
                   return (
                     <Card key={item.niche.id} className="space-y-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -222,7 +224,7 @@ export default function ConsumoAdminPage() {
                           <p className="text-lg font-extrabold">{item.label}</p>
                           <p className="text-sm text-stone-500">
                             {item.allowance.enabled
-                              ? `Liberado · ${item.allowance.dailyLimit} / dia por loja`
+                              ? `Liberado · loja ${item.allowance.dailyLimit} / dia · pessoa ${item.allowance.personLimit ?? 1} / dia`
                               : "Bloqueado"}
                           </p>
                         </div>
@@ -239,6 +241,7 @@ export default function ConsumoAdminPage() {
                                 nicheId: item.niche.id,
                                 enabled: !item.allowance.enabled,
                                 dailyLimit: limit || item.allowance.dailyLimit || 1,
+                                personLimit: personLimit || 1,
                               });
                               setOk(`${item.label} ${item.allowance.enabled ? "bloqueado" : "liberado"}.`);
                             } catch (err) {
@@ -250,10 +253,16 @@ export default function ConsumoAdminPage() {
                         </Button>
                       </div>
                       <div className="flex flex-wrap items-end gap-3">
-                        <Field label="Quantidade / dia">
+                        <Field label="Nesta loja / dia" hint="Teto de todo o time neste ponto.">
                           <NumberStepper
                             value={limit}
                             onChange={(value) => setLimits((current) => ({ ...current, [item.niche.id]: value }))}
+                          />
+                        </Field>
+                        <Field label="Cada pessoa / dia" hint="Vem primeiro. Ana não come o teto da loja sozinha.">
+                          <NumberStepper
+                            value={personLimit}
+                            onChange={(value) => setPersonLimits((current) => ({ ...current, [item.niche.id]: value }))}
                           />
                         </Field>
                         <Button
@@ -269,14 +278,15 @@ export default function ConsumoAdminPage() {
                                 nicheId: item.niche.id,
                                 enabled: item.allowance.enabled,
                                 dailyLimit: limit,
+                                personLimit,
                               });
-                              setOk("Limite do dia salvo.");
+                              setOk("Limites do dia salvos.");
                             } catch (err) {
                               setError(err instanceof ConsumeError ? err.message : "Não deu para salvar.");
                             }
                           }}
                         >
-                          Salvar limite
+                          Salvar limites
                         </Button>
                       </div>
                     </Card>

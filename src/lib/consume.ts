@@ -1,3 +1,4 @@
+import { currentCashSession } from "./cash";
 import { getDb } from "./db";
 import { catalogItems } from "./queries";
 import { FACTORY_LOCATION, getLocation, isStore, storeLocations } from "./locations";
@@ -139,19 +140,35 @@ export async function listAllowances() {
       nicheId: item.niche.id,
       enabled: false,
       dailyLimit: 0,
+      personLimit: 0,
     },
   }));
 }
 
+export function personDailyCap(allowance: Pick<InternalAllowance, "dailyLimit" | "personLimit">) {
+  const store = Math.max(0, Math.floor(allowance.dailyLimit));
+  const person =
+    allowance.personLimit != null && allowance.personLimit > 0
+      ? Math.floor(allowance.personLimit)
+      : Math.min(1, store);
+  return store > 0 ? Math.min(person, store) : person;
+}
+
 export async function saveAllowance(input: InternalAllowance) {
-  if (input.enabled && input.dailyLimit <= 0) {
-    throw new ConsumeError("Informe quantas unidades podem ser consumidas por dia.");
+  const dailyLimit = Math.max(0, Math.floor(input.dailyLimit));
+  const personLimit = Math.max(0, Math.floor(input.personLimit ?? 0));
+  if (input.enabled && dailyLimit <= 0) {
+    throw new ConsumeError("Informe quantas unidades a loja pode consumir por dia.");
+  }
+  if (input.enabled && personLimit <= 0) {
+    throw new ConsumeError("Informe o teto de cada pessoa neste produto.");
   }
   await getDb().internalAllowances.put({
     id: input.nicheId,
     nicheId: input.nicheId,
     enabled: input.enabled,
-    dailyLimit: Math.max(0, Math.floor(input.dailyLimit)),
+    dailyLimit,
+    personLimit: input.enabled ? Math.min(personLimit, dailyLimit) : personLimit,
   });
 }
 
@@ -162,6 +179,11 @@ export async function consumedToday(locationId: string, nicheId: string, dayKey 
     .reduce((sum, row) => sum + row.qty, 0);
 }
 
+export async function consumedTodayByUser(userId: string, nicheId: string, dayKey = todayDate()) {
+  const rows = await userConsumptionOnDay(userId, dayKey);
+  return rows.filter((row) => row.nicheId === nicheId).reduce((sum, row) => sum + row.qty, 0);
+}
+
 export async function registerInternalConsume(input: {
   locationId: string;
   login: string;
@@ -170,6 +192,11 @@ export async function registerInternalConsume(input: {
 }) {
   if (!isStore(input.locationId)) {
     throw new ConsumeError("A fábrica não tem consumo interno. Retire na loja.");
+  }
+
+  const session = await currentCashSession(input.locationId);
+  if (!session) {
+    throw new ConsumeError("Abra o caixa desta loja antes do consumo interno.");
   }
 
   const user = await authenticateConsumeUser({
@@ -208,7 +235,14 @@ export async function registerInternalConsume(input: {
         const used = await consumedToday(input.locationId, item.nicheId, dayKey);
         if (used + item.qty > allowance.dailyLimit) {
           throw new ConsumeError(
-            `O limite do dia deste produto é ${allowance.dailyLimit}. Já foram ${used}.`,
+            `O limite da loja neste produto é ${allowance.dailyLimit}. Já foram ${used}.`,
+          );
+        }
+        const personCap = personDailyCap(allowance);
+        const usedByUser = await consumedTodayByUser(user.id, item.nicheId, dayKey);
+        if (usedByUser + item.qty > personCap) {
+          throw new ConsumeError(
+            `${user.name} já pode no máximo ${personCap} deste produto hoje. Já levou ${usedByUser}.`,
           );
         }
         const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, { skipExpired: true });

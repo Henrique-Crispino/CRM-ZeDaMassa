@@ -1,20 +1,24 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/pick-flow";
 import { Button, Card, Empty, ErrorBox, Field, Input, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
+import { currentCashSession } from "@/lib/cash";
 import {
   ConsumeError,
   consumePlaceName,
+  consumedToday,
+  consumedTodayByUser,
   isFactoryConsumeStaff,
+  listAllowances,
   listConsumeUsers,
+  personDailyCap,
   registerInternalConsume,
   userConsumptionOnDay,
-  consumedToday,
-  listAllowances,
 } from "@/lib/consume";
 import { getPanel } from "@/lib/locations";
 import { getLocationId } from "@/lib/session";
@@ -28,6 +32,10 @@ export default function ConsumoInternoPage() {
   const placeId = panel?.type === "store" ? locationId : null;
   const users = useLiveQuery(
     () => (ready && placeId ? listConsumeUsers(placeId) : []),
+    [ready, placeId],
+  );
+  const session = useLiveQuery(
+    () => (ready && placeId ? currentCashSession(placeId) : null),
     [ready, placeId],
   );
   const allowances = useLiveQuery(() => (ready ? listAllowances() : []), [ready]);
@@ -60,6 +68,19 @@ export default function ConsumoInternoPage() {
     [ready, chosen?.id, chosen?.locationId],
   );
   const factoryBlocked = Boolean(chosen && isFactoryConsumeStaff(chosen.locationId) && (factoryToday?.length ?? 0) > 0);
+  const cashClosed = Boolean(placeId && session === null);
+
+  const usedByPerson = useLiveQuery(
+    () =>
+      ready && chosen
+        ? Promise.all(
+            (allowances ?? [])
+              .filter((item) => item.allowance.enabled)
+              .map(async (item) => [item.niche.id, await consumedTodayByUser(chosen.id, item.niche.id)] as const),
+          ).then((rows) => Object.fromEntries(rows) as Record<string, number>)
+        : ({} as Record<string, number>),
+    [ready, chosen?.id, allowances],
+  );
 
   const released = useMemo(() => {
     return (allowances ?? [])
@@ -68,10 +89,14 @@ export default function ConsumoInternoPage() {
         const row = stock?.find((entry) => entry.niche.id === item.niche.id);
         const available = row && placeId ? sellableQty(row, placeId) : 0;
         const already = used?.[item.niche.id] ?? 0;
-        const remaining = factoryBlocked ? 0 : Math.max(0, item.allowance.dailyLimit - already);
-        return { ...item, available, already, remaining };
+        const personCap = personDailyCap(item.allowance);
+        const alreadyPerson = usedByPerson?.[item.niche.id] ?? 0;
+        const storeLeft = Math.max(0, item.allowance.dailyLimit - already);
+        const personLeft = chosen ? Math.max(0, personCap - alreadyPerson) : personCap;
+        const remaining = factoryBlocked || cashClosed ? 0 : Math.min(storeLeft, personLeft);
+        return { ...item, available, already, personCap, alreadyPerson, remaining, storeLeft };
       });
-  }, [allowances, stock, placeId, used, factoryBlocked]);
+  }, [allowances, stock, placeId, used, usedByPerson, factoryBlocked, cashClosed, chosen]);
 
   const selected = released.filter((item) => (qty[item.niche.id] ?? 0) > 0);
 
@@ -108,8 +133,21 @@ export default function ConsumoInternoPage() {
       <AppShell>
         <PageTitle
           title="Consumo interno"
-          hint="Funcionário da loja retira aqui. Funcionário da fábrica também pode, uma vez por dia, em qualquer loja."
+          hint="Funcionário da loja retira aqui. Funcionário da fábrica também pode, uma vez por dia, em qualquer loja. Só com o caixa aberto."
         />
+
+        {cashClosed ? (
+          <Card className="mb-4 bg-red-50 ring-red-200">
+            <p className="font-extrabold text-red-800">O caixa desta loja está fechado.</p>
+            <p className="mt-1 text-stone-700">Consumo interno só com o turno aberto. Senão o estoque some e o caixa não vê o dia.</p>
+            <Link
+              href="/caixa"
+              className="mt-3 inline-flex min-h-12 items-center rounded-2xl bg-red-600 px-4 font-bold text-white"
+            >
+              Abrir caixa
+            </Link>
+          </Card>
+        ) : null}
 
         <Card className="mb-6 space-y-4">
           <p className="text-lg font-extrabold">Quem está consumindo?</p>
@@ -170,7 +208,9 @@ export default function ConsumoInternoPage() {
                 <div>
                   <p className="text-lg font-extrabold">{item.label}</p>
                   <p className="text-sm font-semibold text-stone-500">
-                    Restam {item.remaining} de {item.allowance.dailyLimit} hoje nesta loja · {item.available} no estoque
+                    {chosen
+                      ? `Esta pessoa ainda pode ${item.remaining} (teto ${item.personCap}) · loja ${item.storeLeft} · ${item.available} no estoque`
+                      : `Teto da pessoa ${item.personCap} · loja ${item.allowance.dailyLimit} · ${item.available} no estoque`}
                   </p>
                 </div>
                 <NumberStepper
@@ -186,7 +226,10 @@ export default function ConsumoInternoPage() {
         <Card className="mt-6 space-y-4">
           <ErrorBox message={error} />
           <SuccessBox message={ok} />
-          <Button disabled={selected.length === 0 || !login || !password || factoryBlocked} onClick={() => setConfirm(true)}>
+          <Button
+            disabled={selected.length === 0 || !login || !password || factoryBlocked || cashClosed}
+            onClick={() => setConfirm(true)}
+          >
             Confirmar consumo
           </Button>
         </Card>
