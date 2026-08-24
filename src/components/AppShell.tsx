@@ -20,6 +20,7 @@ import {
   Wallet,
   ClipboardCheck,
   ClipboardPen,
+  ShoppingBag,
 } from "lucide-react";
 import { useLocationCatalog } from "@/lib/locations";
 import { clearLocationId, getLocationId } from "@/lib/session";
@@ -32,6 +33,7 @@ const factoryLinks = [
   { href: "/inicio", label: "Painel", icon: Home },
   { href: "/pedidos", label: "Pedidos", icon: ClipboardList },
   { href: "/produzir", label: "Produzir", icon: Factory },
+  { href: "/compras", label: "Compras", icon: ShoppingBag },
   { href: "/enviar", label: "Mandar p/ loja", icon: Truck },
   { href: "/produtos", label: "Produtos", icon: Package },
   { href: "/estoque", label: "Estoque", icon: Warehouse },
@@ -56,6 +58,7 @@ const adminLinks = [
   { href: "/produtos", label: "Produtos", icon: Package },
   { href: "/cadastros", label: "Organização", icon: Settings2 },
   { href: "/producao", label: "Produção", icon: ClipboardCheck },
+  { href: "/compras", label: "Compras", icon: ShoppingBag },
   { href: "/estoque", label: "Estoque", icon: Warehouse },
   { href: "/inventario", label: "Inventário", icon: ClipboardPen },
 ];

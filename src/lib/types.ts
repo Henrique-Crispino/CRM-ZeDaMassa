@@ -1,5 +1,5 @@
 export type Category = "salgado" | "bebida" | "limpeza" | "descartavel" | "embalagem";
-export type MovementType = "production" | "send" | "sale" | "sale_void" | "waste" | "internal" | "ajuste";
+export type MovementType = "production" | "send" | "sale" | "sale_void" | "waste" | "internal" | "ajuste" | "purchase";
 export type AdjustmentReason = "quebra" | "furto" | "erro" | "contagem";
 
 export const ADJUSTMENT_REASONS: { id: AdjustmentReason; label: string }[] = [

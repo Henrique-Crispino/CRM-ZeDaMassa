@@ -17,6 +17,7 @@ import {
   type PickKind,
 } from "@/components/pick-flow";
 import { Button, Empty, ErrorBox, Field, Input, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
+import { isManufactured } from "@/lib/categories";
 import { getPanel } from "@/lib/locations";
 import { todayDate } from "@/lib/money";
 import { catalogItems } from "@/lib/queries";
@@ -27,7 +28,10 @@ import { useReady } from "@/lib/use-ready";
 export default function ProduzirPage() {
   const ready = useReady();
   const panel = ready ? getPanel(getLocationId() ?? "") : undefined;
-  const items = useLiveQuery(() => (ready ? catalogItems() : []), [ready]);
+  const items = useLiveQuery(
+    () => (ready ? catalogItems().then((rows) => rows.filter((item) => isManufactured(item.product.category))) : []),
+    [ready],
+  );
   const [qty, setQty] = useState<Record<string, number>>({});
   const [madeAt, setMadeAt] = useState(todayDate());
   const [search, setSearch] = useState("");
@@ -94,14 +98,22 @@ export default function ProduzirPage() {
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <PageTitle
           title="O que foi feito hoje?"
-          hint="Busque o produto, coloque a quantidade e confirme embaixo. O registro fica visível para a fábrica e para o admin."
+          hint="Só o que a fábrica faz. Bebida, limpeza e embalagem entram em Compras."
         />
-        <Link
-          href="/producao"
-          className="inline-flex min-h-12 items-center rounded-2xl bg-white px-4 text-base font-bold text-stone-800 ring-1 ring-stone-300"
-        >
-          Ver registro
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/compras"
+            className="inline-flex min-h-12 items-center rounded-2xl bg-white px-4 text-base font-bold text-stone-800 ring-1 ring-stone-300"
+          >
+            Ir para compras
+          </Link>
+          <Link
+            href="/producao"
+            className="inline-flex min-h-12 items-center rounded-2xl bg-white px-4 text-base font-bold text-stone-800 ring-1 ring-stone-300"
+          >
+            Ver registro
+          </Link>
+        </div>
         </div>
 
         <div className="mb-4 max-w-xs">
@@ -111,7 +123,7 @@ export default function ProduzirPage() {
         </div>
 
         <div className="mb-4 space-y-3">
-          <SearchField value={search} onChange={setSearch} placeholder="Buscar: coxinha, festa, coca..." />
+          <SearchField value={search} onChange={setSearch} placeholder="Buscar: coxinha, festa, kibe..." />
           <FilterChips value={kind} onChange={setKind} options={pickKindOptions(selected.length)} />
         </div>
 

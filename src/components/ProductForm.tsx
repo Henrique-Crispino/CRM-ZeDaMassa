@@ -137,6 +137,9 @@ export function ProductForm({
 
         <div>
           <p className="mb-2 text-base font-bold text-stone-800">O que é?</p>
+          <p className="mb-3 text-sm font-semibold text-stone-500">
+            Salgado é produção. Bebida, limpeza, descartável e embalagem entram pela tela de Compras.
+          </p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {CATEGORIES.map((item) => (
               <Button

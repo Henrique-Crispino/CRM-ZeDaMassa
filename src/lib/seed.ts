@@ -450,14 +450,15 @@ export async function loadDemoData() {
         unitCost: NICHE_BY_ID.get(nicheId)?.costPrice,
       });
       addStock("factory", nicheId, lotId, plan.produce);
+      const purchased = PRODUCT_BY_NICHE.get(nicheId)?.category !== "salgado";
       movements.push({
         id: newId(),
         locationId: "factory",
         nicheId,
         lotId,
         qty: plan.produce,
-        type: "production",
-        refId: `prod-${madeAt}`,
+        type: purchased ? "purchase" : "production",
+        refId: purchased ? `buy-${madeAt}` : `prod-${madeAt}`,
         at: producedAt,
       });
     }

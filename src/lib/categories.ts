@@ -21,3 +21,11 @@ export function defaultShelfLife(category: Category) {
   if (category === "bebida") return 180;
   return 0;
 }
+
+export function isManufactured(category: Category) {
+  return category === "salgado";
+}
+
+export function isPurchased(category: Category) {
+  return !isManufactured(category);
+}

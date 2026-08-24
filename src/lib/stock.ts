@@ -1,3 +1,4 @@
+import { isPurchased } from "./categories";
 import { currentCashSession } from "./cash";
 import { getDb } from "./db";
 import { isStore } from "./locations";
@@ -26,6 +27,9 @@ export async function produceItems(input: {
   await db.transaction("rw", [db.lots, db.stock, db.movements, db.niches, db.products], async () => {
     for (const [index, item] of items.entries()) {
       const product = products[index];
+      if (product && isPurchased(product.category)) {
+        throw new StockError(`${product.name} não se produz. Dê entrada em Compras.`);
+      }
       const lotId = newId();
       const expiresAt =
         product?.perishable && product.shelfLifeDays > 0
@@ -46,6 +50,60 @@ export async function produceItems(input: {
         lotId,
         qty: item.qty,
         type: "production",
+        refId,
+        at,
+      });
+    }
+  });
+
+  return refId;
+}
+
+export async function receivePurchase(input: {
+  items: { nicheId: string; qty: number; unitCost: number; expiresAt?: string }[];
+  receivedAt: string;
+}) {
+  const items = input.items.filter((item) => item.qty > 0);
+  if (items.length === 0) {
+    throw new StockError("Informe o que chegou da compra.");
+  }
+
+  const db = getDb();
+  const refId = newId();
+  const at = new Date().toISOString();
+  const niches = await db.niches.bulkGet(items.map((item) => item.nicheId));
+  const products = await db.products.bulkGet(niches.map((niche) => niche?.productId ?? ""));
+
+  await db.transaction("rw", [db.lots, db.stock, db.movements, db.niches, db.products], async () => {
+    for (const [index, item] of items.entries()) {
+      const niche = niches[index];
+      const product = products[index];
+      if (!niche || !product) throw new StockError("Produto não encontrado.");
+      if (!isPurchased(product.category)) {
+        throw new StockError(`${product.name} é fabricado. Lance em Produzir.`);
+      }
+      const unitCost = Number.isFinite(item.unitCost) ? Math.max(0, item.unitCost) : niche.costPrice;
+      const expiresAt =
+        item.expiresAt ||
+        (product.perishable && product.shelfLifeDays > 0
+          ? addDays(input.receivedAt, product.shelfLifeDays)
+          : undefined);
+      const lotId = newId();
+      await db.lots.add({
+        id: lotId,
+        nicheId: item.nicheId,
+        madeAt: input.receivedAt,
+        expiresAt,
+        unitCost,
+      });
+      await changeStock("factory", item.nicheId, lotId, item.qty);
+      await db.movements.add({
+        id: newId(),
+        locationId: "factory",
+        nicheId: item.nicheId,
+        lotId,
+        qty: item.qty,
+        type: "purchase",
         refId,
         at,
       });

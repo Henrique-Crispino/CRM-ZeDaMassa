@@ -462,6 +462,39 @@ export async function listProductionLogs(limit = 40, madeOn?: string): Promise<P
     .slice(0, madeOn ? 200 : limit);
 }
 
+export async function listPurchaseLogs(limit = 40): Promise<ProductionLog[]> {
+  const db = getDb();
+  const [movements, lots, catalog] = await Promise.all([
+    db.movements.toArray(),
+    db.lots.toArray(),
+    catalogItems(false),
+  ]);
+  const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+  const labelByNiche = new Map(catalog.map((item) => [item.niche.id, item.label]));
+  const groups = new Map<string, ProductionLog>();
+
+  for (const movement of movements.filter((item) => item.type === "purchase" && item.qty > 0)) {
+    const lot = lotById.get(movement.lotId);
+    const current = groups.get(movement.refId) ?? {
+      refId: movement.refId,
+      at: movement.at,
+      madeAt: lot?.madeAt ?? movement.at.slice(0, 10),
+      totalQty: 0,
+      items: [],
+    };
+    current.totalQty += movement.qty;
+    if (movement.at > current.at) current.at = movement.at;
+    current.items.push({
+      label: labelByNiche.get(movement.nicheId) ?? "Produto",
+      qty: movement.qty,
+      expiresAt: lot?.expiresAt,
+    });
+    groups.set(movement.refId, current);
+  }
+
+  return [...groups.values()].sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
+}
+
 function buildDaily(
   days: number,
   sales: Sale[],
