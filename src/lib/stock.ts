@@ -1,4 +1,4 @@
-import { isPurchased, isSoldAtRegister } from "./categories";
+import { isClosedPackage, isPurchased, isSoldAtRegister, notForSaleMessage } from "./categories";
 import { currentCashSession, money2 } from "./cash";
 import { getDb } from "./db";
 import { isStore } from "./locations";
@@ -526,7 +526,7 @@ export async function checkout(input: {
   const products = await db.products.bulkGet(niches.map((niche) => niche?.productId ?? ""));
   for (const product of products) {
     if (product && !isSoldAtRegister(product.category)) {
-      throw new StockError(`${product.name} é insumo da fábrica. Não vende no caixa.`);
+      throw new StockError(notForSaleMessage(product.name, product.category));
     }
   }
 
@@ -701,6 +701,56 @@ export async function registerWaste(input: {
           lotId: chunk.lotId,
           qty: -chunk.qty,
           type: "waste",
+          refId,
+          at,
+        });
+      }
+    }
+  });
+
+  return refId;
+}
+
+export async function openPackages(input: {
+  locationId: string;
+  items: { nicheId: string; qty: number }[];
+}) {
+  if (input.locationId !== "factory" && !isStore(input.locationId)) {
+    throw new StockError("Abra o pacote na fábrica ou na loja.");
+  }
+
+  const items = input.items.filter((item) => item.qty > 0);
+  if (items.length === 0) {
+    throw new StockError("Informe quantos pacotes foram abertos.");
+  }
+
+  await assertLiveNiches(items.map((item) => item.nicheId));
+
+  const db = getDb();
+  const niches = await db.niches.bulkGet(items.map((item) => item.nicheId));
+  const products = await db.products.bulkGet(niches.map((niche) => niche?.productId ?? ""));
+  for (const product of products) {
+    if (!product) throw new StockError("Produto não encontrado.");
+    if (!isClosedPackage(product.category)) {
+      throw new StockError(`${product.name} não é pacote. Esta tela é para embalagem e descartável.`);
+    }
+  }
+
+  const refId = newId();
+  const at = new Date().toISOString();
+
+  await db.transaction("rw", [db.stock, db.lots, db.movements, db.niches, db.products], async () => {
+    for (const item of items) {
+      const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, { skipExpired: true });
+      for (const chunk of chunks) {
+        await changeStock(input.locationId, item.nicheId, chunk.lotId, -chunk.qty);
+        await db.movements.add({
+          id: newId(),
+          locationId: input.locationId,
+          nicheId: item.nicheId,
+          lotId: chunk.lotId,
+          qty: -chunk.qty,
+          type: "uso",
           refId,
           at,
         });

@@ -24,6 +24,7 @@ import {
   PackageCheck,
   Undo2,
   Utensils,
+  PackageOpen,
   type LucideIcon,
 } from "lucide-react";
 import { useLocationCatalog } from "@/lib/locations";
@@ -48,6 +49,7 @@ const factoryTurno: NavItem[] = [
 const factoryRest: NavItem[] = [
   { href: "/devolver", label: "Devoluções", icon: Undo2 },
   { href: "/produtos", label: "Produtos", icon: Package },
+  { href: "/pacote", label: "Abrir pacote", icon: PackageOpen },
   { href: "/estoque", label: "Estoque", icon: Warehouse },
   { href: "/inventario", label: "Inventário", icon: ClipboardPen },
   { href: "/kardex", label: "Extrato", icon: ScrollText },
@@ -65,6 +67,7 @@ const storeTurno: NavItem[] = [
 const storeRest: NavItem[] = [
   { href: "/devolver", label: "Devolver", icon: Undo2 },
   { href: "/consumo-interno", label: "Consumo interno", icon: Utensils },
+  { href: "/pacote", label: "Abrir pacote", icon: PackageOpen },
   { href: "/estoque", label: "Estoque", icon: Warehouse },
   { href: "/inventario", label: "Inventário", icon: ClipboardPen },
   { href: "/kardex", label: "Extrato", icon: ScrollText },

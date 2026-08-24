@@ -777,6 +777,9 @@ export async function loadKardex(input: {
       const line = lines.find((row) => row.countId === movement.refId && row.nicheId === movement.nicheId);
       who = count?.countedBy ?? locationName;
       note = adjustmentReasonLabel(line?.reason);
+    } else if (movement.type === "uso") {
+      who = locationName;
+      note = "Abriu o pacote";
     }
 
     if (opening != null) running += movement.qty;

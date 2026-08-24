@@ -14,8 +14,22 @@ export function isInsumo(category: Category) {
   return category === "insumo";
 }
 
+export function isClosedPackage(category: Category) {
+  return category === "embalagem" || category === "descartavel";
+}
+
 export function isSoldAtRegister(category: Category) {
-  return !isInsumo(category);
+  return !isInsumo(category) && !isClosedPackage(category);
+}
+
+export function notForSaleMessage(name: string, category: Category) {
+  if (isClosedPackage(category)) {
+    return `${name} é pacote fechado. Não vende no caixa. Abra o pacote quando for usar.`;
+  }
+  if (isInsumo(category)) {
+    return `${name} é insumo da fábrica. Não vende no caixa.`;
+  }
+  return `${name} não vende no caixa.`;
 }
 
 export function saleCategories() {

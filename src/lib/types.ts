@@ -1,5 +1,15 @@
 export type Category = "salgado" | "bebida" | "limpeza" | "descartavel" | "embalagem" | "insumo";
-export type MovementType = "production" | "send" | "sale" | "sale_void" | "waste" | "internal" | "ajuste" | "purchase" | "return";
+export type MovementType =
+  | "production"
+  | "send"
+  | "sale"
+  | "sale_void"
+  | "waste"
+  | "internal"
+  | "ajuste"
+  | "purchase"
+  | "return"
+  | "uso";
 export type AdjustmentReason = "quebra" | "furto" | "erro" | "contagem";
 
 export const ADJUSTMENT_REASONS: { id: AdjustmentReason; label: string }[] = [
@@ -23,6 +33,7 @@ export const MOVEMENT_LABELS: Record<MovementType, string> = {
   waste: "Perda",
   internal: "Consumo interno",
   ajuste: "Ajuste",
+  uso: "Abriu o pacote",
 };
 
 export function movementLabel(type: MovementType) {

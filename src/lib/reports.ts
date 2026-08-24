@@ -915,7 +915,7 @@ export async function reportInventory(window: ReportWindow, scope: StoreScope): 
 
 export async function reportDayPack(window: ReportWindow, scope: StoreScope): Promise<ReportTable> {
   const db = getDb();
-  const [sales, wastes, consumptions, sessions, transfers, transferItems, counts, lines] = await Promise.all([
+  const [sales, wastes, consumptions, sessions, transfers, transferItems, counts, lines, movements] = await Promise.all([
     liveSales(await db.sales.where("at").between(window.from, window.to, true, true).toArray(), scope),
     filterStore(await db.wastes.where("at").between(window.from, window.to, true, true).toArray(), scope),
     filterStore(await db.consumptions.where("at").between(window.from, window.to, true, true).toArray(), scope),
@@ -926,6 +926,7 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
     db.transferItems.toArray(),
     db.inventoryCounts.toArray(),
     db.inventoryLines.toArray(),
+    filterStore(await db.movements.where("at").between(window.from, window.to, true, true).toArray(), scope),
   ]);
 
   const ledgers = await Promise.all(sessions.map((session) => sessionLedger(session.id)));
@@ -937,6 +938,9 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
   const leftoverQty = leftover.reduce((sum, row) => sum + row.qty, 0);
   const expiredQty = expired.reduce((sum, row) => sum + row.qty, 0);
   const consumeQty = consumptions.reduce((sum, row) => sum + row.qty, 0);
+  const packQty = movements
+    .filter((row) => row.type === "uso")
+    .reduce((sum, row) => sum + Math.abs(row.qty), 0);
 
   const dinheiro = ledgers.reduce((sum, ledger) => sum + ledger.byPayment.dinheiro, 0);
   const pix = ledgers.reduce((sum, ledger) => sum + ledger.byPayment.pix, 0);
@@ -1020,6 +1024,7 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
     ["Saídas", "Sobra", `${leftoverQty} un.`],
     ["Saídas", "Vencido", `${expiredQty} un.`],
     ["Saídas", "Consumo interno", `${consumeQty} un.`],
+    ["Saídas", "Abriu pacote", `${packQty} pacote${packQty === 1 ? "" : "s"}`],
   );
 
   if (inventories.length === 0) {

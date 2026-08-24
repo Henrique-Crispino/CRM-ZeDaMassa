@@ -59,6 +59,7 @@ async function main() {
     registerWaste,
     discardExpiredLots,
     applyInventory,
+    openPackages,
   } = await import("../src/lib/stock.ts");
   const { openCashSession, registerCashMovement, closeCashSession, reopenCashSession, currentCashSession, sessionLedger } =
     await import("../src/lib/cash.ts");
@@ -200,6 +201,47 @@ async function main() {
     "",
   );
 
+  await db.products.add({
+    id: "prod-copo",
+    name: "Copo 200ml",
+    category: "descartavel",
+    perishable: false,
+    shelfLifeDays: 0,
+    createdAt: `${today}T10:00:00.000Z`,
+  });
+  await db.niches.add({
+    id: "copo-100",
+    productId: "prod-copo",
+    name: "Pacote 100",
+    sellPrice: 8,
+    costPrice: 3.5,
+    minStock: 4,
+    minStockFactory: 16,
+    minStockStore: 4,
+    active: true,
+    promoAllowed: false,
+    promoPrice: 0,
+  });
+  await expectFail(
+    "Produzir copo é recusado",
+    () => produceItems({ madeAt: today, items: [{ nicheId: "copo-100", qty: 2 }] }),
+    "não se produz",
+  );
+  await expectOk("Compra de copo grava o lote em pacote", () =>
+    receivePurchase({ receivedAt: today, items: [{ nicheId: "copo-100", qty: 5, unitCost: 3.5 }] }),
+  );
+  await expectFail(
+    "Abrir coxinha como pacote é recusado",
+    () => openPackages({ locationId: "factory", items: [{ nicheId: "cox-mini", qty: 1 }] }),
+    "não é pacote",
+  );
+  const copoBefore = await stockQty("factory", "copo-100");
+  await expectOk("Abrir 1 pacote de copo na fábrica", () =>
+    openPackages({ locationId: "factory", items: [{ nicheId: "copo-100", qty: 1 }] }),
+  );
+  const copoAfter = await stockQty("factory", "copo-100");
+  record("Abrir pacote baixa 1 do estoque", copoBefore === 5 && copoAfter === 4, `antes=${copoBefore} depois=${copoAfter}`);
+
   const factoryCox = await stockQty("factory", "cox-mini");
   record("Fábrica tem 100 coxinhas após produzir", factoryCox === 100, `qty=${factoryCox}`);
 
@@ -234,6 +276,17 @@ async function main() {
         items: [{ nicheId: "farinha-25kg", qty: 1 }],
       }),
     "insumo",
+  );
+  await expectFail(
+    "Venda de copo no caixa é recusada",
+    () =>
+      checkout({
+        locationId: "store_1",
+        channel: "caixa",
+        payment: "dinheiro",
+        items: [{ nicheId: "copo-100", qty: 1 }],
+      }),
+    "pacote",
   );
 
   const transferId = (await expectOk("Mandar 40 coxinhas para a Loja 1", () =>

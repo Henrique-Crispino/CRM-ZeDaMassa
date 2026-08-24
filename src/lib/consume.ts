@@ -1,5 +1,5 @@
 import { currentCashSession } from "./cash";
-import { isSoldAtRegister } from "./categories";
+import { isClosedPackage, isSoldAtRegister } from "./categories";
 import { getDb } from "./db";
 import { catalogItems } from "./queries";
 import { FACTORY_LOCATION, getLocation, isStore, storeLocations } from "./locations";
@@ -217,7 +217,11 @@ export async function registerInternalConsume(input: {
       throw new ConsumeError(closedCatalogMessage(product.name));
     }
     if (product && !isSoldAtRegister(product.category)) {
-      throw new ConsumeError(`${product.name} é insumo da fábrica. Não entra no consumo interno.`);
+      throw new ConsumeError(
+        isClosedPackage(product.category)
+          ? `${product.name} é pacote. Abra na tela Abrir pacote, não no consumo interno.`
+          : `${product.name} é insumo da fábrica. Não entra no consumo interno.`,
+      );
     }
   }
   const dayKey = todayDate();

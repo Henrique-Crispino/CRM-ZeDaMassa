@@ -22,12 +22,14 @@ export function backTarget(pathname: string, panelType?: string): BackTarget | n
     (panelType === "store" &&
       (pathname === "/devolver" ||
         pathname === "/consumo-interno" ||
+        pathname === "/pacote" ||
         pathname === "/estoque" ||
         pathname === "/inventario" ||
         pathname === "/kardex")) ||
     (panelType === "factory" &&
       (pathname === "/devolver" ||
         pathname === "/produtos" ||
+        pathname === "/pacote" ||
         pathname === "/estoque" ||
         pathname === "/inventario" ||
         pathname === "/kardex"))
