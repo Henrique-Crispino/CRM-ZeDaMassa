@@ -27,7 +27,7 @@ import { expiryAlertsFor, sellableQty, stockByLocation } from "@/lib/queries";
 import { getLocationId } from "@/lib/session";
 import { checkout, StockError } from "@/lib/stock";
 import type { Category, PaymentMethod, SaleChannel } from "@/lib/types";
-import { PAYMENT_METHODS, paymentMethodLabel } from "@/lib/types";
+import { PAYMENT_METHODS, paymentMethodLabel, promoIsLive, promoStatus } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 const channels: { id: SaleChannel; label: string }[] = [
@@ -86,7 +86,7 @@ export default function VenderPage() {
         .map(([nicheId, cartQty]) => {
           const item = (stock ?? []).find((row) => row.niche.id === nicheId);
           if (!item) return null;
-          const usePromo = Boolean(promo[nicheId] && item.niche.promoAllowed && item.niche.promoPrice > 0);
+          const usePromo = Boolean(promo[nicheId] && promoIsLive(item.niche));
           const unitPrice = usePromo ? item.niche.promoPrice : item.niche.sellPrice;
           return {
             ...item,
@@ -242,10 +242,12 @@ export default function VenderPage() {
                   <p className="mt-2 text-lg font-extrabold text-orange-700">
                     {formatBRL(item.niche.sellPrice)}
                   </p>
-                  {item.niche.promoAllowed && item.niche.promoPrice > 0 ? (
+                  {promoIsLive(item.niche) ? (
                     <p className="text-sm font-bold text-emerald-700">
-                      Promoção liberada: {formatBRL(item.niche.promoPrice)}
+                      Promoção valendo: {formatBRL(item.niche.promoPrice)}
                     </p>
+                  ) : promoStatus(item.niche) === "scheduled" ? (
+                    <p className="text-sm font-semibold text-stone-500">Promoção ainda não começou</p>
                   ) : null}
                   <p className="mt-1 text-sm font-semibold text-stone-500">
                     {available > 0 ? `${available} para vender` : expired > 0 ? "Só lote vencido" : "Sem estoque"}
@@ -278,7 +280,7 @@ export default function VenderPage() {
                     }
                   />
                 </div>
-                {item.niche.promoAllowed && item.niche.promoPrice > 0 ? (
+                {promoIsLive(item.niche) ? (
                   <Button
                     type="button"
                     variant={item.usePromo ? "primary" : "ghost"}

@@ -2,7 +2,7 @@ import { CASH_REOPEN_CODE, CASH_REOPEN_SETTING } from "./cash";
 import { getDb } from "./db";
 import { asConsumeUser, mergePeopleIfNeeded, personCanConsume } from "./people";
 import { DEFAULT_STORES, refreshLocations } from "./locations";
-import { addDays, newId, todayDate } from "./money";
+import { addDays, endOfDayIso, newId, startOfDayIso, todayDate } from "./money";
 import { createStoreRequest } from "./requests";
 import type {
   CashMovement,
@@ -23,7 +23,7 @@ import type {
   TransferItem,
   Waste,
 } from "./types";
-import { salePaymentShare } from "./types";
+import { promoIsLive, salePaymentShare } from "./types";
 
 type Rng = { n: number };
 
@@ -53,7 +53,10 @@ function dateKey(daysAgo: number) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 }
 
-function niche(row: Omit<Niche, "promoAllowed" | "promoPrice"> & Partial<Pick<Niche, "promoAllowed" | "promoPrice">>): Niche {
+function niche(
+  row: Omit<Niche, "promoAllowed" | "promoPrice"> &
+    Partial<Pick<Niche, "promoAllowed" | "promoPrice" | "promoFrom" | "promoTo" | "promoOnlyExpiringToday">>,
+): Niche {
   return {
     promoAllowed: false,
     promoPrice: 0,
@@ -72,7 +75,7 @@ const CATALOG: { product: Product; niches: Niche[] }[] = [
       createdAt: "2026-07-01T10:00:00.000Z",
     },
     niches: [
-      niche({ id: "cox-mini", productId: "prod-coxinha", name: "Mini", sellPrice: 1.5, costPrice: 0.45, minStock: 30, minStockFactory: 180, minStockStore: 30, active: true, promoAllowed: true, promoPrice: 1.2 }),
+      niche({ id: "cox-mini", productId: "prod-coxinha", name: "Mini", sellPrice: 1.5, costPrice: 0.45, minStock: 30, minStockFactory: 180, minStockStore: 30, active: true, promoAllowed: true, promoPrice: 1.2, promoFrom: startOfDayIso(), promoTo: endOfDayIso(addDays(todayDate(), 14)) }),
       niche({ id: "cox-festa", productId: "prod-coxinha", name: "Festa", sellPrice: 2, costPrice: 0.55, minStock: 20, minStockFactory: 120, minStockStore: 20, active: true }),
       niche({ id: "cox-assado", productId: "prod-coxinha", name: "Assado", sellPrice: 2.5, costPrice: 0.7, minStock: 15, minStockFactory: 80, minStockStore: 15, active: true }),
     ],
@@ -115,7 +118,7 @@ const CATALOG: { product: Product; niches: Niche[] }[] = [
       createdAt: "2026-07-01T10:00:00.000Z",
     },
     niches: [
-      niche({ id: "pas-local", productId: "prod-pastel", name: "Consumo local", sellPrice: 8, costPrice: 2.5, minStock: 12, minStockFactory: 80, minStockStore: 12, active: true, promoAllowed: true, promoPrice: 6.5 }),
+      niche({ id: "pas-local", productId: "prod-pastel", name: "Consumo local", sellPrice: 8, costPrice: 2.5, minStock: 12, minStockFactory: 80, minStockStore: 12, active: true, promoAllowed: true, promoPrice: 6.5, promoFrom: startOfDayIso(), promoTo: endOfDayIso(addDays(todayDate(), 14)) }),
     ],
   },
   {
@@ -128,7 +131,7 @@ const CATALOG: { product: Product; niches: Niche[] }[] = [
       createdAt: "2026-07-01T10:00:00.000Z",
     },
     niches: [
-      niche({ id: "coca-350", productId: "prod-coca", name: "Lata", sellPrice: 6, costPrice: 3.2, minStock: 10, minStockFactory: 40, minStockStore: 10, active: true, promoAllowed: true, promoPrice: 5 }),
+      niche({ id: "coca-350", productId: "prod-coca", name: "Lata", sellPrice: 6, costPrice: 3.2, minStock: 10, minStockFactory: 40, minStockStore: 10, active: true, promoAllowed: true, promoPrice: 5, promoFrom: startOfDayIso(), promoTo: endOfDayIso(addDays(todayDate(), 14)) }),
     ],
   },
   {
@@ -301,9 +304,16 @@ export async function ensureAppDefaults() {
 
   const cox = await db.niches.get("cox-mini");
   if (cox && !cox.promoAllowed) {
-    await db.niches.update("cox-mini", { promoAllowed: true, promoPrice: 1.2 });
-    await db.niches.update("coca-350", { promoAllowed: true, promoPrice: 5 });
-    await db.niches.update("pas-local", { promoAllowed: true, promoPrice: 6.5 });
+    await db.niches.update("cox-mini", { promoAllowed: true, promoPrice: 1.2, promoFrom: startOfDayIso(), promoTo: endOfDayIso(addDays(todayDate(), 14)) });
+    await db.niches.update("coca-350", { promoAllowed: true, promoPrice: 5, promoFrom: startOfDayIso(), promoTo: endOfDayIso(addDays(todayDate(), 14)) });
+    await db.niches.update("pas-local", { promoAllowed: true, promoPrice: 6.5, promoFrom: startOfDayIso(), promoTo: endOfDayIso(addDays(todayDate(), 14)) });
+  }
+  const openPromos = (await db.niches.toArray()).filter((item) => item.promoAllowed && !item.promoTo);
+  for (const item of openPromos) {
+    await db.niches.update(item.id, {
+      promoFrom: item.promoFrom || startOfDayIso(),
+      promoTo: endOfDayIso(addDays(todayDate(), 14)),
+    });
   }
 
   const today = todayDate();
@@ -573,7 +583,7 @@ export async function loadDemoData() {
           const qty = Math.min(have, today && ["cox-festa", "pas-local", "kibe-mini", "coca-350"].includes(nicheId) ? Math.max(want, Math.ceil(have * 0.45)) : want);
           const itemNiche = NICHE_BY_ID.get(nicheId);
           if (!itemNiche || qty <= 0) continue;
-          const usePromo = itemNiche.promoAllowed && between(rng, 1, 5) === 1;
+          const usePromo = promoIsLive(itemNiche) && between(rng, 1, 5) === 1;
           const unitPrice = usePromo ? itemNiche.promoPrice : itemNiche.sellPrice;
           for (const chunk of take(storeId, nicheId, qty)) {
             lines.push({

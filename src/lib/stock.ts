@@ -2,7 +2,7 @@ import { isPurchased } from "./categories";
 import { currentCashSession, money2 } from "./cash";
 import { getDb } from "./db";
 import { isStore } from "./locations";
-import { addDays, newId, todayDate } from "./money";
+import { addDays, daysUntil, newId, todayDate } from "./money";
 import { changeStock, oldestLots, StockError, stockQty } from "./stock-core";
 import type { AdjustmentReason, InventoryLine, PaymentMethod, ReturnReason, SaleChannel, SalePayment, SaleVoidReason } from "./types";
 import {
@@ -11,6 +11,8 @@ import {
   RETURN_REASONS,
   SALE_VOID_REASONS,
   lotCost,
+  promoIsLive,
+  promoStatus,
   transferKind,
   transferStatus,
 } from "./types";
@@ -486,14 +488,24 @@ export async function checkout(input: {
       for (const [index, item] of items.entries()) {
         const niche = niches[index];
         if (!niche) throw new StockError("Produto não encontrado.");
-        const usePromo = Boolean(item.promo && niche.promoAllowed && niche.promoPrice > 0);
+        const usePromo = Boolean(item.promo && promoIsLive(niche));
         if (item.promo && !usePromo) {
-          throw new StockError(`${niche.name} não está liberado para promoção.`);
+          const status = promoStatus(niche);
+          throw new StockError(
+            status === "ended"
+              ? `${niche.name}: a promoção já acabou.`
+              : status === "scheduled"
+                ? `${niche.name}: a promoção ainda não começou.`
+                : `${niche.name} não está liberado para promoção.`,
+          );
         }
         const unitPrice = usePromo ? niche.promoPrice : niche.sellPrice;
         const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, { skipExpired: true });
         for (const chunk of chunks) {
           const lot = await db.lots.get(chunk.lotId);
+          if (usePromo && niche.promoOnlyExpiringToday && (!lot?.expiresAt || daysUntil(lot.expiresAt) !== 0)) {
+            throw new StockError(`${niche.name}: esta promoção só vale para o que vence hoje.`);
+          }
           await changeStock(input.locationId, item.nicheId, chunk.lotId, -chunk.qty);
           await db.saleItems.add({
             id: newId(),

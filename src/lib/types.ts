@@ -104,7 +104,45 @@ export type Niche = {
   active: boolean;
   promoAllowed: boolean;
   promoPrice: number;
+  promoFrom?: string;
+  promoTo?: string;
+  promoOnlyExpiringToday?: boolean;
 };
+
+export type PromoStatus = "off" | "scheduled" | "live" | "ended";
+
+export function promoStatus(
+  niche: Pick<Niche, "promoAllowed" | "promoPrice" | "promoFrom" | "promoTo">,
+  at = new Date(),
+): PromoStatus {
+  if (!niche.promoAllowed || !(niche.promoPrice > 0)) return "off";
+  const t = at.getTime();
+  if (niche.promoFrom) {
+    const from = new Date(niche.promoFrom).getTime();
+    if (Number.isFinite(from) && t < from) return "scheduled";
+  }
+  if (niche.promoTo) {
+    const to = new Date(niche.promoTo).getTime();
+    if (Number.isFinite(to) && t > to) return "ended";
+  }
+  return "live";
+}
+
+export function promoIsLive(
+  niche: Pick<Niche, "promoAllowed" | "promoPrice" | "promoFrom" | "promoTo">,
+  at = new Date(),
+) {
+  return promoStatus(niche, at) === "live";
+}
+
+export function promoStatusLabel(status: PromoStatus) {
+  return {
+    off: "Desligada",
+    scheduled: "Ainda não começou",
+    live: "Valendo agora",
+    ended: "Já acabou",
+  }[status];
+}
 
 export type Lot = {
   id: string;
