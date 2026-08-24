@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
@@ -98,10 +99,18 @@ export default function EstoquePage() {
 
   return (
     <AppShell>
-      <PageTitle
-        title={isStore ? `Estoque da ${panel?.name}` : "Estoque"}
-        hint="Quantidade de um lado. Validade e descarte dos lotes vencidos do outro."
-      />
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <PageTitle
+          title={isStore ? `Estoque da ${panel?.name}` : "Estoque"}
+          hint="Quantidade de um lado. Validade e descarte dos lotes vencidos do outro."
+        />
+        <Link
+          href="/kardex"
+          className="inline-flex min-h-12 items-center rounded-2xl bg-white px-4 text-base font-bold text-stone-800 ring-1 ring-stone-300"
+        >
+          Ver kardex
+        </Link>
+      </div>
 
       <div className="mb-5">
         <SegmentedControl

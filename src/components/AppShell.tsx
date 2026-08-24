@@ -21,6 +21,7 @@ import {
   ClipboardCheck,
   ClipboardPen,
   ShoppingBag,
+  ScrollText,
 } from "lucide-react";
 import { useLocationCatalog } from "@/lib/locations";
 import { clearLocationId, getLocationId } from "@/lib/session";
@@ -38,6 +39,7 @@ const factoryLinks = [
   { href: "/produtos", label: "Produtos", icon: Package },
   { href: "/estoque", label: "Estoque", icon: Warehouse },
   { href: "/inventario", label: "Inventário", icon: ClipboardPen },
+  { href: "/kardex", label: "Kardex", icon: ScrollText },
 ];
 
 const storeLinks = [
@@ -49,6 +51,7 @@ const storeLinks = [
   { href: "/consumo-interno", label: "Consumo interno", icon: Coffee },
   { href: "/estoque", label: "Estoque", icon: Warehouse },
   { href: "/inventario", label: "Inventário", icon: ClipboardPen },
+  { href: "/kardex", label: "Kardex", icon: ScrollText },
 ];
 
 const adminLinks = [
@@ -61,6 +64,7 @@ const adminLinks = [
   { href: "/compras", label: "Compras", icon: ShoppingBag },
   { href: "/estoque", label: "Estoque", icon: Warehouse },
   { href: "/inventario", label: "Inventário", icon: ClipboardPen },
+  { href: "/kardex", label: "Kardex", icon: ScrollText },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

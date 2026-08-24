@@ -12,6 +12,21 @@ export const ADJUSTMENT_REASONS: { id: AdjustmentReason; label: string }[] = [
 export function adjustmentReasonLabel(reason?: AdjustmentReason) {
   return ADJUSTMENT_REASONS.find((item) => item.id === reason)?.label ?? "Ajuste";
 }
+
+export const MOVEMENT_LABELS: Record<MovementType, string> = {
+  production: "Produção",
+  purchase: "Compra",
+  send: "Envio",
+  sale: "Venda",
+  sale_void: "Estorno",
+  waste: "Perda",
+  internal: "Consumo interno",
+  ajuste: "Ajuste",
+};
+
+export function movementLabel(type: MovementType) {
+  return MOVEMENT_LABELS[type] ?? type;
+}
 export type PaymentMethod = "dinheiro" | "pix" | "cartao";
 export type SaleChannel = "caixa" | "delivery" | "encomenda";
 export type CashPeriod = "manha" | "tarde";

@@ -2,8 +2,8 @@ import { getDb } from "./db";
 import { LOCATIONS, storeLocations, getLocation, type Location } from "./locations";
 import { daysUntil, formatDate, periodRange, todayDate, type Period } from "./money";
 import { factoryMin, isLowAt, storeMin } from "./stock-min";
-import type { Niche, Product, Sale, SaleItem, Waste } from "./types";
-import { isLiveSale } from "./types";
+import type { MovementType, Niche, Product, Sale, SaleItem, Waste } from "./types";
+import { adjustmentReasonLabel, isLiveSale, movementLabel, saleVoidReasonLabel } from "./types";
 
 export type CatalogItem = {
   niche: Niche;
@@ -587,5 +587,161 @@ export async function inventorySheet(locationId: string): Promise<InventorySheet
   return sheet.sort(
     (a, b) => a.label.localeCompare(b.label, "pt-BR") || a.hint.localeCompare(b.hint, "pt-BR"),
   );
+}
+
+function localDay(iso: string) {
+  const date = new Date(iso);
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+export type KardexRow = {
+  id: string;
+  at: string;
+  locationId: string;
+  locationName: string;
+  nicheId: string;
+  label: string;
+  lotHint: string;
+  type: MovementType;
+  typeLabel: string;
+  qty: number;
+  who: string;
+  note: string;
+  balance?: number;
+};
+
+export type KardexExtract = {
+  label: string;
+  opening: number | null;
+  closing: number | null;
+  rows: KardexRow[];
+};
+
+export async function loadKardex(input: {
+  nicheId: string;
+  locationId?: string;
+  from: string;
+  to: string;
+}): Promise<KardexExtract> {
+  const db = getDb();
+  const catalog = await catalogItems(false);
+  const found = catalog.find((item) => item.niche.id === input.nicheId);
+  const label = found?.label ?? "Produto";
+
+  const [movements, lots, sales, sessions, consumptions, wastes, transfers, counts, lines] = await Promise.all([
+    db.movements.where("nicheId").equals(input.nicheId).toArray(),
+    db.lots.toArray(),
+    db.sales.toArray(),
+    db.cashSessions.toArray(),
+    db.consumptions.toArray(),
+    db.wastes.toArray(),
+    db.transfers.toArray(),
+    db.inventoryCounts.toArray(),
+    db.inventoryLines.toArray(),
+  ]);
+
+  const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+  const saleById = new Map(sales.map((sale) => [sale.id, sale]));
+  const sessionById = new Map(sessions.map((session) => [session.id, session]));
+  const transferById = new Map(transfers.map((row) => [row.id, row]));
+  const countById = new Map(counts.map((row) => [row.id, row]));
+
+  const scoped = movements
+    .filter((row) => !input.locationId || row.locationId === input.locationId)
+    .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
+
+  const opening =
+    input.locationId == null
+      ? null
+      : scoped.filter((row) => row.at < input.from).reduce((sum, row) => sum + row.qty, 0);
+
+  let running = opening ?? 0;
+  const rows: KardexRow[] = [];
+
+  for (const movement of scoped) {
+    if (movement.at < input.from || movement.at > input.to) continue;
+    const lot = lotById.get(movement.lotId);
+    const locationName = getLocation(movement.locationId)?.name ?? movement.locationId;
+    let who = locationName;
+    let note = "";
+
+    if (movement.type === "production") {
+      who = "Fábrica";
+      note = "Entrou da produção";
+    } else if (movement.type === "purchase") {
+      who = "Fábrica";
+      note = "Entrada de mercadoria";
+    } else if (movement.type === "send") {
+      const transfer = transferById.get(movement.refId);
+      if (movement.qty < 0) {
+        who = "Fábrica";
+        note = `Mandou para ${getLocation(transfer?.toLocationId ?? "")?.name ?? transfer?.toLocationId ?? "loja"}`;
+      } else {
+        who = locationName;
+        note = `Recebeu da ${getLocation(transfer?.fromLocationId ?? "factory")?.name ?? "fábrica"}`;
+      }
+    } else if (movement.type === "sale" || movement.type === "sale_void") {
+      const sale = saleById.get(movement.refId);
+      const session = sale?.cashSessionId ? sessionById.get(sale.cashSessionId) : undefined;
+      who = session?.employeeName ?? locationName;
+      note =
+        movement.type === "sale_void"
+          ? saleVoidReasonLabel(sale?.voidReason)
+          : sale
+            ? `${sale.payment === "dinheiro" ? "Dinheiro" : sale.payment === "pix" ? "Pix" : "Cartão"}`
+            : "Venda";
+    } else if (movement.type === "internal") {
+      const consume = consumptions.find(
+        (row) =>
+          row.locationId === movement.locationId &&
+          row.lotId === movement.lotId &&
+          row.qty === Math.abs(movement.qty) &&
+          localDay(row.at) === localDay(movement.at),
+      );
+      who = consume?.userName ?? locationName;
+      note = "Consumo interno";
+    } else if (movement.type === "waste") {
+      const waste = wastes.find(
+        (row) =>
+          row.locationId === movement.locationId &&
+          row.lotId === movement.lotId &&
+          row.qty === Math.abs(movement.qty) &&
+          localDay(row.at) === localDay(movement.at),
+      );
+      who = locationName;
+      note = waste?.reason === "vencido" ? "Descarte de vencido" : "Sobra do dia";
+    } else if (movement.type === "ajuste") {
+      const count = countById.get(movement.refId);
+      const line = lines.find((row) => row.countId === movement.refId && row.nicheId === movement.nicheId);
+      who = count?.countedBy ?? locationName;
+      note = adjustmentReasonLabel(line?.reason);
+    }
+
+    if (opening != null) running += movement.qty;
+    rows.push({
+      id: movement.id,
+      at: movement.at,
+      locationId: movement.locationId,
+      locationName,
+      nicheId: movement.nicheId,
+      label,
+      lotHint: lot?.expiresAt
+        ? `Lote ${formatDate(lot.madeAt)} · vale até ${formatDate(lot.expiresAt)}`
+        : lot?.madeAt
+          ? `Lote ${formatDate(lot.madeAt)}`
+          : "Sem lote",
+      type: movement.type,
+      typeLabel: movementLabel(movement.type),
+      qty: movement.qty,
+      who,
+      note,
+      balance: opening == null ? undefined : running,
+    });
+  }
+
+  const closing = opening == null ? null : running;
+
+  return { label, opening, closing, rows };
 }
 
