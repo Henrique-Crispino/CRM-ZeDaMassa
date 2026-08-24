@@ -1,5 +1,5 @@
 import { getDb } from "./db";
-import { getLocation } from "./locations";
+import { getLocation, isStore } from "./locations";
 import { formatTime, newId } from "./money";
 import { catalogItems, stockByLocation } from "./queries";
 import { sendToStore, StockError } from "./stock";
@@ -38,7 +38,7 @@ export async function createStoreRequest(input: {
   note?: string;
   items: { nicheId: string; qty: number }[];
 }) {
-  if (input.fromLocationId !== "store_1" && input.fromLocationId !== "store_2") {
+  if (!isStore(input.fromLocationId)) {
     throw new RequestError("Só a loja pede produto para a fábrica.");
   }
 

@@ -11,6 +11,7 @@ import {
   FilterChips,
   SearchField,
   StickyActionBar,
+  matchesKind,
   pickKindOptions,
   type PickKind,
 } from "@/components/pick-flow";
@@ -59,10 +60,7 @@ export default function PedirPage() {
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (catalog ?? []).filter((item) => {
-      if (kind === "salgado" || kind === "bebida") {
-        if (item.product.category !== kind) return false;
-      }
-      if (kind === "pedido" && !(qty[item.niche.id] > 0)) return false;
+      if (!matchesKind(item.product.category, kind, (qty[item.niche.id] ?? 0) > 0)) return false;
       if (q && !item.label.toLowerCase().includes(q) && !item.product.name.toLowerCase().includes(q)) {
         return false;
       }

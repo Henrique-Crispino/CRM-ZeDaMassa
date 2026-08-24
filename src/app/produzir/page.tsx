@@ -11,6 +11,7 @@ import {
   FilterChips,
   SearchField,
   StickyActionBar,
+  matchesKind,
   matchesSearch,
   pickKindOptions,
   type PickKind,
@@ -43,10 +44,7 @@ export default function ProduzirPage() {
 
   const visible = useMemo(() => {
     return (items ?? []).filter((item) => {
-      if (kind === "salgado" || kind === "bebida") {
-        if (item.product.category !== kind) return false;
-      }
-      if (kind === "pedido" && !(qty[item.niche.id] > 0)) return false;
+      if (!matchesKind(item.product.category, kind, (qty[item.niche.id] ?? 0) > 0)) return false;
       return matchesSearch(item.label, search);
     });
   }, [items, kind, qty, search]);
@@ -93,10 +91,18 @@ export default function ProduzirPage() {
   return (
     <AppShell>
       <div className="pb-36">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <PageTitle
           title="O que foi feito hoje?"
-          hint="Busque o produto, coloque a quantidade e confirme embaixo."
+          hint="Busque o produto, coloque a quantidade e confirme embaixo. O registro fica visível para a fábrica e para o admin."
         />
+        <Link
+          href="/producao"
+          className="inline-flex min-h-12 items-center rounded-2xl bg-white px-4 text-base font-bold text-stone-800 ring-1 ring-stone-300"
+        >
+          Ver registro
+        </Link>
+        </div>
 
         <div className="mb-4 max-w-xs">
           <Field label="Data em que foi feito">

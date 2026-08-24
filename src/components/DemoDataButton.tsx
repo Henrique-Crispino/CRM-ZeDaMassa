@@ -36,11 +36,11 @@ export function DemoDataButton({
       </Button>
       {done ? (
         <p className="text-sm font-semibold text-emerald-700">
-          Pronto. Abra um painel: já tem vendas, perdas, estoque e alertas dos últimos 30 dias.
+          Pronto. Abra um painel: já tem vendas, caixa, promoção, consumo interno e lotes dos últimos 30 dias.
         </p>
       ) : (
         <p className="text-sm text-stone-500">
-          Substitui o que está neste computador por dados de teste (fábrica, 2 lojas, 30 dias).
+          Substitui o que está neste computador por dados de teste (fábrica, lojas, equipe, caixa e 30 dias).
         </p>
       )}
     </div>

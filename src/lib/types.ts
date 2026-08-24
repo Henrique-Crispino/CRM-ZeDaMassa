@@ -1,12 +1,15 @@
-export type Category = "salgado" | "bebida";
-export type MovementType = "production" | "send" | "sale" | "waste";
+export type Category = "salgado" | "bebida" | "limpeza" | "descartavel" | "embalagem";
+export type MovementType = "production" | "send" | "sale" | "waste" | "internal";
 export type PaymentMethod = "dinheiro" | "pix" | "cartao";
 export type SaleChannel = "caixa" | "delivery" | "encomenda";
+export type CashPeriod = "manha" | "tarde";
 
 export type Product = {
   id: string;
   name: string;
   category: Category;
+  perishable: boolean;
+  shelfLifeDays: number;
   createdAt: string;
 };
 
@@ -20,12 +23,15 @@ export type Niche = {
   minStockFactory: number;
   minStockStore: number;
   active: boolean;
+  promoAllowed: boolean;
+  promoPrice: number;
 };
 
 export type Lot = {
   id: string;
   nicheId: string;
   madeAt: string;
+  expiresAt?: string;
 };
 
 export type StockRow = {
@@ -69,6 +75,7 @@ export type Sale = {
   payment: PaymentMethod;
   total: number;
   at: string;
+  cashSessionId?: string;
 };
 
 export type SaleItem = {
@@ -79,6 +86,7 @@ export type SaleItem = {
   qty: number;
   unitPrice: number;
   unitCost: number;
+  promo?: boolean;
 };
 
 export type RequestStatus = "pending" | "sent" | "cancelled";
@@ -118,8 +126,90 @@ export type Waste = {
   nicheId: string;
   lotId: string;
   qty: number;
-  reason: "sobra_frito" | "outro";
+  reason: "sobra_frito" | "vencido" | "outro";
   at: string;
   unitCost?: number;
   unitPrice?: number;
+};
+
+export type StoreRecord = {
+  id: string;
+  name: string;
+  shortName: string;
+  address: string;
+  phone: string;
+  active: boolean;
+  createdAt: string;
+};
+
+export type Employee = {
+  id: string;
+  name: string;
+  storeId: string;
+  active: boolean;
+};
+
+export type CashMovementKind = "sangria" | "suprimento";
+
+export type CashMovement = {
+  id: string;
+  sessionId: string;
+  locationId: string;
+  type: CashMovementKind;
+  amount: number;
+  reason: string;
+  at: string;
+};
+
+export type CashSession = {
+  id: string;
+  locationId: string;
+  period: CashPeriod;
+  employeeId: string;
+  employeeName: string;
+  openedAt: string;
+  closedAt?: string;
+  openingAmount: number;
+  closingAmount?: number;
+  expectedAmount?: number;
+  difference?: number;
+  cashSales?: number;
+  pixSales?: number;
+  cardSales?: number;
+  sangriaTotal?: number;
+  supplyTotal?: number;
+  note?: string;
+};
+
+export type InternalAllowance = {
+  id: string;
+  nicheId: string;
+  enabled: boolean;
+  dailyLimit: number;
+};
+
+export type AppSetting = {
+  id: string;
+  value: string;
+};
+
+export type ConsumeUser = {
+  id: string;
+  name: string;
+  login: string;
+  password: string;
+  locationId: string;
+  active: boolean;
+};
+
+export type InternalConsumption = {
+  id: string;
+  locationId: string;
+  nicheId: string;
+  lotId: string;
+  qty: number;
+  at: string;
+  dayKey: string;
+  userId?: string;
+  userName?: string;
 };

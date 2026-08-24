@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { CATEGORIES, defaultPerishable, defaultShelfLife } from "@/lib/categories";
 import { getDb } from "@/lib/db";
 import { newId } from "@/lib/money";
 import type { Category, Niche, Product } from "@/lib/types";
+import { BackLink } from "./BackLink";
 import { Button, Card, ErrorBox, Field, Input, NumberStepper } from "./ui";
 
 type NicheDraft = {
@@ -31,6 +33,8 @@ export function ProductForm({
   const router = useRouter();
   const [name, setName] = useState(product?.name ?? "");
   const [category, setCategory] = useState<Category>(product?.category ?? "salgado");
+  const [perishable, setPerishable] = useState(product?.perishable ?? defaultPerishable(product?.category ?? "salgado"));
+  const [shelfLifeDays, setShelfLifeDays] = useState(product?.shelfLifeDays ?? defaultShelfLife(product?.category ?? "salgado"));
   const [types, setTypes] = useState<NicheDraft[]>(
     niches.length
       ? niches.map((niche) => ({
@@ -88,10 +92,13 @@ export function ProductForm({
           id: productId,
           name: productName,
           category,
+          perishable,
+          shelfLifeDays: perishable ? Math.max(1, shelfLifeDays) : 0,
           createdAt: product?.createdAt ?? now,
         });
 
         for (const item of parsed) {
+          const current = item.id ? await db.niches.get(item.id) : undefined;
           await db.niches.put({
             id: item.id ?? newId(),
             productId,
@@ -102,6 +109,8 @@ export function ProductForm({
             minStockFactory: item.minStockFactory,
             minStockStore: item.minStockStore,
             active: item.active,
+            promoAllowed: current?.promoAllowed ?? false,
+            promoPrice: current?.promoPrice ?? 0,
           });
         }
       });
@@ -128,23 +137,43 @@ export function ProductForm({
 
         <div>
           <p className="mb-2 text-base font-bold text-stone-800">O que é?</p>
-          <div className="grid grid-cols-2 gap-3">
-            {(
-              [
-                ["salgado", "Salgado"],
-                ["bebida", "Bebida"],
-              ] as const
-            ).map(([value, label]) => (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {CATEGORIES.map((item) => (
               <Button
-                key={value}
+                key={item.id}
                 type="button"
-                variant={category === value ? "primary" : "ghost"}
-                onClick={() => setCategory(value)}
+                variant={category === item.id ? "primary" : "ghost"}
+                onClick={() => {
+                  setCategory(item.id);
+                  if (!product) {
+                    setPerishable(defaultPerishable(item.id));
+                    setShelfLifeDays(defaultShelfLife(item.id));
+                  }
+                }}
               >
-                {label}
+                {item.label}
               </Button>
             ))}
           </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Button
+            type="button"
+            variant={perishable ? "primary" : "ghost"}
+            onClick={() => {
+              const next = !perishable;
+              setPerishable(next);
+              if (next && shelfLifeDays <= 0) setShelfLifeDays(defaultShelfLife(category) || 2);
+            }}
+          >
+            {perishable ? "Perecível: controla vencimento" : "Não perecível"}
+          </Button>
+          {perishable ? (
+            <Field label="Validade depois de feito" hint="Quantos dias o lote pode ser usado.">
+              <NumberStepper value={shelfLifeDays} min={1} max={365} onChange={setShelfLifeDays} />
+            </Field>
+          ) : null}
         </div>
       </Card>
 
@@ -222,9 +251,12 @@ export function ProductForm({
       </div>
 
       <ErrorBox message={error} />
-      <Button className="w-full sm:w-auto" disabled={saving} onClick={save}>
-        {saving ? "Salvando..." : "Salvar produto"}
-      </Button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+        <Button className="w-full sm:w-auto" disabled={saving} onClick={save}>
+          {saving ? "Salvando..." : "Salvar produto"}
+        </Button>
+        <BackLink href="/produtos" label="Voltar sem salvar" className="w-full justify-center sm:w-auto" />
+      </div>
     </div>
   );
 }

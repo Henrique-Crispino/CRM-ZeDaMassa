@@ -1,7 +1,14 @@
 import { getDb } from "./db";
-import { newId } from "./money";
+import { DEFAULT_STORES, refreshLocations } from "./locations";
+import { addDays, newId, todayDate } from "./money";
 import { createStoreRequest } from "./requests";
 import type {
+  CashMovement,
+  CashSession,
+  ConsumeUser,
+  Employee,
+  InternalAllowance,
+  InternalConsumption,
   Lot,
   Movement,
   Niche,
@@ -42,51 +49,143 @@ function dateKey(daysAgo: number) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 }
 
+function niche(row: Omit<Niche, "promoAllowed" | "promoPrice"> & Partial<Pick<Niche, "promoAllowed" | "promoPrice">>): Niche {
+  return {
+    promoAllowed: false,
+    promoPrice: 0,
+    ...row,
+  };
+}
+
 const CATALOG: { product: Product; niches: Niche[] }[] = [
   {
-    product: { id: "prod-coxinha", name: "Coxinha", category: "salgado", createdAt: "2026-07-01T10:00:00.000Z" },
+    product: {
+      id: "prod-coxinha",
+      name: "Coxinha",
+      category: "salgado",
+      perishable: true,
+      shelfLifeDays: 2,
+      createdAt: "2026-07-01T10:00:00.000Z",
+    },
     niches: [
-      { id: "cox-mini", productId: "prod-coxinha", name: "Mini", sellPrice: 1.5, costPrice: 0.45, minStock: 30, minStockFactory: 180, minStockStore: 30, active: true },
-      { id: "cox-festa", productId: "prod-coxinha", name: "Festa", sellPrice: 2, costPrice: 0.55, minStock: 20, minStockFactory: 120, minStockStore: 20, active: true },
-      { id: "cox-assado", productId: "prod-coxinha", name: "Assado", sellPrice: 2.5, costPrice: 0.7, minStock: 15, minStockFactory: 80, minStockStore: 15, active: true },
+      niche({ id: "cox-mini", productId: "prod-coxinha", name: "Mini", sellPrice: 1.5, costPrice: 0.45, minStock: 30, minStockFactory: 180, minStockStore: 30, active: true, promoAllowed: true, promoPrice: 1.2 }),
+      niche({ id: "cox-festa", productId: "prod-coxinha", name: "Festa", sellPrice: 2, costPrice: 0.55, minStock: 20, minStockFactory: 120, minStockStore: 20, active: true }),
+      niche({ id: "cox-assado", productId: "prod-coxinha", name: "Assado", sellPrice: 2.5, costPrice: 0.7, minStock: 15, minStockFactory: 80, minStockStore: 15, active: true }),
     ],
   },
   {
-    product: { id: "prod-risole", name: "Risole", category: "salgado", createdAt: "2026-07-01T10:00:00.000Z" },
+    product: {
+      id: "prod-risole",
+      name: "Risole",
+      category: "salgado",
+      perishable: true,
+      shelfLifeDays: 2,
+      createdAt: "2026-07-01T10:00:00.000Z",
+    },
     niches: [
-      { id: "ris-mini", productId: "prod-risole", name: "Mini", sellPrice: 1.5, costPrice: 0.4, minStock: 25, minStockFactory: 140, minStockStore: 25, active: true },
-      { id: "ris-festa", productId: "prod-risole", name: "Festa", sellPrice: 2, costPrice: 0.5, minStock: 15, minStockFactory: 90, minStockStore: 15, active: true },
+      niche({ id: "ris-mini", productId: "prod-risole", name: "Mini", sellPrice: 1.5, costPrice: 0.4, minStock: 25, minStockFactory: 140, minStockStore: 25, active: true }),
+      niche({ id: "ris-festa", productId: "prod-risole", name: "Festa", sellPrice: 2, costPrice: 0.5, minStock: 15, minStockFactory: 90, minStockStore: 15, active: true }),
     ],
   },
   {
-    product: { id: "prod-kibe", name: "Kibe", category: "salgado", createdAt: "2026-07-01T10:00:00.000Z" },
+    product: {
+      id: "prod-kibe",
+      name: "Kibe",
+      category: "salgado",
+      perishable: true,
+      shelfLifeDays: 2,
+      createdAt: "2026-07-01T10:00:00.000Z",
+    },
     niches: [
-      { id: "kibe-mini", productId: "prod-kibe", name: "Mini", sellPrice: 1.8, costPrice: 0.5, minStock: 20, minStockFactory: 100, minStockStore: 20, active: true },
-      { id: "kibe-festa", productId: "prod-kibe", name: "Festa", sellPrice: 2.2, costPrice: 0.6, minStock: 12, minStockFactory: 70, minStockStore: 12, active: true },
+      niche({ id: "kibe-mini", productId: "prod-kibe", name: "Mini", sellPrice: 1.8, costPrice: 0.5, minStock: 20, minStockFactory: 100, minStockStore: 20, active: true }),
+      niche({ id: "kibe-festa", productId: "prod-kibe", name: "Festa", sellPrice: 2.2, costPrice: 0.6, minStock: 12, minStockFactory: 70, minStockStore: 12, active: true }),
     ],
   },
   {
-    product: { id: "prod-pastel", name: "Pastel de carne", category: "salgado", createdAt: "2026-07-01T10:00:00.000Z" },
+    product: {
+      id: "prod-pastel",
+      name: "Pastel de carne",
+      category: "salgado",
+      perishable: true,
+      shelfLifeDays: 1,
+      createdAt: "2026-07-01T10:00:00.000Z",
+    },
     niches: [
-      { id: "pas-local", productId: "prod-pastel", name: "Consumo local", sellPrice: 8, costPrice: 2.5, minStock: 12, minStockFactory: 80, minStockStore: 12, active: true },
+      niche({ id: "pas-local", productId: "prod-pastel", name: "Consumo local", sellPrice: 8, costPrice: 2.5, minStock: 12, minStockFactory: 80, minStockStore: 12, active: true, promoAllowed: true, promoPrice: 6.5 }),
     ],
   },
   {
-    product: { id: "prod-coca", name: "Coca-Cola 350ml", category: "bebida", createdAt: "2026-07-01T10:00:00.000Z" },
+    product: {
+      id: "prod-coca",
+      name: "Coca-Cola 350ml",
+      category: "bebida",
+      perishable: false,
+      shelfLifeDays: 0,
+      createdAt: "2026-07-01T10:00:00.000Z",
+    },
     niches: [
-      { id: "coca-350", productId: "prod-coca", name: "Lata", sellPrice: 6, costPrice: 3.2, minStock: 10, minStockFactory: 40, minStockStore: 10, active: true },
+      niche({ id: "coca-350", productId: "prod-coca", name: "Lata", sellPrice: 6, costPrice: 3.2, minStock: 10, minStockFactory: 40, minStockStore: 10, active: true, promoAllowed: true, promoPrice: 5 }),
     ],
   },
   {
-    product: { id: "prod-guarana", name: "Guaraná 350ml", category: "bebida", createdAt: "2026-07-01T10:00:00.000Z" },
+    product: {
+      id: "prod-guarana",
+      name: "Guaraná 350ml",
+      category: "bebida",
+      perishable: false,
+      shelfLifeDays: 0,
+      createdAt: "2026-07-01T10:00:00.000Z",
+    },
     niches: [
-      { id: "gua-350", productId: "prod-guarana", name: "Lata", sellPrice: 5.5, costPrice: 2.9, minStock: 8, minStockFactory: 35, minStockStore: 8, active: true },
+      niche({ id: "gua-350", productId: "prod-guarana", name: "Lata", sellPrice: 5.5, costPrice: 2.9, minStock: 8, minStockFactory: 35, minStockStore: 8, active: true }),
+    ],
+  },
+  {
+    product: {
+      id: "prod-detergente",
+      name: "Detergente neutro",
+      category: "limpeza",
+      perishable: false,
+      shelfLifeDays: 0,
+      createdAt: "2026-07-01T10:00:00.000Z",
+    },
+    niches: [
+      niche({ id: "det-5l", productId: "prod-detergente", name: "Galão 5L", sellPrice: 18, costPrice: 9, minStock: 2, minStockFactory: 8, minStockStore: 2, active: true }),
+    ],
+  },
+  {
+    product: {
+      id: "prod-copo",
+      name: "Copo 200ml",
+      category: "descartavel",
+      perishable: false,
+      shelfLifeDays: 0,
+      createdAt: "2026-07-01T10:00:00.000Z",
+    },
+    niches: [
+      niche({ id: "copo-100", productId: "prod-copo", name: "Pacote 100", sellPrice: 8, costPrice: 3.5, minStock: 4, minStockFactory: 16, minStockStore: 4, active: true }),
+    ],
+  },
+  {
+    product: {
+      id: "prod-marmita",
+      name: "Marmita 500ml",
+      category: "embalagem",
+      perishable: false,
+      shelfLifeDays: 0,
+      createdAt: "2026-07-01T10:00:00.000Z",
+    },
+    niches: [
+      niche({ id: "marmita-50", productId: "prod-marmita", name: "Pacote 50", sellPrice: 16, costPrice: 7, minStock: 3, minStockFactory: 12, minStockStore: 3, active: true }),
     ],
   },
 ];
 
-const NICHE_IDS = CATALOG.flatMap((item) => item.niches.map((niche) => niche.id));
-const NICHE_BY_ID = new Map(CATALOG.flatMap((item) => item.niches.map((niche) => [niche.id, niche])));
+const NICHE_IDS = CATALOG.flatMap((item) => item.niches.map((itemNiche) => itemNiche.id));
+const NICHE_BY_ID = new Map(CATALOG.flatMap((item) => item.niches.map((itemNiche) => [itemNiche.id, itemNiche])));
+const PRODUCT_BY_NICHE = new Map(
+  CATALOG.flatMap((item) => item.niches.map((itemNiche) => [itemNiche.id, item.product])),
+);
 
 const PLAN: Record<string, { produce: number; store1: number; store2: number }> = {
   "cox-mini": { produce: 360, store1: 175, store2: 155 },
@@ -99,13 +198,143 @@ const PLAN: Record<string, { produce: number; store1: number; store2: number }> 
   "pas-local": { produce: 55, store1: 26, store2: 22 },
   "coca-350": { produce: 48, store1: 22, store2: 18 },
   "gua-350": { produce: 40, store1: 18, store2: 15 },
+  "det-5l": { produce: 6, store1: 2, store2: 2 },
+  "copo-100": { produce: 10, store1: 4, store2: 3 },
+  "marmita-50": { produce: 8, store1: 3, store2: 3 },
 };
+
+export const DEFAULT_EMPLOYEES: Employee[] = [
+  { id: "emp-ana", name: "Ana Souza", storeId: "store_1", active: true },
+  { id: "emp-bruno", name: "Bruno Lima", storeId: "store_1", active: true },
+  { id: "emp-carla", name: "Carla Mendes", storeId: "store_2", active: true },
+  { id: "emp-diego", name: "Diego Alves", storeId: "store_2", active: true },
+];
+
+export const DEFAULT_CONSUME_USERS: ConsumeUser[] = [
+  { id: "cuser-ana", name: "Ana Souza", login: "ana.souza", password: "1234", locationId: "store_1", active: true },
+  { id: "cuser-bruno", name: "Bruno Lima", login: "bruno.lima", password: "1234", locationId: "store_1", active: true },
+  { id: "cuser-carla", name: "Carla Mendes", login: "carla.mendes", password: "1234", locationId: "store_2", active: true },
+  { id: "cuser-diego", name: "Diego Alves", login: "diego.alves", password: "1234", locationId: "store_2", active: true },
+  { id: "cuser-rita", name: "Rita Gomes", login: "rita.gomes", password: "1234", locationId: "factory", active: true },
+];
+
+const DEFAULT_ALLOWANCES: InternalAllowance[] = [
+  { id: "pas-local", nicheId: "pas-local", enabled: true, dailyLimit: 3 },
+  { id: "cox-mini", nicheId: "cox-mini", enabled: true, dailyLimit: 5 },
+  { id: "coca-350", nicheId: "coca-350", enabled: true, dailyLimit: 2 },
+];
+
+function lotExpiry(nicheId: string, madeAt: string) {
+  const product = PRODUCT_BY_NICHE.get(nicheId);
+  if (!product?.perishable || product.shelfLifeDays <= 0) return undefined;
+  return addDays(madeAt, product.shelfLifeDays);
+}
+
+function periodOf(hour: number) {
+  return hour < 14 ? "manha" : "tarde";
+}
+
+function employeeFor(storeId: string, period: "manha" | "tarde") {
+  if (storeId === "store_1") return period === "manha" ? DEFAULT_EMPLOYEES[0] : DEFAULT_EMPLOYEES[1];
+  return period === "manha" ? DEFAULT_EMPLOYEES[2] : DEFAULT_EMPLOYEES[3];
+}
 
 export async function ensureDemoData() {
   const sales = await getDb().sales.count();
-  if (sales > 0) return false;
+  if (sales > 0) {
+    await ensureAppDefaults();
+    return false;
+  }
   await loadDemoData();
   return true;
+}
+
+export async function ensureAppDefaults() {
+  const db = getDb();
+  if ((await db.stores.count()) === 0) {
+    await db.stores.bulkAdd(DEFAULT_STORES);
+  } else {
+    const stores = await db.stores.toArray();
+    for (const store of stores) {
+      const fallback = DEFAULT_STORES.find((item) => item.id === store.id);
+      if (!store.address || !store.phone) {
+        await db.stores.update(store.id, {
+          address: store.address || fallback?.address || "",
+          phone: store.phone || fallback?.phone || "",
+        });
+      }
+    }
+  }
+  if ((await db.employees.count()) === 0) {
+    await db.employees.bulkAdd(DEFAULT_EMPLOYEES);
+  }
+  if ((await db.consumeUsers.count()) === 0) {
+    await db.consumeUsers.bulkAdd(DEFAULT_CONSUME_USERS);
+  }
+  if ((await db.internalAllowances.count()) === 0) {
+    const niches = await db.niches.bulkGet(DEFAULT_ALLOWANCES.map((item) => item.nicheId));
+    const existing = DEFAULT_ALLOWANCES.filter((_, index) => niches[index]);
+    if (existing.length) await db.internalAllowances.bulkAdd(existing);
+  }
+
+  const cox = await db.niches.get("cox-mini");
+  if (cox && !cox.promoAllowed) {
+    await db.niches.update("cox-mini", { promoAllowed: true, promoPrice: 1.2 });
+    await db.niches.update("coca-350", { promoAllowed: true, promoPrice: 5 });
+    await db.niches.update("pas-local", { promoAllowed: true, promoPrice: 6.5 });
+  }
+
+  const today = todayDate();
+  const open = (await db.cashSessions.toArray()).filter((row) => !row.closedAt);
+  if (open.length === 0) {
+    const employees = await db.employees.toArray();
+    const stores = (await db.stores.toArray()).filter((store) => store.active);
+    for (const store of stores) {
+      const employee = employees.find((item) => item.active && item.storeId === store.id);
+      if (!employee) continue;
+      await db.cashSessions.add({
+        id: `cash-${store.id}-${today}-manha`,
+        locationId: store.id,
+        period: "manha",
+        employeeId: employee.id,
+        employeeName: employee.name,
+        openedAt: new Date(`${today}T08:00:00`).toISOString(),
+        openingAmount: 150,
+      });
+    }
+  }
+
+  const extras = CATALOG.filter((item) =>
+    ["limpeza", "descartavel", "embalagem"].includes(item.product.category),
+  );
+  for (const item of extras) {
+    if (!(await db.products.get(item.product.id))) {
+      await db.products.add(item.product);
+      await db.niches.bulkAdd(item.niches);
+    }
+  }
+
+  const products = await db.products.toArray();
+  const niches = await db.niches.toArray();
+  const productByNiche = new Map(
+    niches.map((item) => [item.id, products.find((product) => product.id === item.productId)]),
+  );
+  const lots = await db.lots.toArray();
+  for (const lot of lots) {
+    if (lot.expiresAt) continue;
+    const product = productByNiche.get(lot.nicheId);
+    if (product?.perishable && product.shelfLifeDays > 0) {
+      await db.lots.update(lot.id, { expiresAt: addDays(lot.madeAt, product.shelfLifeDays) });
+    }
+    if (product && product.perishable === undefined) {
+      await db.products.update(product.id, {
+        perishable: product.category === "salgado",
+        shelfLifeDays: product.category === "salgado" ? 2 : 0,
+      });
+    }
+  }
+
+  await refreshLocations();
 }
 
 export async function loadDemoData() {
@@ -119,6 +348,9 @@ export async function loadDemoData() {
   const sales: Sale[] = [];
   const saleItems: SaleItem[] = [];
   const wastes: Waste[] = [];
+  const cashSessions = new Map<string, CashSession>();
+  const cashMovements: CashMovement[] = [];
+  const consumptions: InternalConsumption[] = [];
 
   function stockKey(locationId: string, nicheId: string, lotId: string) {
     return `${locationId}:${nicheId}:${lotId}`;
@@ -127,9 +359,9 @@ export async function loadDemoData() {
   function addStock(locationId: string, nicheId: string, lotId: string, qty: number) {
     const id = stockKey(locationId, nicheId, lotId);
     const row = stock.get(id);
-    const next = (row?.qty ?? 0) + qty;
-    if (next <= 0) stock.delete(id);
-    else stock.set(id, { id, locationId, nicheId, lotId, qty: next });
+    const nextQty = (row?.qty ?? 0) + qty;
+    if (nextQty <= 0) stock.delete(id);
+    else stock.set(id, { id, locationId, nicheId, lotId, qty: nextQty });
   }
 
   function available(locationId: string, nicheId: string) {
@@ -144,9 +376,9 @@ export async function loadDemoData() {
     const rows = [...stock.values()]
       .filter((row) => row.locationId === locationId && row.nicheId === nicheId && row.qty > 0)
       .sort((a, b) => {
-        const lotA = lots.find((lot) => lot.id === a.lotId)?.madeAt ?? "";
-        const lotB = lots.find((lot) => lot.id === b.lotId)?.madeAt ?? "";
-        return lotA.localeCompare(lotB);
+        const lotA = lots.find((lot) => lot.id === a.lotId);
+        const lotB = lots.find((lot) => lot.id === b.lotId);
+        return (lotA?.expiresAt ?? lotA?.madeAt ?? "").localeCompare(lotB?.expiresAt ?? lotB?.madeAt ?? "");
       });
 
     let missing = Math.min(qty, rows.reduce((sum, row) => sum + row.qty, 0));
@@ -161,6 +393,28 @@ export async function loadDemoData() {
     return chunks;
   }
 
+  function ensureSession(storeId: string, daysAgo: number, period: "manha" | "tarde") {
+    const madeAt = dateKey(daysAgo);
+    const id = `cash-${storeId}-${madeAt}-${period}`;
+    if (!cashSessions.has(id)) {
+      const employee = employeeFor(storeId, period);
+      const openHour = period === "manha" ? 8 : 14;
+      const today = daysAgo === 0 && period === "manha";
+      cashSessions.set(id, {
+        id,
+        locationId: storeId,
+        period,
+        employeeId: employee?.id ?? "emp-ana",
+        employeeName: employee?.name ?? "Ana Souza",
+        openedAt: dayAt(daysAgo, openHour, 0).toISOString(),
+        closedAt: today ? undefined : dayAt(daysAgo, period === "manha" ? 13 : 21, 40).toISOString(),
+        openingAmount: period === "manha" ? 150 : 80,
+        closingAmount: today ? undefined : between(rng, 180, 420),
+      });
+    }
+    return id;
+  }
+
   for (let daysAgo = 29; daysAgo >= 0; daysAgo -= 1) {
     const madeAt = dateKey(daysAgo);
     const weekday = dayAt(daysAgo, 12).getDay();
@@ -173,7 +427,7 @@ export async function loadDemoData() {
       const plan = PLAN[nicheId];
       if (!plan) continue;
       const lotId = `lot-${nicheId}-${madeAt}`;
-      lots.push({ id: lotId, nicheId, madeAt });
+      lots.push({ id: lotId, nicheId, madeAt, expiresAt: lotExpiry(nicheId, madeAt) });
       addStock("factory", nicheId, lotId, plan.produce);
       movements.push({
         id: newId(),
@@ -246,11 +500,13 @@ export async function loadDemoData() {
     }
 
     for (const storeId of ["store_1", "store_2"] as const) {
+      ensureSession(storeId, daysAgo, "manha");
+      if (!today) ensureSession(storeId, daysAgo, "tarde");
       const busier = storeId === "store_1" ? 1.15 : 0.9;
       const tickets = Math.round((weekend ? 18 : 12) * busier * (today ? 1.1 : 1));
 
       for (let ticket = 0; ticket < tickets; ticket += 1) {
-        const hour = between(rng, 9, 19);
+        const hour = between(rng, 9, today ? 13 : 19);
         const at = dayAt(daysAgo, hour, between(rng, 0, 59)).toISOString();
         const saleId = newId();
         const channel = pick(rng, [
@@ -278,8 +534,10 @@ export async function loadDemoData() {
           if (have <= 0) continue;
           const want = between(rng, 2, storeId === "store_1" ? 10 : 8);
           const qty = Math.min(have, today && ["cox-festa", "pas-local", "kibe-mini", "coca-350"].includes(nicheId) ? Math.max(want, Math.ceil(have * 0.45)) : want);
-          const niche = NICHE_BY_ID.get(nicheId);
-          if (!niche || qty <= 0) continue;
+          const itemNiche = NICHE_BY_ID.get(nicheId);
+          if (!itemNiche || qty <= 0) continue;
+          const usePromo = itemNiche.promoAllowed && between(rng, 1, 5) === 1;
+          const unitPrice = usePromo ? itemNiche.promoPrice : itemNiche.sellPrice;
           for (const chunk of take(storeId, nicheId, qty)) {
             lines.push({
               id: newId(),
@@ -287,8 +545,9 @@ export async function loadDemoData() {
               nicheId,
               lotId: chunk.lotId,
               qty: chunk.qty,
-              unitPrice: niche.sellPrice,
-              unitCost: niche.costPrice,
+              unitPrice,
+              unitCost: itemNiche.costPrice,
+              promo: usePromo,
             });
             movements.push({
               id: newId(),
@@ -305,8 +564,45 @@ export async function loadDemoData() {
 
         if (lines.length === 0) continue;
         const total = lines.reduce((sum, line) => sum + line.unitPrice * line.qty, 0);
-        sales.push({ id: saleId, locationId: storeId, channel, payment, total, at });
+        sales.push({
+          id: saleId,
+          locationId: storeId,
+          channel,
+          payment,
+          total,
+          at,
+          cashSessionId: ensureSession(storeId, daysAgo, periodOf(hour)),
+        });
         saleItems.push(...lines);
+      }
+
+      if (weekday !== 1 && available(storeId, "pas-local") > 2) {
+        const consumeAt = dayAt(daysAgo, 11, 20).toISOString();
+        const qty = Math.min(2, available(storeId, "pas-local"));
+        for (const chunk of take(storeId, "pas-local", qty)) {
+          const consumer = storeId === "store_1" ? DEFAULT_CONSUME_USERS[0] : DEFAULT_CONSUME_USERS[2];
+          consumptions.push({
+            id: newId(),
+            locationId: storeId,
+            nicheId: "pas-local",
+            lotId: chunk.lotId,
+            qty: chunk.qty,
+            at: consumeAt,
+            dayKey: madeAt,
+            userId: consumer?.id,
+            userName: consumer?.name,
+          });
+          movements.push({
+            id: newId(),
+            locationId: storeId,
+            nicheId: "pas-local",
+            lotId: chunk.lotId,
+            qty: -chunk.qty,
+            type: "internal",
+            refId: `cons-${storeId}-${madeAt}`,
+            at: consumeAt,
+          });
+        }
       }
 
       if (weekday !== 1) {
@@ -319,8 +615,8 @@ export async function loadDemoData() {
           const have = available(storeId, nicheId);
           if (have < 4) continue;
           const qty = Math.min(have - 1, today ? between(rng, 8, 18) : between(rng, 3, 9));
-          const niche = NICHE_BY_ID.get(nicheId);
-          if (!niche || qty <= 0) continue;
+          const itemNiche = NICHE_BY_ID.get(nicheId);
+          if (!itemNiche || qty <= 0) continue;
           for (const chunk of take(storeId, nicheId, qty)) {
             wastes.push({
               id: newId(),
@@ -330,8 +626,8 @@ export async function loadDemoData() {
               qty: chunk.qty,
               reason: "sobra_frito",
               at: wasteHour,
-              unitCost: niche.costPrice,
-              unitPrice: niche.sellPrice,
+              unitCost: itemNiche.costPrice,
+              unitPrice: itemNiche.sellPrice,
             });
             movements.push({
               id: newId(),
@@ -347,6 +643,47 @@ export async function loadDemoData() {
         }
       }
     }
+  }
+
+  const expiredMade = dateKey(4);
+  lots.push({
+    id: "lot-expired-cox",
+    nicheId: "cox-mini",
+    madeAt: expiredMade,
+    expiresAt: addDays(expiredMade, 2),
+  });
+  addStock("store_1", "cox-mini", "lot-expired-cox", 12);
+
+  for (const session of cashSessions.values()) {
+    const sessionSales = sales.filter((sale) => sale.cashSessionId === session.id);
+    const cashSales = sessionSales.filter((sale) => sale.payment === "dinheiro").reduce((sum, sale) => sum + sale.total, 0);
+    const pixSales = sessionSales.filter((sale) => sale.payment === "pix").reduce((sum, sale) => sum + sale.total, 0);
+    const cardSales = sessionSales.filter((sale) => sale.payment === "cartao").reduce((sum, sale) => sum + sale.total, 0);
+    session.cashSales = Math.round(cashSales * 100) / 100;
+    session.pixSales = Math.round(pixSales * 100) / 100;
+    session.cardSales = Math.round(cardSales * 100) / 100;
+    if (!session.closedAt) continue;
+    const sangria = cashSales > 120 ? Math.round(cashSales * 40) / 100 : 0;
+    if (sangria > 0) {
+      cashMovements.push({
+        id: `sangria-${session.id}`,
+        sessionId: session.id,
+        locationId: session.locationId,
+        type: "sangria",
+        amount: sangria,
+        reason: "Recolhimento ao cofre",
+        at: session.closedAt,
+      });
+    }
+    const expected = Math.round((session.openingAmount + cashSales - sangria) * 100) / 100;
+    const difference = Math.round(between(rng, -6, 5) * 100) / 100;
+    session.sangriaTotal = sangria;
+    session.supplyTotal = 0;
+    session.expectedAmount = expected;
+    session.difference = difference;
+    session.closingAmount = Math.max(0, Math.round((expected + difference) * 100) / 100);
+    if (difference < -1) session.note = "Quebra registrada na conferência.";
+    if (difference > 1) session.note = "Sobra registrada na conferência.";
   }
 
   const products = CATALOG.map((item) => item.product);
@@ -368,6 +705,14 @@ export async function loadDemoData() {
       db.requests,
       db.requestItems,
       db.notifications,
+      db.stores,
+      db.employees,
+      db.cashSessions,
+      db.internalAllowances,
+      db.settings,
+      db.consumptions,
+      db.consumeUsers,
+      db.cashMovements,
     ],
     async () => {
       await Promise.all([
@@ -384,6 +729,14 @@ export async function loadDemoData() {
         db.requests.clear(),
         db.requestItems.clear(),
         db.notifications.clear(),
+        db.stores.clear(),
+        db.employees.clear(),
+        db.cashSessions.clear(),
+        db.internalAllowances.clear(),
+        db.settings.clear(),
+        db.consumptions.clear(),
+        db.consumeUsers.clear(),
+        db.cashMovements.clear(),
       ]);
       await db.products.bulkAdd(products);
       await db.niches.bulkAdd(niches);
@@ -395,8 +748,17 @@ export async function loadDemoData() {
       await db.sales.bulkAdd(sales);
       await db.saleItems.bulkAdd(saleItems);
       await db.wastes.bulkAdd(wastes);
+      await db.stores.bulkAdd(DEFAULT_STORES);
+      await db.employees.bulkAdd(DEFAULT_EMPLOYEES);
+      await db.cashSessions.bulkAdd([...cashSessions.values()]);
+      await db.internalAllowances.bulkAdd(DEFAULT_ALLOWANCES);
+      await db.consumeUsers.bulkAdd(DEFAULT_CONSUME_USERS);
+      await db.consumptions.bulkAdd(consumptions);
+      if (cashMovements.length) await db.cashMovements.bulkAdd(cashMovements);
     },
   );
+
+  await refreshLocations();
 
   await createStoreRequest({
     fromLocationId: "store_1",

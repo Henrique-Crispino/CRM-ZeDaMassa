@@ -7,6 +7,7 @@ import {
   ActionGrid,
   AlertList,
   ChartCard,
+  ExpiryList,
   MetricCard,
   PeriodTabs,
   SimpleBars,
@@ -35,10 +36,12 @@ export function StoreDashboard({
       <ActionGrid
         actions={[
           { href: "/vender", label: "Vender no caixa" },
+          { href: "/caixa", label: "Abrir ou fechar o caixa" },
           { href: "/pedir", label: "Pedir para a fábrica" },
           { href: "/sobras", label: "Lançar sobra do dia", className: "bg-stone-900 hover:bg-stone-800" },
         ]}
       />
+      <ExpiryList items={data.expiryAlerts} />
       <PeriodTabs value={period} onChange={onPeriod} />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -57,6 +60,16 @@ export function StoreDashboard({
           alert={data.wasteCost > 0}
         />
       </div>
+      {data.expiredQty > 0 ? (
+        <div className="mt-4">
+          <MetricCard
+            label="Descarte por validade"
+            value={`${data.expiredQty} un.`}
+            hint={`${formatBRL(data.expiredCost)} de custo · ${formatBRL(data.expiredRevenue)} deixou de vender`}
+            alert
+          />
+        </div>
+      ) : null}
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <ChartCard title="Mais vendidos nesta loja" empty={data.bestSellers.length === 0}>

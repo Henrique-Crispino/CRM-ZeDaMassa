@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import {
@@ -12,13 +12,14 @@ import {
   FilterChips,
   SearchField,
   StickyActionBar,
+  matchesKind,
   matchesSearch,
   pickKindOptions,
   type PickKind,
 } from "@/components/pick-flow";
 import { Button, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
-import { getLocation, getPanel, storeLocations } from "@/lib/locations";
-import { stockByLocation } from "@/lib/queries";
+import { getLocation, getPanel, useLocationCatalog } from "@/lib/locations";
+import { sellableQty, stockByLocation } from "@/lib/queries";
 import { getLocationId } from "@/lib/session";
 import { sendToStore, StockError } from "@/lib/stock";
 import { useReady } from "@/lib/use-ready";
@@ -26,8 +27,9 @@ import { useReady } from "@/lib/use-ready";
 export default function EnviarPage() {
   const ready = useReady();
   const panel = ready ? getPanel(getLocationId() ?? "") : undefined;
+  const { stores } = useLocationCatalog();
   const stock = useLiveQuery(() => (ready ? stockByLocation() : []), [ready]);
-  const [storeId, setStoreId] = useState("store_1");
+  const [storeId, setStoreId] = useState("");
   const [qty, setQty] = useState<Record<string, number>>({});
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState<PickKind>("todos");
@@ -36,8 +38,16 @@ export default function EnviarPage() {
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
 
+  useEffect(() => {
+    if (!storeId && stores[0]) setStoreId(stores[0].id);
+  }, [storeId, stores]);
+
+  const expiredFactory = useMemo(
+    () => (stock ?? []).reduce((sum, item) => sum + (item.expiredQty.factory ?? 0), 0),
+    [stock],
+  );
   const available = useMemo(
-    () => (stock ?? []).filter((item) => (item.qty.factory ?? 0) > 0),
+    () => (stock ?? []).filter((item) => sellableQty(item, "factory") > 0 || (item.qty.factory ?? 0) > 0),
     [stock],
   );
 
@@ -53,10 +63,7 @@ export default function EnviarPage() {
 
   const visible = useMemo(() => {
     return available.filter((item) => {
-      if (kind === "salgado" || kind === "bebida") {
-        if (item.product.category !== kind) return false;
-      }
-      if (kind === "pedido" && !(qty[item.niche.id] > 0)) return false;
+      if (!matchesKind(item.product.category, kind, (qty[item.niche.id] ?? 0) > 0)) return false;
       return matchesSearch(item.label, search);
     });
   }, [available, kind, qty, search]);
@@ -110,6 +117,16 @@ export default function EnviarPage() {
           hint="Primeiro coloque as quantidades. Só no final escolha a loja. Trocar de loja não apaga o que você já digitou."
         />
 
+        {expiredFactory > 0 ? (
+          <div className="mb-4 rounded-3xl bg-red-50 px-4 py-3 ring-1 ring-red-200">
+            <p className="font-extrabold text-red-800">{expiredFactory} un. vencidas na fábrica</p>
+            <p className="text-stone-700">Lote vencido não vai para a loja. Descarte no estoque para baixar a quantidade.</p>
+            <Link href="/estoque" className="mt-2 inline-flex min-h-11 items-center font-bold text-red-700">
+              Ir ao estoque
+            </Link>
+          </div>
+        ) : null}
+
         <div className="mb-4 space-y-3">
           <SearchField value={search} onChange={setSearch} placeholder="Buscar: coxinha, festa, coca..." />
           <FilterChips value={kind} onChange={setKind} options={pickKindOptions(selected.length)} />
@@ -138,13 +155,17 @@ export default function EnviarPage() {
                   <CompactRow
                     key={item.niche.id}
                     title={item.niche.name}
-                    hint={`Na fábrica: ${item.qty.factory} un.`}
+                    hint={
+                      (item.expiredQty.factory ?? 0) > 0
+                        ? `Válidas: ${sellableQty(item, "factory")} · ${item.expiredQty.factory} vencidas`
+                        : `Na fábrica: ${item.qty.factory} un.`
+                    }
                     selected={(qty[item.niche.id] ?? 0) > 0}
                   >
                     <NumberStepper
                       size="sm"
                       value={qty[item.niche.id] ?? 0}
-                      max={item.qty.factory}
+                      max={sellableQty(item, "factory")}
                       onChange={(value) => setQty((current) => ({ ...current, [item.niche.id]: value }))}
                     />
                   </CompactRow>
@@ -160,7 +181,7 @@ export default function EnviarPage() {
         <SuccessBox message={ok} />
         <p className="text-base font-bold text-stone-800">Agora, para qual loja?</p>
         <div className="grid grid-cols-2 gap-2">
-          {storeLocations().map((store) => (
+          {stores.map((store) => (
             <Button
               key={store.id}
               type="button"

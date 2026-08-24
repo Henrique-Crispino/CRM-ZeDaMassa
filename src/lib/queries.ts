@@ -1,6 +1,6 @@
 import { getDb } from "./db";
-import { LOCATIONS, storeLocations, type Location } from "./locations";
-import { periodRange, type Period } from "./money";
+import { LOCATIONS, storeLocations, getLocation, type Location } from "./locations";
+import { daysUntil, periodRange, todayDate, type Period } from "./money";
 import { factoryMin, isLowAt, storeMin } from "./stock-min";
 import type { Niche, Product, Sale, SaleItem, Waste } from "./types";
 
@@ -10,7 +10,14 @@ export type CatalogItem = {
   label: string;
 };
 
-export type StockView = CatalogItem & { qty: Record<string, number> };
+export type StockView = CatalogItem & {
+  qty: Record<string, number>;
+  expiredQty: Record<string, number>;
+};
+
+export function sellableQty(item: Pick<StockView, "qty" | "expiredQty">, locationId: string) {
+  return Math.max(0, (item.qty[locationId] ?? 0) - (item.expiredQty[locationId] ?? 0));
+}
 
 export type AlertItem = {
   nicheId: string;
@@ -34,6 +41,43 @@ export type LocationMetrics = {
   salesCount: number;
 };
 
+export type ExpiryLevel = "expired" | "today" | "soon";
+
+export type ExpiryAlert = {
+  lotId: string;
+  nicheId: string;
+  label: string;
+  locationId: string;
+  locationName: string;
+  qty: number;
+  madeAt: string;
+  expiresAt: string;
+  daysLeft: number;
+  level: ExpiryLevel;
+};
+
+export function expiryLevel(daysLeft: number): ExpiryLevel {
+  if (daysLeft < 0) return "expired";
+  if (daysLeft === 0) return "today";
+  return "soon";
+}
+
+export function expiryLevelLabel(item: Pick<ExpiryAlert, "daysLeft" | "level">) {
+  if (item.level === "expired") {
+    return item.daysLeft === -1 ? "Venceu ontem" : `Vencido há ${Math.abs(item.daysLeft)} dias`;
+  }
+  if (item.level === "today") return "Vence hoje";
+  return item.daysLeft === 1 ? "Vence amanhã" : `Vence em ${item.daysLeft} dias`;
+}
+
+export type ProductionLog = {
+  refId: string;
+  at: string;
+  madeAt: string;
+  totalQty: number;
+  items: { label: string; qty: number; expiresAt?: string }[];
+};
+
 export type DashboardData = {
   revenue: number;
   cost: number;
@@ -41,9 +85,14 @@ export type DashboardData = {
   wasteQty: number;
   wasteCost: number;
   wasteRevenue: number;
+  expiredQty: number;
+  expiredCost: number;
+  expiredRevenue: number;
   producedQty: number;
   sentQty: number;
   salesCount: number;
+  promoRevenue: number;
+  internalQty: number;
   byLocation: LocationMetrics[];
   bestSellers: { label: string; qty: number; revenue: number }[];
   payments: { name: string; total: number }[];
@@ -51,6 +100,7 @@ export type DashboardData = {
   daily: { day: string; receita: number; perda: number }[];
   factoryAlerts: AlertItem[];
   storeAlerts: AlertItem[];
+  expiryAlerts: ExpiryAlert[];
 };
 
 export async function catalogItems(activeOnly = true): Promise<CatalogItem[]> {
@@ -78,12 +128,19 @@ export async function catalogItems(activeOnly = true): Promise<CatalogItem[]> {
 
 export async function stockByLocation(): Promise<StockView[]> {
   const db = getDb();
-  const [items, rows] = await Promise.all([catalogItems(false), db.stock.toArray()]);
+  const [items, rows, lots] = await Promise.all([catalogItems(false), db.stock.toArray(), db.lots.toArray()]);
+  const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+  const today = todayDate();
   const qty = new Map<string, number>();
+  const expired = new Map<string, number>();
 
   for (const row of rows) {
     const key = `${row.locationId}:${row.nicheId}`;
     qty.set(key, (qty.get(key) ?? 0) + row.qty);
+    const lot = lotById.get(row.lotId);
+    if (lot?.expiresAt && lot.expiresAt < today) {
+      expired.set(key, (expired.get(key) ?? 0) + row.qty);
+    }
   }
 
   return items.map((item) => ({
@@ -92,6 +149,12 @@ export async function stockByLocation(): Promise<StockView[]> {
       LOCATIONS.map((location) => [
         location.id,
         qty.get(`${location.id}:${item.niche.id}`) ?? 0,
+      ]),
+    ) as Record<string, number>,
+    expiredQty: Object.fromEntries(
+      LOCATIONS.map((location) => [
+        location.id,
+        expired.get(`${location.id}:${item.niche.id}`) ?? 0,
       ]),
     ) as Record<string, number>,
   }));
@@ -104,7 +167,7 @@ export async function stockAlerts(scope: "all" | "factory" | string = "all") {
 
   for (const item of rows) {
     for (const location of LOCATIONS) {
-      const qty = item.qty[location.id] ?? 0;
+      const qty = sellableQty(item, location.id);
       if (!isLowAt(location, item.niche, qty)) continue;
 
       const min = location.type === "factory" ? factoryMin(item.niche) : storeMin(item.niche);
@@ -196,8 +259,17 @@ export async function loadDashboard(period: Period, scope?: string): Promise<Das
   let wasteQty = 0;
   let wasteCost = 0;
   let wasteRevenue = 0;
+  let expiredQty = 0;
+  let expiredCost = 0;
+  let expiredRevenue = 0;
   for (const row of scopedWaste) {
     const money = wasteMoney(row, nicheById.get(row.nicheId)?.niche);
+    if (row.reason === "vencido") {
+      expiredQty += row.qty;
+      expiredCost += money.cost;
+      expiredRevenue += money.revenue;
+      continue;
+    }
     wasteQty += row.qty;
     wasteCost += money.cost;
     wasteRevenue += money.revenue;
@@ -234,6 +306,7 @@ export async function loadDashboard(period: Period, scope?: string): Promise<Das
   }
 
   for (const waste of scopedWaste) {
+    if (waste.reason === "vencido") continue;
     const row = byId.get(waste.locationId);
     if (!row) continue;
     const money = wasteMoney(waste, nicheById.get(waste.nicheId)?.niche);
@@ -276,6 +349,14 @@ export async function loadDashboard(period: Period, scope?: string): Promise<Das
     .reduce((sum, item) => sum + Math.abs(item.qty), 0);
 
   const alerts = await stockAlerts(scope === "admin" || !scope ? "all" : scope === "factory" ? "factory" : scope);
+  const expiryAlerts = await expiryAlertsFor(scope);
+  const promoRevenue = saleItems.filter((item) => item.promo).reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
+  const scopedInternal = movements.filter((item) => {
+    if (item.type !== "internal") return false;
+    if (scope && scope !== "admin" && scope !== "factory") return item.locationId === scope;
+    return true;
+  });
+  const internalQty = scopedInternal.reduce((sum, item) => sum + Math.abs(item.qty), 0);
 
   return {
     revenue,
@@ -284,9 +365,14 @@ export async function loadDashboard(period: Period, scope?: string): Promise<Das
     wasteQty,
     wasteCost,
     wasteRevenue,
+    expiredQty,
+    expiredCost,
+    expiredRevenue,
     producedQty,
     sentQty,
     salesCount: scopedSales.length,
+    promoRevenue,
+    internalQty,
     byLocation,
     bestSellers,
     payments: [...paymentsMap.entries()].map(([name, total]) => ({
@@ -300,7 +386,79 @@ export async function loadDashboard(period: Period, scope?: string): Promise<Das
     daily,
     factoryAlerts: alerts.factoryAlerts,
     storeAlerts: alerts.storeAlerts,
+    expiryAlerts,
   };
+}
+
+export async function expiryAlertsFor(scope?: string): Promise<ExpiryAlert[]> {
+  const db = getDb();
+  const [rows, lots, catalog] = await Promise.all([
+    db.stock.toArray(),
+    db.lots.toArray(),
+    catalogItems(false),
+  ]);
+  const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+  const labelByNiche = new Map(catalog.map((item) => [item.niche.id, item.label]));
+  const alerts: ExpiryAlert[] = [];
+
+  for (const row of rows) {
+    if (row.qty <= 0) continue;
+    if (scope && scope !== "admin" && scope !== "factory" && row.locationId !== scope) continue;
+    const lot = lotById.get(row.lotId);
+    if (!lot?.expiresAt) continue;
+    const daysLeft = daysUntil(lot.expiresAt);
+    if (daysLeft > 2) continue;
+    alerts.push({
+      lotId: lot.id,
+      nicheId: row.nicheId,
+      label: labelByNiche.get(row.nicheId) ?? "Produto",
+      locationId: row.locationId,
+      locationName: getLocation(row.locationId)?.name ?? row.locationId,
+      qty: row.qty,
+      madeAt: lot.madeAt,
+      expiresAt: lot.expiresAt,
+      daysLeft,
+      level: expiryLevel(daysLeft),
+    });
+  }
+
+  return alerts.sort((a, b) => a.daysLeft - b.daysLeft || a.label.localeCompare(b.label, "pt-BR"));
+}
+
+export async function listProductionLogs(limit = 40, madeOn?: string): Promise<ProductionLog[]> {
+  const db = getDb();
+  const [movements, lots, catalog] = await Promise.all([
+    db.movements.toArray(),
+    db.lots.toArray(),
+    catalogItems(false),
+  ]);
+  const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+  const labelByNiche = new Map(catalog.map((item) => [item.niche.id, item.label]));
+  const groups = new Map<string, ProductionLog>();
+
+  for (const movement of movements.filter((item) => item.type === "production" && item.qty > 0)) {
+    const lot = lotById.get(movement.lotId);
+    const current = groups.get(movement.refId) ?? {
+      refId: movement.refId,
+      at: movement.at,
+      madeAt: lot?.madeAt ?? movement.at.slice(0, 10),
+      totalQty: 0,
+      items: [],
+    };
+    current.totalQty += movement.qty;
+    if (movement.at > current.at) current.at = movement.at;
+    current.items.push({
+      label: labelByNiche.get(movement.nicheId) ?? "Produto",
+      qty: movement.qty,
+      expiresAt: lot?.expiresAt,
+    });
+    groups.set(movement.refId, current);
+  }
+
+  return [...groups.values()]
+    .filter((log) => !madeOn || log.madeAt === madeOn)
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, madeOn ? 200 : limit);
 }
 
 function buildDaily(

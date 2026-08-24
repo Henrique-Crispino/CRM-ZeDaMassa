@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
 import { SearchField } from "@/components/pick-flow";
 import { Card, Empty, PageTitle } from "@/components/ui";
+import { categoryLabel } from "@/lib/categories";
 import { getDb } from "@/lib/db";
 import { formatBRL } from "@/lib/money";
 import { useReady } from "@/lib/use-ready";
@@ -29,11 +31,16 @@ export default function ProdutosPage() {
   }, [niches, products, search]);
 
   return (
+    <AccessGate
+      allow={["admin", "factory"]}
+      title="Cadastro de produto é da administração e da fábrica"
+      hint="A loja só vende e pede reposição. Quem cadastra produto é a administração ou a fábrica."
+    >
     <AppShell>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <PageTitle
           title="Produtos"
-          hint="Cadastre os salgados e as bebidas. Cada um pode ter vários tipos, com o próprio preço."
+          hint="Cadastre salgados, bebidas, limpeza, descartáveis e embalagens. Cada um pode ter vários tipos."
         />
         <Link
           href="/produtos/novo"
@@ -74,7 +81,8 @@ export default function ProdutosPage() {
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="text-sm font-bold uppercase text-orange-700">
-                        {product.category === "salgado" ? "Salgado" : "Bebida"}
+                        {categoryLabel(product.category)}
+                        {product.perishable ? " · perecível" : ""}
                       </p>
                       <h2 className="text-2xl font-extrabold text-stone-900">{product.name}</h2>
                     </div>
@@ -97,5 +105,6 @@ export default function ProdutosPage() {
         </div>
       )}
     </AppShell>
+    </AccessGate>
   );
 }

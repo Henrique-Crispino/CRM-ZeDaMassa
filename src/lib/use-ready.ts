@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { refreshLocations } from "./locations";
 import { ensureDemoData } from "./seed";
 
 export function useReady() {
@@ -9,6 +10,7 @@ export function useReady() {
   useEffect(() => {
     let alive = true;
     ensureDemoData()
+      .then(() => refreshLocations())
       .catch(() => undefined)
       .finally(() => {
         if (!alive) return;

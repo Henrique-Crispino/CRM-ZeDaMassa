@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
@@ -11,13 +12,14 @@ import {
   FilterChips,
   SearchField,
   StickyActionBar,
+  matchesKind,
   matchesSearch,
   pickKindOptions,
   type PickKind,
 } from "@/components/pick-flow";
-import { Button, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
+import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { getPanel } from "@/lib/locations";
-import { stockByLocation } from "@/lib/queries";
+import { sellableQty, stockByLocation } from "@/lib/queries";
 import { getLocationId } from "@/lib/session";
 import { registerWaste, StockError } from "@/lib/stock";
 import { useReady } from "@/lib/use-ready";
@@ -35,29 +37,39 @@ export default function SobrasPage() {
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
 
-  const available = useMemo(
-    () => (stock ?? []).filter((item) => (item.qty[locationId ?? ""] ?? 0) > 0),
-    [stock, locationId],
+  const place = locationId ?? "";
+  const expiredUnits = useMemo(
+    () => (stock ?? []).reduce((sum, item) => sum + (place ? (item.expiredQty[place] ?? 0) : 0), 0),
+    [stock, place],
+  );
+  const leftoverable = useMemo(
+    () => (stock ?? []).filter((item) => place && sellableQty(item, place) > 0),
+    [stock, place],
+  );
+  const expiredOnly = useMemo(
+    () =>
+      (stock ?? []).filter((item) => {
+        if (!place) return false;
+        return (item.expiredQty[place] ?? 0) > 0 && sellableQty(item, place) === 0;
+      }),
+    [stock, place],
   );
 
   const selected = useMemo(
     () =>
-      available
+      leftoverable
         .map((item) => ({ item, qty: qty[item.niche.id] ?? 0 }))
         .filter((row) => row.qty > 0),
-    [available, qty],
+    [leftoverable, qty],
   );
   const selectedUnits = selected.reduce((sum, row) => sum + row.qty, 0);
 
   const visible = useMemo(() => {
-    return available.filter((item) => {
-      if (kind === "salgado" || kind === "bebida") {
-        if (item.product.category !== kind) return false;
-      }
-      if (kind === "pedido" && !(qty[item.niche.id] > 0)) return false;
+    return leftoverable.filter((item) => {
+      if (!matchesKind(item.product.category, kind, (qty[item.niche.id] ?? 0) > 0)) return false;
       return matchesSearch(item.label, search);
     });
-  }, [available, kind, qty, search]);
+  }, [leftoverable, kind, qty, search]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, typeof visible>();
@@ -74,7 +86,7 @@ export default function SobrasPage() {
       <AppShell>
         <Empty
           title="A sobra é lançada na loja"
-          hint="Abra o painel da Loja 1 ou da Loja 2 para lançar o que foi frito e não vendeu."
+          hint="Abra o painel da loja para lançar o que foi frito e não vendeu."
         />
       </AppShell>
     );
@@ -92,10 +104,10 @@ export default function SobrasPage() {
       });
       setQty({});
       setConfirm(false);
-      setOk("Sobra lançada. Esses itens saíram do estoque da loja.");
+      setOk("Sobra lançada. Esses itens saíram do estoque da loja. Lote vencido continua no estoque até o descarte.");
     } catch (err) {
-      setError(err instanceof StockError ? err.message : "Não deu para lançar. Confira as quantidades.");
       setConfirm(false);
+      setError(err instanceof StockError ? err.message : "Não deu para lançar. Confira as quantidades.");
     } finally {
       setSaving(false);
     }
@@ -106,18 +118,47 @@ export default function SobrasPage() {
       <div className="pb-36">
         <PageTitle
           title="Sobra do dia"
-          hint="Busque o que sobrou, coloque a quantidade e confira antes de baixar o estoque."
+          hint="Só o que ainda vale. Lote vencido não é sobra — descarte no estoque."
         />
+
+        {expiredUnits > 0 ? (
+          <Card className="mb-4 bg-red-50 ring-red-200">
+            <p className="font-extrabold text-red-800">{expiredUnits} un. vencidas nesta loja</p>
+            <p className="mt-1 text-stone-700">
+              Isso não entra na sobra do dia. Descarte no estoque para baixar a quantidade e marcar como perda por validade.
+            </p>
+            <Link
+              href="/estoque"
+              className="mt-3 inline-flex min-h-12 items-center rounded-2xl bg-red-600 px-4 font-bold text-white"
+            >
+              Ir ao estoque para descartar
+            </Link>
+          </Card>
+        ) : null}
 
         <div className="mb-4 space-y-3">
           <SearchField value={search} onChange={setSearch} placeholder="Buscar: coxinha, festa, coca..." />
           <FilterChips value={kind} onChange={setKind} options={pickKindOptions(selected.length)} />
         </div>
 
-        {!available.length ? (
+        {!leftoverable.length ? (
           <Empty
-            title="Esta loja está sem estoque"
-            hint="Quando a fábrica mandar os salgados, eles aparecem aqui."
+            title={expiredOnly.length ? "Nada válido para lançar como sobra" : "Esta loja está sem estoque"}
+            hint={
+              expiredOnly.length
+                ? "O que restou já venceu. Descarte no estoque. Sobra é só o que foi frito e ainda valia."
+                : "Quando a fábrica mandar os salgados, eles aparecem aqui."
+            }
+            action={
+              expiredOnly.length ? (
+                <Link
+                  href="/estoque"
+                  className="inline-flex min-h-14 items-center rounded-2xl bg-red-600 px-5 text-lg font-bold text-white"
+                >
+                  Descartar vencidos
+                </Link>
+              ) : undefined
+            }
           />
         ) : grouped.length === 0 ? (
           <Empty title="Nada com esse nome" hint="Tente outro trecho ou limpe a busca." />
@@ -125,21 +166,29 @@ export default function SobrasPage() {
           <CompactList>
             {grouped.map((group) => (
               <CompactGroup key={group[0].product.id} title={group[0].product.name}>
-                {group.map((item) => (
-                  <CompactRow
-                    key={item.niche.id}
-                    title={item.niche.name}
-                    hint={`Na loja: ${item.qty[locationId ?? ""]} un.`}
-                    selected={(qty[item.niche.id] ?? 0) > 0}
-                  >
-                    <NumberStepper
-                      size="sm"
-                      value={qty[item.niche.id] ?? 0}
-                      max={item.qty[locationId ?? ""] ?? 0}
-                      onChange={(value) => setQty((current) => ({ ...current, [item.niche.id]: value }))}
-                    />
-                  </CompactRow>
-                ))}
+                {group.map((item) => {
+                  const valid = sellableQty(item, place);
+                  const expired = item.expiredQty[place] ?? 0;
+                  return (
+                    <CompactRow
+                      key={item.niche.id}
+                      title={item.niche.name}
+                      hint={
+                        expired > 0
+                          ? `Para sobra: ${valid} un. · ${expired} vencidas (descarte no estoque)`
+                          : `Na loja: ${valid} un.`
+                      }
+                      selected={(qty[item.niche.id] ?? 0) > 0}
+                    >
+                      <NumberStepper
+                        size="sm"
+                        value={qty[item.niche.id] ?? 0}
+                        max={valid}
+                        onChange={(value) => setQty((current) => ({ ...current, [item.niche.id]: value }))}
+                      />
+                    </CompactRow>
+                  );
+                })}
               </CompactGroup>
             ))}
           </CompactList>
@@ -148,12 +197,23 @@ export default function SobrasPage() {
 
       <StickyActionBar>
         <ErrorBox message={error} />
+        {error.includes("Descarte") ? (
+          <Link href="/estoque" className="inline-flex min-h-12 items-center font-bold text-red-700">
+            Abrir estoque para descartar vencidos
+          </Link>
+        ) : null}
         <SuccessBox message={ok} />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="font-bold text-stone-700">
             {selected.length > 0 ? `${selected.length} tipos · ${selectedUnits} un.` : "Nada lançado ainda"}
           </p>
-          <Button disabled={selected.length === 0} onClick={() => { setOk(""); setConfirm(true); }}>
+          <Button
+            disabled={selected.length === 0}
+            onClick={() => {
+              setOk("");
+              setConfirm(true);
+            }}
+          >
             Revisar e baixar
           </Button>
         </div>
@@ -162,7 +222,7 @@ export default function SobrasPage() {
       <ConfirmDialog
         open={confirm}
         title="Baixar estas sobras?"
-        hint="Isso tira do estoque e entra como perda do dia."
+        hint="Sobra tira só o que ainda vale. Lote vencido fica no estoque até o descarte."
         confirmLabel="Confirmar baixa"
         busy={saving}
         onConfirm={save}

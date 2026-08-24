@@ -64,3 +64,16 @@ export function periodLabel(period: Period) {
   if (period === "week") return "nos últimos 7 dias";
   return "nos últimos 30 dias";
 }
+
+export function addDays(date: string, days: number) {
+  const value = new Date(`${date.slice(0, 10)}T12:00:00`);
+  value.setDate(value.getDate() + days);
+  const offset = value.getTimezoneOffset() * 60_000;
+  return new Date(value.getTime() - offset).toISOString().slice(0, 10);
+}
+
+export function daysUntil(date: string) {
+  const today = new Date(`${todayDate()}T12:00:00`).getTime();
+  const target = new Date(`${date.slice(0, 10)}T12:00:00`).getTime();
+  return Math.round((target - today) / 86_400_000);
+}

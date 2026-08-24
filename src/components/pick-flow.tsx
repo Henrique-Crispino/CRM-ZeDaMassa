@@ -1,7 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Search } from "lucide-react";
+import { CATEGORIES } from "@/lib/categories";
+import type { Category } from "@/lib/types";
 import { Button, cn } from "./ui";
 
 export function SearchField({
@@ -15,6 +17,7 @@ export function SearchField({
 }) {
   return (
     <label className="relative block">
+      <span className="sr-only">{placeholder}</span>
       <Search className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-stone-400" />
       <input
         value={value}
@@ -36,13 +39,13 @@ export function FilterChips<T extends string>({
   options: { id: T; label: string }[];
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
       {options.map((option) => (
         <Button
           key={option.id}
           type="button"
           variant={value === option.id ? "primary" : "ghost"}
-          className="min-h-11 text-base"
+          className="min-h-11 shrink-0 text-base"
           onClick={() => onChange(option.id)}
         >
           {option.label}
@@ -129,6 +132,15 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && !busy) onCancel();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, open, onCancel]);
+
   if (!open) return null;
   return (
     <div
@@ -136,10 +148,13 @@ export function ConfirmDialog({
       onClick={onCancel}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
         className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-3xl bg-white p-5 shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 className="text-2xl font-extrabold text-stone-900">{title}</h2>
+        <h2 id="confirm-title" className="text-2xl font-extrabold text-stone-900">{title}</h2>
         {hint ? <p className="mt-1 text-stone-600">{hint}</p> : null}
         <div className="mt-4">{children}</div>
         <div className="mt-6 flex flex-wrap gap-3">
@@ -161,13 +176,18 @@ export function matchesSearch(label: string, search: string) {
   return label.toLowerCase().includes(q);
 }
 
-export type PickKind = "todos" | "salgado" | "bebida" | "pedido";
+export type PickKind = "todos" | Category | "pedido";
 
 export function pickKindOptions(selectedCount: number): { id: PickKind; label: string }[] {
   return [
     { id: "todos", label: "Tudo" },
-    { id: "salgado", label: "Salgado" },
-    { id: "bebida", label: "Bebida" },
+    ...CATEGORIES.map((item) => ({ id: item.id, label: item.label })),
     { id: "pedido", label: selectedCount ? `Escolhidos (${selectedCount})` : "Escolhidos" },
   ];
+}
+
+export function matchesKind(category: string, kind: PickKind, selected = false) {
+  if (kind === "todos") return true;
+  if (kind === "pedido") return selected;
+  return category === kind;
 }

@@ -16,7 +16,8 @@ import {
   YAxis,
 } from "recharts";
 import { Button, Card, cn } from "@/components/ui";
-import type { AlertItem, DashboardData } from "@/lib/queries";
+import { LotExpiryBoard } from "@/components/LotExpiryBoard";
+import type { AlertItem, DashboardData, ExpiryAlert } from "@/lib/queries";
 import { formatBRL, type Period } from "@/lib/money";
 
 const COLORS = ["#ea580c", "#1c1917", "#d97706", "#b91c1c", "#047857", "#7c2d12"];
@@ -201,6 +202,31 @@ export function AlertList({
         </ul>
       )}
     </Card>
+  );
+}
+
+export function ExpiryList({ items }: { items: ExpiryAlert[] }) {
+  const expired = items.filter((item) => item.level === "expired").length;
+  if (items.length === 0) return null;
+  return (
+    <div className="mb-8">
+      <LotExpiryBoard items={items} compact />
+      {expired > 0 ? (
+        <Link
+          href="/estoque"
+          className="mt-3 inline-flex min-h-12 items-center rounded-2xl bg-red-600 px-4 text-base font-bold text-white hover:bg-red-700"
+        >
+          Ir ao estoque para descartar vencidos
+        </Link>
+      ) : (
+        <Link
+          href="/estoque"
+          className="mt-3 inline-flex min-h-12 items-center rounded-2xl bg-white px-4 text-base font-bold text-stone-800 ring-1 ring-stone-300"
+        >
+          Ver validade no estoque
+        </Link>
+      )}
+    </div>
   );
 }
 

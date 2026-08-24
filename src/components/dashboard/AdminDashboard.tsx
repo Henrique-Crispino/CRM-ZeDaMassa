@@ -10,6 +10,7 @@ import type { DashboardData } from "@/lib/queries";
 import {
   AlertList,
   ChartCard,
+  ExpiryList,
   MetricCard,
   MoneyBars,
   PeriodTabs,
@@ -52,6 +53,8 @@ export function AdminDashboard({
 
       <PendingRequests canSend={false} />
 
+      <ExpiryList items={data.expiryAlerts} />
+
       <section className="mb-8">
         <h2 className="mb-3 text-2xl font-extrabold text-stone-900">Reposição agora</h2>
         <p className="mb-4 text-lg text-stone-600">
@@ -81,7 +84,7 @@ export function AdminDashboard({
         <MetricCard label={`Vendeu ${label}`} value={formatBRL(data.revenue)} hint={`${data.salesCount} vendas nas lojas`} />
         <MetricCard label={`Lucro ${label}`} value={formatBRL(data.margin)} />
         <MetricCard
-          label="Perdas"
+          label="Sobra do dia"
           value={`${data.wasteQty} un.`}
           hint={`${formatBRL(data.wasteRevenue)} deixou de vender`}
           alert={data.wasteQty > 0}
@@ -89,10 +92,20 @@ export function AdminDashboard({
         <MetricCard
           label="Custo das perdas"
           value={formatBRL(data.wasteCost)}
-          hint="O que foi gasto para fazer e acabou fora"
+          hint={`Promoção ${formatBRL(data.promoRevenue)} · consumo interno ${data.internalQty} un.`}
           alert={data.wasteCost > 0}
         />
       </div>
+      {data.expiredQty > 0 ? (
+        <div className="mt-4">
+          <MetricCard
+            label="Descarte por validade"
+            value={`${data.expiredQty} un.`}
+            hint={`${formatBRL(data.expiredCost)} de custo · ${formatBRL(data.expiredRevenue)} deixou de vender`}
+            alert
+          />
+        </div>
+      ) : null}
 
       <div className="mt-4 grid gap-4 md:grid-cols-3">
         {data.byLocation.map((location) => (
@@ -126,7 +139,7 @@ export function AdminDashboard({
             ]}
           />
         </ChartCard>
-        <ChartCard title="Perdas por loja (R$)" hint="Quanto cada loja deixou de vender com a sobra." empty={data.wasteRevenue === 0}>
+        <ChartCard title="Sobra por loja (R$)" hint="Quanto cada loja deixou de vender com a sobra do dia. Descarte por validade aparece no card acima." empty={data.wasteRevenue === 0}>
           <MoneyBars
             data={data.byLocation.map((item) => ({
               name: item.name,

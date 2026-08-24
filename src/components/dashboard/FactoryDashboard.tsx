@@ -8,6 +8,7 @@ import {
   ActionGrid,
   AlertList,
   ChartCard,
+  ExpiryList,
   MetricCard,
   MoneyBars,
   PeriodTabs,
@@ -35,10 +36,13 @@ export function FactoryDashboard({
         actions={[
           { href: "/produzir", label: "Registrar o que foi feito" },
           { href: "/enviar", label: "Mandar para a loja" },
+          { href: "/producao", label: "Ver registro de produção" },
         ]}
       />
 
       <PendingRequests canSend />
+
+      <ExpiryList items={data.expiryAlerts} />
 
       <section className="mb-8">
         <h2 className="mb-3 text-2xl font-extrabold text-stone-900">Reposição agora</h2>
@@ -69,12 +73,22 @@ export function FactoryDashboard({
           hint={`Lucro ${formatBRL(data.margin)}`}
         />
         <MetricCard
-          label="Perdas das lojas"
+          label="Sobra das lojas"
           value={`${data.wasteQty} un.`}
           hint={`${formatBRL(data.wasteRevenue)} deixou de vender · custo ${formatBRL(data.wasteCost)}`}
           alert={data.wasteQty > 0}
         />
       </div>
+      {data.expiredQty > 0 ? (
+        <div className="mt-4">
+          <MetricCard
+            label="Descarte por validade"
+            value={`${data.expiredQty} un.`}
+            hint={`${formatBRL(data.expiredCost)} de custo · ${formatBRL(data.expiredRevenue)} deixou de vender`}
+            alert
+          />
+        </div>
+      ) : null}
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <ChartCard title="O que cada loja vendeu" empty={data.byLocation.every((item) => item.revenue === 0)}>

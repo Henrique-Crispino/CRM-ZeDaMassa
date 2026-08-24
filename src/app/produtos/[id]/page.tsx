@@ -2,8 +2,10 @@
 
 import { useParams } from "next/navigation";
 import { useLiveQuery } from "dexie-react-hooks";
+import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
 import { ProductForm } from "@/components/ProductForm";
+import { BackLink } from "@/components/BackLink";
 import { Empty, PageTitle } from "@/components/ui";
 import { getDb } from "@/lib/db";
 import { useReady } from "@/lib/use-ready";
@@ -19,13 +21,23 @@ export default function EditarProdutoPage() {
   );
 
   return (
+    <AccessGate
+      allow={["admin", "factory"]}
+      title="Edição de produto é da administração e da fábrica"
+      hint="A loja não altera cadastro. Isso fica com a administração e a fábrica."
+    >
     <AppShell>
-      <PageTitle title="Editar produto" hint="Mude o nome, os preços ou acrescente um tipo novo." />
+      <PageTitle title="Editar produto" hint="Mude o nome, os preços, a validade ou acrescente um tipo novo." />
       {product ? (
         <ProductForm product={product} niches={niches ?? []} />
       ) : (
-        <Empty title="Produto não encontrado" hint="Volte na lista e toque no produto de novo." />
+        <Empty
+          title="Produto não encontrado"
+          hint="Volte na lista e toque no produto de novo."
+          action={<BackLink href="/produtos" label="Voltar para produtos" />}
+        />
       )}
     </AppShell>
+    </AccessGate>
   );
 }

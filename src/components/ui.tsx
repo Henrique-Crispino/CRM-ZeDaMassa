@@ -37,6 +37,7 @@ export function Button({
   children,
   variant = "primary",
   className,
+  type = "button",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "ghost" | "danger" | "soft";
@@ -51,8 +52,9 @@ export function Button({
 
   return (
     <button
+      type={type}
       className={cn(
-        "inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl px-5 text-lg font-bold transition disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl px-4 text-base font-bold transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-14 sm:px-5 sm:text-lg",
         styles,
         className,
       )}
@@ -76,8 +78,39 @@ export function Field({
     <label className="block">
       <span className="mb-2 block text-base font-bold text-stone-800">{label}</span>
       {children}
-      {hint ? <span className="mt-1.5 block text-sm text-stone-500">{hint}</span> : null}
+      {hint ? <span className="mt-1.5 block text-sm leading-relaxed text-stone-500">{hint}</span> : null}
     </label>
+  );
+}
+
+export function SegmentedControl<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (value: T) => void;
+  options: { id: T; label: string }[];
+}) {
+  return (
+    <div
+      role="group"
+      className="grid gap-2 rounded-3xl bg-stone-100 p-1.5"
+      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+    >
+      {options.map((option) => (
+        <Button
+          key={option.id}
+          type="button"
+          variant={value === option.id ? "primary" : "ghost"}
+          aria-pressed={value === option.id}
+          className={cn("min-h-12", value !== option.id && "bg-transparent ring-0")}
+          onClick={() => onChange(option.id)}
+        >
+          {option.label}
+        </Button>
+      ))}
+    </div>
   );
 }
 
@@ -156,16 +189,18 @@ export function NumberStepper({
         type="button"
         variant="ghost"
         className={compact ? "h-11 w-11 min-h-11 px-0 text-xl" : "h-14 w-14 min-h-14 px-0 text-2xl"}
+        aria-label="Diminuir"
         onClick={() => onChange(Math.max(min, value - 1))}
       >
         −
       </Button>
       <input
         inputMode="numeric"
+        aria-label="Quantidade"
         className={
           compact
-            ? "h-11 w-14 rounded-xl border border-stone-300 text-center text-lg font-extrabold"
-            : "h-14 w-20 rounded-2xl border border-stone-300 text-center text-xl font-extrabold"
+            ? "h-11 w-14 rounded-xl border border-stone-300 text-center text-lg font-extrabold outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-100"
+            : "h-14 w-20 rounded-2xl border border-stone-300 text-center text-xl font-extrabold outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-100"
         }
         value={value || ""}
         placeholder="0"
@@ -179,6 +214,7 @@ export function NumberStepper({
         type="button"
         variant="ghost"
         className={compact ? "h-11 w-11 min-h-11 px-0 text-xl" : "h-14 w-14 min-h-14 px-0 text-2xl"}
+        aria-label="Aumentar"
         onClick={() => onChange(Math.min(max, value + 1))}
       >
         +
