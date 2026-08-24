@@ -30,6 +30,42 @@ export function movementLabel(type: MovementType) {
 }
 export type PaymentMethod = "dinheiro" | "pix" | "cartao";
 export type SaleChannel = "caixa" | "delivery" | "encomenda";
+
+export const PAYMENT_METHODS: { id: PaymentMethod; label: string }[] = [
+  { id: "dinheiro", label: "Dinheiro" },
+  { id: "pix", label: "Pix" },
+  { id: "cartao", label: "Cartão" },
+];
+
+export function paymentMethodLabel(method?: PaymentMethod | string) {
+  return PAYMENT_METHODS.find((item) => item.id === method)?.label ?? method ?? "Pagamento";
+}
+
+export type SalePayment = {
+  method: PaymentMethod;
+  amount: number;
+};
+
+export function salePayments(sale: Pick<Sale, "payment" | "total" | "payments">): SalePayment[] {
+  if (sale.payments?.length) {
+    return sale.payments
+      .filter((row) => row.amount > 0)
+      .map((row) => ({ method: row.method, amount: row.amount }));
+  }
+  return sale.payment ? [{ method: sale.payment, amount: sale.total }] : [];
+}
+
+export function salePaymentShare(sale: Pick<Sale, "payment" | "total" | "payments">, method: PaymentMethod) {
+  return salePayments(sale)
+    .filter((row) => row.method === method)
+    .reduce((sum, row) => sum + row.amount, 0);
+}
+
+export function salePaymentSummary(sale: Pick<Sale, "payment" | "total" | "payments">) {
+  const rows = salePayments(sale);
+  if (rows.length <= 1) return paymentMethodLabel(rows[0]?.method ?? sale.payment);
+  return rows.map((row) => paymentMethodLabel(row.method)).join(" + ");
+}
 export type CashPeriod = "manha" | "tarde";
 export type SaleVoidReason = "quantidade" | "produto" | "desistencia";
 
@@ -171,6 +207,7 @@ export type Sale = {
   locationId: string;
   channel: SaleChannel;
   payment: PaymentMethod;
+  payments?: SalePayment[];
   total: number;
   at: string;
   cashSessionId?: string;

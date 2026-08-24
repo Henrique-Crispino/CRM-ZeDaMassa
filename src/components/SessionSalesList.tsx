@@ -8,13 +8,7 @@ import { listSessionTickets } from "@/lib/cash";
 import { formatBRL, formatTime } from "@/lib/money";
 import { StockError, voidSale } from "@/lib/stock";
 import type { SaleVoidReason } from "@/lib/types";
-import { SALE_VOID_REASONS, isLiveSale, saleVoidReasonLabel } from "@/lib/types";
-
-const PAYMENT_LABEL: Record<string, string> = {
-  dinheiro: "Dinheiro",
-  pix: "Pix",
-  cartao: "Cartão",
-};
+import { SALE_VOID_REASONS, isLiveSale, paymentMethodLabel, salePayments, saleVoidReasonLabel } from "@/lib/types";
 
 const CHANNEL_LABEL: Record<string, string> = {
   caixa: "No caixa",
@@ -69,7 +63,7 @@ export function SessionSalesList({
         <p className="text-stone-600">
           {canVoid
             ? "Digitou errado? Estorne com o caixa ainda aberto. A quantidade volta para o mesmo lote."
-            : "O caixa deste turno já fechou. Estorno só no turno aberto."}
+            : "O caixa deste turno já fechou. Estorno só no turno aberto. Reabertura do dia é com a administração."}
         </p>
       </div>
       {ok ? <p className="font-semibold text-emerald-800">{ok}</p> : null}
@@ -88,7 +82,11 @@ export function SessionSalesList({
                       {formatBRL(ticket.sale.total)}
                     </p>
                     <p className="text-sm font-semibold text-stone-500">
-                      {formatTime(ticket.sale.at)} · {PAYMENT_LABEL[ticket.sale.payment]} ·{" "}
+                      {formatTime(ticket.sale.at)} ·{" "}
+                      {salePayments(ticket.sale)
+                        .map((row) => `${paymentMethodLabel(row.method)} ${formatBRL(row.amount)}`)
+                        .join(" + ")}{" "}
+                      ·{" "}
                       {CHANNEL_LABEL[ticket.sale.channel]}
                     </p>
                     <p className="text-sm font-semibold text-stone-600">
@@ -127,7 +125,7 @@ export function SessionSalesList({
       <ConfirmDialog
         open={Boolean(chosen)}
         title="Estornar esta venda?"
-        hint="A quantidade volta para o mesmo lote. O valor some do faturamento e do esperado em espécie, se era dinheiro."
+        hint="A quantidade volta para o mesmo lote. Some do faturamento. Se tinha dinheiro, some só essa parte do esperado em espécie."
         confirmLabel="Confirmar estorno"
         confirmVariant="danger"
         confirmDisabled={!reason}

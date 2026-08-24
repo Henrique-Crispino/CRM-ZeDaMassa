@@ -12,7 +12,7 @@ import type {
   PaymentMethod,
   Sale,
 } from "./types";
-import { CASH_DESTINATIONS, isLiveSale } from "./types";
+import { CASH_DESTINATIONS, isLiveSale, salePayments } from "./types";
 
 function localDay(iso: string) {
   const date = new Date(iso);
@@ -356,7 +356,9 @@ export async function sessionLedger(sessionId: string): Promise<CashLedger> {
 
   const byPayment: Record<PaymentMethod, number> = { dinheiro: 0, pix: 0, cartao: 0 };
   for (const sale of sales) {
-    byPayment[sale.payment] += sale.total;
+    for (const row of salePayments(sale)) {
+      byPayment[row.method] += row.amount;
+    }
   }
 
   const sangriaTotal = money2(

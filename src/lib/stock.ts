@@ -1,12 +1,13 @@
 import { isPurchased } from "./categories";
-import { currentCashSession } from "./cash";
+import { currentCashSession, money2 } from "./cash";
 import { getDb } from "./db";
 import { isStore } from "./locations";
 import { addDays, newId, todayDate } from "./money";
 import { changeStock, oldestLots, StockError, stockQty } from "./stock-core";
-import type { AdjustmentReason, InventoryLine, PaymentMethod, ReturnReason, SaleChannel, SaleVoidReason } from "./types";
+import type { AdjustmentReason, InventoryLine, PaymentMethod, ReturnReason, SaleChannel, SalePayment, SaleVoidReason } from "./types";
 import {
   ADJUSTMENT_REASONS,
+  PAYMENT_METHODS,
   RETURN_REASONS,
   SALE_VOID_REASONS,
   lotCost,
@@ -421,10 +422,40 @@ export async function receiveReturn(input: {
   );
 }
 
+function normalizeSalePayments(total: number, input: { payment?: PaymentMethod; payments?: SalePayment[] }) {
+  const raw = (input.payments ?? []).filter((row) => row.amount > 0);
+  const lines = raw.length
+    ? raw
+    : input.payment
+      ? [{ method: input.payment, amount: total }]
+      : [];
+  if (lines.length === 0) {
+    throw new StockError("Escolha como o cliente pagou.");
+  }
+
+  const byMethod: Record<PaymentMethod, number> = { dinheiro: 0, pix: 0, cartao: 0 };
+  for (const row of lines) {
+    if (!PAYMENT_METHODS.some((item) => item.id === row.method)) {
+      throw new StockError("Forma de pagamento inválida.");
+    }
+    byMethod[row.method] += money2(row.amount);
+  }
+
+  const payments = PAYMENT_METHODS
+    .map((item) => ({ method: item.id, amount: money2(byMethod[item.id]) }))
+    .filter((row) => row.amount > 0);
+  const paid = money2(payments.reduce((sum, row) => sum + row.amount, 0));
+  if (Math.abs(paid - money2(total)) >= 0.005) {
+    throw new StockError("Os pagamentos têm que somar o total da venda.");
+  }
+  return payments;
+}
+
 export async function checkout(input: {
   locationId: string;
   channel: SaleChannel;
-  payment: PaymentMethod;
+  payment?: PaymentMethod;
+  payments?: SalePayment[];
   items: { nicheId: string; qty: number; promo?: boolean }[];
 }) {
   if (!isStore(input.locationId)) {
@@ -488,11 +519,13 @@ export async function checkout(input: {
         }
       }
 
+      const payments = normalizeSalePayments(total, input);
       await db.sales.add({
         id: saleId,
         locationId: input.locationId,
         channel: input.channel,
-        payment: input.payment,
+        payment: payments[0]?.method ?? "dinheiro",
+        payments: payments.length > 1 ? payments : undefined,
         total,
         at,
         cashSessionId: session.id,

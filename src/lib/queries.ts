@@ -7,6 +7,8 @@ import {
   adjustmentReasonLabel,
   isLiveSale,
   movementLabel,
+  salePaymentSummary,
+  salePayments,
   receivedQtyOf,
   returnReasonLabel,
   saleVoidReasonLabel,
@@ -348,7 +350,9 @@ export async function loadDashboard(period: Period, scope?: string): Promise<Das
   const paymentsMap = new Map<string, number>();
   const channelsMap = new Map<string, number>();
   for (const sale of scopedSales) {
-    paymentsMap.set(sale.payment, (paymentsMap.get(sale.payment) ?? 0) + sale.total);
+    for (const row of salePayments(sale)) {
+      paymentsMap.set(row.method, (paymentsMap.get(row.method) ?? 0) + row.amount);
+    }
     channelsMap.set(sale.channel, (channelsMap.get(sale.channel) ?? 0) + sale.total);
   }
 
@@ -716,7 +720,7 @@ export async function loadKardex(input: {
         movement.type === "sale_void"
           ? saleVoidReasonLabel(sale?.voidReason)
           : sale
-            ? `${sale.payment === "dinheiro" ? "Dinheiro" : sale.payment === "pix" ? "Pix" : "Cartão"}`
+            ? salePaymentSummary(sale)
             : "Venda";
     } else if (movement.type === "internal") {
       const consume = consumptions.find(

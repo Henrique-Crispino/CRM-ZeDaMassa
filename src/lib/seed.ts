@@ -16,11 +16,13 @@ import type {
   Product,
   Sale,
   SaleItem,
+  SalePayment,
   StockRow,
   Transfer,
   TransferItem,
   Waste,
 } from "./types";
+import { salePaymentShare } from "./types";
 
 type Rng = { n: number };
 
@@ -590,12 +592,21 @@ export async function loadDemoData() {
         }
 
         if (lines.length === 0) continue;
-        const total = lines.reduce((sum, line) => sum + line.unitPrice * line.qty, 0);
+        const total = Math.round(lines.reduce((sum, line) => sum + line.unitPrice * line.qty, 0) * 100) / 100;
+        let payments: SalePayment[] | undefined;
+        if (total >= 15 && payment !== "dinheiro" && between(rng, 1, 7) === 1) {
+          const cashPart = Math.round(Math.min(total - 1, Math.max(5, total * 0.3)) * 100) / 100;
+          payments = [
+            { method: payment, amount: Math.round((total - cashPart) * 100) / 100 },
+            { method: "dinheiro", amount: cashPart },
+          ];
+        }
         sales.push({
           id: saleId,
           locationId: storeId,
           channel,
           payment,
+          payments,
           total,
           at,
           cashSessionId: ensureSession(storeId, daysAgo, periodOf(hour)),
@@ -685,9 +696,9 @@ export async function loadDemoData() {
 
   for (const session of cashSessions.values()) {
     const sessionSales = sales.filter((sale) => sale.cashSessionId === session.id);
-    const cashSales = sessionSales.filter((sale) => sale.payment === "dinheiro").reduce((sum, sale) => sum + sale.total, 0);
-    const pixSales = sessionSales.filter((sale) => sale.payment === "pix").reduce((sum, sale) => sum + sale.total, 0);
-    const cardSales = sessionSales.filter((sale) => sale.payment === "cartao").reduce((sum, sale) => sum + sale.total, 0);
+    const cashSales = sessionSales.reduce((sum, sale) => sum + salePaymentShare(sale, "dinheiro"), 0);
+    const pixSales = sessionSales.reduce((sum, sale) => sum + salePaymentShare(sale, "pix"), 0);
+    const cardSales = sessionSales.reduce((sum, sale) => sum + salePaymentShare(sale, "cartao"), 0);
     session.cashSales = Math.round(cashSales * 100) / 100;
     session.pixSales = Math.round(pixSales * 100) / 100;
     session.cardSales = Math.round(cardSales * 100) / 100;

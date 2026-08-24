@@ -14,7 +14,7 @@ import { cashDifferenceLabel, cashPeriodLabel, sessionLedger } from "./cash";
 import { catalogItems, listProductionLogs, stockByLocation } from "./queries";
 import { factoryMin, storeMin } from "./stock-min";
 import type { Niche } from "./types";
-import { adjustmentReasonLabel, cashDestinationLabel, isLiveSale, lotCost, receivedQtyOf, transferKind, transferStatus, transferStatusLabel } from "./types";
+import { adjustmentReasonLabel, cashDestinationLabel, isLiveSale, lotCost, receivedQtyOf, salePayments, transferKind, transferStatus, transferStatusLabel } from "./types";
 
 export type StoreScope = "all" | string;
 
@@ -176,7 +176,9 @@ export async function reportClosing(window: ReportWindow, scope: StoreScope): Pr
   const pay = { dinheiro: 0, pix: 0, cartao: 0 };
   const channel = { caixa: 0, delivery: 0, encomenda: 0 };
   for (const sale of sales) {
-    pay[sale.payment] += sale.total;
+    for (const row of salePayments(sale)) {
+      pay[row.method] += row.amount;
+    }
     channel[sale.channel] += sale.total;
   }
 
@@ -331,6 +333,7 @@ export async function reportSales(window: ReportWindow, scope: StoreScope): Prom
     ],
     notes: [
       sales.length ? `Ticket médio ${money(totalRev / sales.length)} · ${totalQty} unidades em ${sales.length} vendas.` : "Nenhuma venda neste recorte.",
+      "Uma venda pode misturar Pix, dinheiro e cartão. O caixa só conta a parte em dinheiro no esperado em espécie.",
     ],
   };
 }
@@ -773,7 +776,8 @@ export async function reportCash(window: ReportWindow, scope: StoreScope): Promi
       rows.length === 0
         ? "Nenhum caixa aberto neste recorte."
         : `${sessions.length} movimentos · ${closed.length} encerrados · diferença acumulada ${money(totalDiff)}.`,
-      "Saldo esperado em espécie = fundo + vendas em dinheiro + suprimento − sangria. Pix e cartão não entram na gaveta.",
+      "Saldo esperado em espécie = fundo + a parte em dinheiro das vendas + suprimento − sangria. Pix e cartão não entram na gaveta.",
+      "Venda mista (Pix + dinheiro) só joga no esperado a fatia em espécie.",
       "Quebra = apurado menor que o esperado. Sobra = apurado maior. Caixa bateu = diferença zero.",
       "Quebra ou sobra exige segunda contagem e o nome de quem conferiu. Sem isso o turno não fecha.",
       ...reopenNotes(ledgers),

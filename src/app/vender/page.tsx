@@ -11,6 +11,8 @@ import {
   Card,
   Empty,
   ErrorBox,
+  Field,
+  Input,
   NumberStepper,
   PageTitle,
   SuccessBox,
@@ -20,23 +22,18 @@ import { CATEGORIES } from "@/lib/categories";
 import { currentCashSession } from "@/lib/cash";
 import { cashPeriodLabel } from "@/lib/cash";
 import { getPanel } from "@/lib/locations";
-import { formatBRL } from "@/lib/money";
+import { formatBRL, parseMoney } from "@/lib/money";
 import { expiryAlertsFor, sellableQty, stockByLocation } from "@/lib/queries";
 import { getLocationId } from "@/lib/session";
 import { checkout, StockError } from "@/lib/stock";
 import type { Category, PaymentMethod, SaleChannel } from "@/lib/types";
+import { PAYMENT_METHODS, paymentMethodLabel } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 const channels: { id: SaleChannel; label: string }[] = [
   { id: "caixa", label: "No caixa" },
   { id: "delivery", label: "Delivery" },
   { id: "encomenda", label: "Encomenda" },
-];
-
-const payments: { id: PaymentMethod; label: string }[] = [
-  { id: "dinheiro", label: "Dinheiro" },
-  { id: "pix", label: "Pix" },
-  { id: "cartao", label: "Cartão" },
 ];
 
 type Kind = "todos" | Category;
@@ -61,6 +58,12 @@ export default function VenderPage() {
   const [promo, setPromo] = useState<Record<string, boolean>>({});
   const [channel, setChannel] = useState<SaleChannel>("caixa");
   const [payment, setPayment] = useState<PaymentMethod>("pix");
+  const [split, setSplit] = useState(false);
+  const [splitAmounts, setSplitAmounts] = useState<Record<PaymentMethod, string>>({
+    dinheiro: "",
+    pix: "",
+    cartao: "",
+  });
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
   const [saving, setSaving] = useState(false);
@@ -98,6 +101,16 @@ export default function VenderPage() {
   );
 
   const total = cartItems.reduce((sum, item) => sum + item.cartQty * item.unitPrice, 0);
+  const paymentLines = split
+    ? PAYMENT_METHODS.map((item) => ({ method: item.id, amount: parseMoney(splitAmounts[item.id]) })).filter(
+        (row) => row.amount > 0,
+      )
+    : total > 0
+      ? [{ method: payment, amount: total }]
+      : [];
+  const paid = paymentLines.reduce((sum, row) => sum + row.amount, 0);
+  const remaining = Math.round((total - paid) * 100) / 100;
+  const payReady = paymentLines.length > 0 && Math.abs(remaining) < 0.005;
 
   if (panel && panel.type !== "store") {
     return (
@@ -119,7 +132,7 @@ export default function VenderPage() {
       await checkout({
         locationId,
         channel,
-        payment,
+        payments: paymentLines,
         items: cartItems.map((item) => ({
           nicheId: item.niche.id,
           qty: item.cartQty,
@@ -128,6 +141,8 @@ export default function VenderPage() {
       });
       setCart({});
       setPromo({});
+      setSplit(false);
+      setSplitAmounts({ dinheiro: "", pix: "", cartao: "" });
       setConfirm(false);
       setOk(`Venda feita. ${formatBRL(total)}`);
     } catch (err) {
@@ -300,19 +315,64 @@ export default function VenderPage() {
 
           <div>
             <p className="mb-2 font-bold">Pagamento</p>
-            <div className="grid grid-cols-3 gap-2">
-              {payments.map((item) => (
-                <Button
-                  key={item.id}
-                  type="button"
-                  variant={payment === item.id ? "secondary" : "ghost"}
-                  className="min-h-12 px-2 text-sm"
-                  onClick={() => setPayment(item.id)}
-                >
-                  {item.label}
-                </Button>
-              ))}
-            </div>
+            {split ? (
+              <div className="space-y-3">
+                {PAYMENT_METHODS.map((item) => (
+                  <Field
+                    key={item.id}
+                    label={item.label}
+                    hint={item.id === "dinheiro" ? "Esta parte entra no esperado em espécie." : "Não fica na gaveta."}
+                  >
+                    <Input
+                      inputMode="decimal"
+                      value={splitAmounts[item.id]}
+                      onChange={(event) =>
+                        setSplitAmounts((current) => ({ ...current, [item.id]: event.target.value }))
+                      }
+                      placeholder="0,00"
+                    />
+                  </Field>
+                ))}
+                <p className={Math.abs(remaining) < 0.005 ? "font-bold text-emerald-800" : "font-bold text-red-700"}>
+                  {Math.abs(remaining) < 0.005
+                    ? "As formas somam o pedido."
+                    : remaining > 0
+                      ? `Falta ${formatBRL(remaining)}`
+                      : `Passou ${formatBRL(Math.abs(remaining))}`}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {PAYMENT_METHODS.map((item) => (
+                  <Button
+                    key={item.id}
+                    type="button"
+                    variant={payment === item.id ? "secondary" : "ghost"}
+                    className="min-h-12 px-2 text-sm"
+                    onClick={() => setPayment(item.id)}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              className="mt-2 w-full min-h-11 text-sm"
+              onClick={() => {
+                if (!split) {
+                  setSplitAmounts({
+                    dinheiro: payment === "dinheiro" && total ? total.toFixed(2).replace(".", ",") : "",
+                    pix: payment === "pix" && total ? total.toFixed(2).replace(".", ",") : "",
+                    cartao: payment === "cartao" && total ? total.toFixed(2).replace(".", ",") : "",
+                  });
+                }
+                setSplit((current) => !current);
+              }}
+            >
+              {split ? "Uma forma só" : "Dividir pagamento"}
+            </Button>
           </div>
 
           <p className="text-3xl font-extrabold">{formatBRL(total)}</p>
@@ -320,7 +380,7 @@ export default function VenderPage() {
           <SuccessBox message={ok} />
           <Button
             className="w-full"
-            disabled={saving || cartItems.length === 0 || !session}
+            disabled={saving || cartItems.length === 0 || !session || !payReady}
             onClick={() => {
               setOk("");
               setConfirm(true);
@@ -340,7 +400,7 @@ export default function VenderPage() {
       <ConfirmDialog
         open={confirm}
         title="Fechar esta venda?"
-        hint={`${channels.find((item) => item.id === channel)?.label} · ${payments.find((item) => item.id === payment)?.label}${session ? ` · ${session.employeeName}` : ""}`}
+        hint={`${channels.find((item) => item.id === channel)?.label} · ${paymentLines.map((row) => `${paymentMethodLabel(row.method)} ${formatBRL(row.amount)}`).join(" + ")}${session ? ` · ${session.employeeName}` : ""}`}
         confirmLabel="Confirmar venda"
         busy={saving}
         onConfirm={finish}
@@ -357,6 +417,15 @@ export default function VenderPage() {
             </li>
           ))}
         </ul>
+        {paymentLines.length > 1 ? (
+          <ul className="mt-3 space-y-1 font-semibold text-stone-700">
+            {paymentLines.map((row) => (
+              <li key={row.method}>
+                {paymentMethodLabel(row.method)}: {formatBRL(row.amount)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <p className="mt-3 text-2xl font-extrabold">{formatBRL(total)}</p>
       </ConfirmDialog>
     </AppShell>
