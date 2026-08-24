@@ -14,7 +14,7 @@ import { cashDifferenceLabel, cashPeriodLabel, sessionLedger } from "./cash";
 import { catalogItems, listProductionLogs, stockByLocation } from "./queries";
 import { factoryMin, storeMin } from "./stock-min";
 import type { Niche } from "./types";
-import { isLiveSale, lotCost } from "./types";
+import { adjustmentReasonLabel, isLiveSale, lotCost } from "./types";
 
 export type StoreScope = "all" | string;
 
@@ -698,6 +698,68 @@ export async function reportCash(window: ReportWindow, scope: StoreScope): Promi
         : `${sessions.length} movimentos · ${closed.length} encerrados · diferença acumulada ${money(totalDiff)}.`,
       "Saldo esperado em espécie = fundo + vendas em dinheiro + suprimento − sangria. Pix e cartão não entram na gaveta.",
       "Quebra = apurado menor que o esperado. Sobra = apurado maior. Caixa bateu = diferença zero.",
+    ],
+  };
+}
+
+export async function reportInventory(window: ReportWindow, scope: StoreScope): Promise<ReportTable> {
+  const db = getDb();
+  const catalog = await catalogItems(false);
+  const counts = (await db.inventoryCounts.toArray())
+    .filter((row) => row.at >= window.from && row.at <= window.to)
+    .filter((row) => scope === "all" || row.locationId === scope)
+    .sort((a, b) => a.at.localeCompare(b.at));
+  const lines = await db.inventoryLines.toArray();
+  const labelByNiche = new Map(catalog.map((item) => [item.niche.id, item.label]));
+
+  const rows: (string | number)[][] = [];
+  let system = 0;
+  let counted = 0;
+  for (const count of counts) {
+    const parts = lines.filter((line) => line.countId === count.id);
+    if (parts.length === 0) {
+      rows.push([
+        formatDate(count.at.slice(0, 10)),
+        formatTime(count.at),
+        getLocation(count.locationId)?.name ?? count.locationId,
+        count.countedBy,
+        "—",
+        0,
+        0,
+        0,
+        "—",
+      ]);
+      continue;
+    }
+    for (const line of parts) {
+      const delta = line.countedQty - line.systemQty;
+      system += line.systemQty;
+      counted += line.countedQty;
+      rows.push([
+        formatDate(count.at.slice(0, 10)),
+        formatTime(count.at),
+        getLocation(count.locationId)?.name ?? count.locationId,
+        count.countedBy,
+        labelByNiche.get(line.nicheId) ?? "Produto",
+        line.systemQty,
+        line.countedQty,
+        delta,
+        adjustmentReasonLabel(line.reason),
+      ]);
+    }
+  }
+
+  return {
+    title: "Inventário e ajuste",
+    subtitle: `${window.label} · ${scopeName(scope)}`,
+    headers: ["Data", "Hora", "Local", "Responsável", "Produto", "Sistema", "Físico", "Diferença", "Motivo"],
+    rows: rows.length ? [...rows, ["TOTAL", "", "", "", "", system, counted, counted - system, ""]] : rows,
+    notes: [
+      rows.length === 0
+        ? "Nenhum inventário neste recorte."
+        : `${counts.length} contagem${counts.length === 1 ? "" : "s"} · diferença ${counted - system}.`,
+      "Diferença negativa = faltou no físico. Positiva = apareceu a mais. Motivo fica no lançamento.",
+      "Ajuste não é venda nem sobra. O saldo do estoque já foi corrigido na hora da contagem.",
     ],
   };
 }

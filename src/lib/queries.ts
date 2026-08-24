@@ -1,6 +1,6 @@
 import { getDb } from "./db";
 import { LOCATIONS, storeLocations, getLocation, type Location } from "./locations";
-import { daysUntil, periodRange, todayDate, type Period } from "./money";
+import { daysUntil, formatDate, periodRange, todayDate, type Period } from "./money";
 import { factoryMin, isLowAt, storeMin } from "./stock-min";
 import type { Niche, Product, Sale, SaleItem, Waste } from "./types";
 import { isLiveSale } from "./types";
@@ -500,5 +500,59 @@ function buildDaily(
   }
 
   return days > 7 ? rows.filter((_, i) => i % Math.ceil(days / 10) === 0 || i === rows.length - 1) : rows;
+}
+
+export type InventorySheetRow = {
+  key: string;
+  nicheId: string;
+  lotId?: string;
+  label: string;
+  hint: string;
+  systemQty: number;
+};
+
+export async function inventorySheet(locationId: string): Promise<InventorySheetRow[]> {
+  const db = getDb();
+  const [catalog, rows, lots] = await Promise.all([
+    catalogItems(true),
+    db.stock.where("locationId").equals(locationId).toArray(),
+    db.lots.toArray(),
+  ]);
+  const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+  const sheet: InventorySheetRow[] = [];
+
+  for (const item of catalog) {
+    const here = rows.filter((row) => row.nicheId === item.niche.id && row.qty > 0);
+    if (item.product.perishable && here.length > 0) {
+      for (const row of here) {
+        const lot = lotById.get(row.lotId);
+        sheet.push({
+          key: `${item.niche.id}:${row.lotId}`,
+          nicheId: item.niche.id,
+          lotId: row.lotId,
+          label: item.label,
+          hint: lot?.expiresAt
+            ? `Lote feito em ${formatDate(lot.madeAt)} · vale até ${formatDate(lot.expiresAt)}`
+            : `Lote feito em ${formatDate(lot?.madeAt ?? row.lotId)}`,
+          systemQty: row.qty,
+        });
+      }
+      continue;
+    }
+
+    sheet.push({
+      key: item.niche.id,
+      nicheId: item.niche.id,
+      label: item.label,
+      hint: item.product.perishable
+        ? "Nenhum lote aqui agora. Se achar produto, some nesta linha."
+        : "Quantidade total neste local.",
+      systemQty: here.reduce((sum, row) => sum + row.qty, 0),
+    });
+  }
+
+  return sheet.sort(
+    (a, b) => a.label.localeCompare(b.label, "pt-BR") || a.hint.localeCompare(b.hint, "pt-BR"),
+  );
 }
 

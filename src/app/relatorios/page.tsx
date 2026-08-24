@@ -12,6 +12,7 @@ import {
   reportCash,
   reportClosing,
   reportInternal,
+  reportInventory,
   reportProduction,
   reportSales,
   reportStock,
@@ -210,6 +211,15 @@ export default function RelatoriosPage() {
           id="stock"
           onCsv={() => run("stock", "csv", () => reportStock(scope), "estoque")}
           onPrint={() => run("stock", "print", () => reportStock(scope), "estoque")}
+        />
+        <ReportCard
+          title="Inventário e ajuste"
+          hint="Sistema × físico × diferença, com motivo e quem contou. Não é venda nem sobra."
+          uses="Período + local"
+          busy={busy}
+          id="inventory"
+          onCsv={() => run("inventory", "csv", () => reportInventory(window, scope), "inventario")}
+          onPrint={() => run("inventory", "print", () => reportInventory(window, scope), "inventario")}
         />
       </div>
 

@@ -3,8 +3,8 @@ import { getDb } from "./db";
 import { isStore } from "./locations";
 import { addDays, newId, todayDate } from "./money";
 import { changeStock, oldestLots, StockError, stockQty } from "./stock-core";
-import type { PaymentMethod, SaleChannel, SaleVoidReason } from "./types";
-import { SALE_VOID_REASONS, lotCost } from "./types";
+import type { AdjustmentReason, InventoryLine, PaymentMethod, SaleChannel, SaleVoidReason } from "./types";
+import { ADJUSTMENT_REASONS, SALE_VOID_REASONS, lotCost } from "./types";
 
 export { StockError, stockQty } from "./stock-core";
 
@@ -363,4 +363,153 @@ export async function discardExpiredLots(input: {
   });
 
   return refId;
+}
+
+async function stockOnLot(locationId: string, nicheId: string, lotId: string) {
+  const row = await getDb().stock.get(`${locationId}:${nicheId}:${lotId}`);
+  return row?.qty ?? 0;
+}
+
+async function stockOnNiche(locationId: string, nicheId: string) {
+  const rows = await getDb().stock.where("[locationId+nicheId]").equals([locationId, nicheId]).toArray();
+  return rows.reduce((sum, row) => sum + row.qty, 0);
+}
+
+export async function applyInventory(input: {
+  locationId: string;
+  countedBy: string;
+  lines: { nicheId: string; lotId?: string; countedQty: number; reason?: AdjustmentReason }[];
+}) {
+  if (input.locationId !== "factory" && !isStore(input.locationId)) {
+    throw new StockError("Escolha a fábrica ou uma loja para contar.");
+  }
+
+  const countedBy = input.countedBy.trim();
+  if (!countedBy) throw new StockError("Falta o responsável desta contagem.");
+
+  const db = getDb();
+  const countId = newId();
+  const at = new Date().toISOString();
+  const diffs: InventoryLine[] = [];
+
+  for (const line of input.lines) {
+    const countedQty = Math.max(0, Math.floor(line.countedQty));
+    const systemQty = line.lotId
+      ? await stockOnLot(input.locationId, line.nicheId, line.lotId)
+      : await stockOnNiche(input.locationId, line.nicheId);
+    const delta = countedQty - systemQty;
+    if (delta === 0) continue;
+    if (!line.reason || !ADJUSTMENT_REASONS.some((item) => item.id === line.reason)) {
+      throw new StockError("Informe o motivo de cada diferença: quebra, furto, erro de lançamento ou contagem.");
+    }
+    diffs.push({
+      id: newId(),
+      countId,
+      nicheId: line.nicheId,
+      lotId: line.lotId,
+      systemQty,
+      countedQty,
+      reason: line.reason,
+    });
+  }
+
+  if (diffs.length === 0) {
+    throw new StockError("A contagem bateu com o sistema. Não há ajuste para lançar.");
+  }
+
+  await db.transaction(
+    "rw",
+    [db.stock, db.lots, db.movements, db.niches, db.products, db.inventoryCounts, db.inventoryLines],
+    async () => {
+      await db.inventoryCounts.add({
+        id: countId,
+        locationId: input.locationId,
+        at,
+        countedBy,
+      });
+
+      for (const line of diffs) {
+        const delta = line.countedQty - line.systemQty;
+        let lotId = line.lotId;
+        if (lotId) {
+          await changeStock(input.locationId, line.nicheId, lotId, delta);
+        } else if (delta < 0) {
+          const chunks = await oldestLots(input.locationId, line.nicheId, -delta);
+          for (const chunk of chunks) {
+            await changeStock(input.locationId, line.nicheId, chunk.lotId, -chunk.qty);
+            await db.movements.add({
+              id: newId(),
+              locationId: input.locationId,
+              nicheId: line.nicheId,
+              lotId: chunk.lotId,
+              qty: -chunk.qty,
+              type: "ajuste",
+              refId: countId,
+              at,
+            });
+          }
+          await db.inventoryLines.add(line);
+          continue;
+        } else {
+          const niche = await db.niches.get(line.nicheId);
+          const product = niche ? await db.products.get(niche.productId) : undefined;
+          const existing = await db.stock
+            .where("[locationId+nicheId]")
+            .equals([input.locationId, line.nicheId])
+            .toArray();
+          const lots = await db.lots.bulkGet(existing.map((row) => row.lotId));
+          const newest = lots
+            .filter((lot): lot is NonNullable<typeof lot> => Boolean(lot))
+            .sort((a, b) => b.madeAt.localeCompare(a.madeAt))[0];
+          if (newest) {
+            lotId = newest.id;
+            await changeStock(input.locationId, line.nicheId, newest.id, delta);
+          } else {
+            lotId = newId();
+            await db.lots.add({
+              id: lotId,
+              nicheId: line.nicheId,
+              madeAt: todayDate(),
+              expiresAt:
+                product?.perishable && product.shelfLifeDays > 0
+                  ? addDays(todayDate(), product.shelfLifeDays)
+                  : undefined,
+              unitCost: niche?.costPrice ?? 0,
+            });
+            await changeStock(input.locationId, line.nicheId, lotId, delta);
+          }
+        }
+
+        await db.movements.add({
+          id: newId(),
+          locationId: input.locationId,
+          nicheId: line.nicheId,
+          lotId: lotId ?? "",
+          qty: delta,
+          type: "ajuste",
+          refId: countId,
+          at,
+        });
+        await db.inventoryLines.add({ ...line, lotId: line.lotId ?? lotId });
+      }
+    },
+  );
+
+  return countId;
+}
+
+export async function listInventoryCounts(locationId?: string) {
+  const db = getDb();
+  const rows = locationId
+    ? await db.inventoryCounts.where("locationId").equals(locationId).toArray()
+    : await db.inventoryCounts.toArray();
+  return rows.sort((a, b) => b.at.localeCompare(a.at));
+}
+
+export async function inventoryCountDetails(countId: string) {
+  const db = getDb();
+  const count = await db.inventoryCounts.get(countId);
+  if (!count) return null;
+  const lines = await db.inventoryLines.where("countId").equals(countId).toArray();
+  return { count, lines };
 }

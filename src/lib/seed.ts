@@ -736,6 +736,8 @@ export async function loadDemoData() {
       db.consumptions,
       db.consumeUsers,
       db.cashMovements,
+      db.inventoryCounts,
+      db.inventoryLines,
     ],
     async () => {
       await Promise.all([
@@ -760,6 +762,8 @@ export async function loadDemoData() {
         db.consumptions.clear(),
         db.consumeUsers.clear(),
         db.cashMovements.clear(),
+        db.inventoryCounts.clear(),
+        db.inventoryLines.clear(),
       ]);
       await db.products.bulkAdd(products);
       await db.niches.bulkAdd(niches);

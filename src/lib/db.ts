@@ -8,6 +8,8 @@ import type {
   Employee,
   InternalAllowance,
   InternalConsumption,
+  InventoryCount,
+  InventoryLine,
   Lot,
   Movement,
   Niche,
@@ -58,6 +60,8 @@ class AppDB extends Dexie {
   consumptions!: Table<InternalConsumption, string>;
   consumeUsers!: Table<ConsumeUser, string>;
   cashMovements!: Table<CashMovement, string>;
+  inventoryCounts!: Table<InventoryCount, string>;
+  inventoryLines!: Table<InventoryLine, string>;
 
   constructor() {
     super("gp-salgados");
@@ -177,6 +181,22 @@ class AppDB extends Dexie {
       consumptions: "id, locationId, nicheId, at, dayKey",
       consumeUsers: "id, login, locationId, active",
       cashMovements: "id, sessionId, locationId, type, at",
+    });
+    this.version(7).stores({
+      ...baseStores,
+      requests: "id, fromLocationId, status, at",
+      requestItems: "id, requestId, nicheId",
+      notifications: "id, audience, at, type",
+      stores: "id, name, active",
+      employees: "id, storeId, active, name",
+      cashSessions: "id, locationId, period, openedAt, closedAt",
+      internalAllowances: "id, nicheId, enabled",
+      settings: "id",
+      consumptions: "id, locationId, nicheId, at, dayKey",
+      consumeUsers: "id, login, locationId, active",
+      cashMovements: "id, sessionId, locationId, type, at",
+      inventoryCounts: "id, locationId, at",
+      inventoryLines: "id, countId, nicheId",
     });
   }
 }

@@ -1,5 +1,17 @@
 export type Category = "salgado" | "bebida" | "limpeza" | "descartavel" | "embalagem";
-export type MovementType = "production" | "send" | "sale" | "sale_void" | "waste" | "internal";
+export type MovementType = "production" | "send" | "sale" | "sale_void" | "waste" | "internal" | "ajuste";
+export type AdjustmentReason = "quebra" | "furto" | "erro" | "contagem";
+
+export const ADJUSTMENT_REASONS: { id: AdjustmentReason; label: string }[] = [
+  { id: "quebra", label: "Quebra" },
+  { id: "furto", label: "Furto" },
+  { id: "erro", label: "Erro de lançamento" },
+  { id: "contagem", label: "Contagem" },
+];
+
+export function adjustmentReasonLabel(reason?: AdjustmentReason) {
+  return ADJUSTMENT_REASONS.find((item) => item.id === reason)?.label ?? "Ajuste";
+}
 export type PaymentMethod = "dinheiro" | "pix" | "cartao";
 export type SaleChannel = "caixa" | "delivery" | "encomenda";
 export type CashPeriod = "manha" | "tarde";
@@ -235,4 +247,21 @@ export type InternalConsumption = {
   userId?: string;
   userName?: string;
   unitCost?: number;
+};
+
+export type InventoryCount = {
+  id: string;
+  locationId: string;
+  at: string;
+  countedBy: string;
+};
+
+export type InventoryLine = {
+  id: string;
+  countId: string;
+  nicheId: string;
+  lotId?: string;
+  systemQty: number;
+  countedQty: number;
+  reason: AdjustmentReason;
 };
