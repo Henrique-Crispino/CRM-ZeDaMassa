@@ -123,6 +123,7 @@ export async function receivePurchase(input: {
 export async function sendToStore(input: {
   toLocationId: string;
   items: { nicheId: string; qty: number }[];
+  sentBy?: string;
 }) {
   if (!isStore(input.toLocationId)) {
     throw new StockError("Escolha uma loja para receber o envio.");
@@ -148,6 +149,7 @@ export async function sendToStore(input: {
         at,
         status: "em_transito",
         kind: "envio",
+        sentBy: input.sentBy?.trim() || "Fábrica",
       });
 
       for (const item of items) {

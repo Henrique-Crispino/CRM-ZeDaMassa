@@ -151,6 +151,7 @@ export type Transfer = {
   status?: TransferStatus;
   receivedAt?: string;
   receivedBy?: string;
+  sentBy?: string;
   kind?: TransferKind;
   reason?: ReturnReason;
 };

@@ -4,8 +4,10 @@ import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/pick-flow";
+import { ReportPreview } from "@/components/ReportPreview";
 import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { getPanel } from "@/lib/locations";
+import { reportRomaneio, type ReportTable } from "@/lib/reports";
 import { cancelRequest, fulfillRequest, listRequests, requestWhen, RequestError } from "@/lib/requests";
 import { getLocationId } from "@/lib/session";
 import { StockError } from "@/lib/stock";
@@ -22,6 +24,7 @@ export default function PedidosPage() {
   const [ok, setOk] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<ReportTable | null>(null);
 
   if (panel && panel.type === "store") {
     return (
@@ -43,9 +46,10 @@ export default function PedidosPage() {
     setOk("");
     setBusy(requestId);
     try {
-      await fulfillRequest(requestId, qty[requestId]);
+      const transferId = await fulfillRequest(requestId, qty[requestId], panel?.name ?? "Fábrica");
       setConfirmId(null);
-      setOk("Saiu da fábrica. Está em trânsito — a loja ainda precisa conferir.");
+      setOk("Saiu da fábrica. Imprima o romaneio para o motorista. A loja ainda confere.");
+      if (transferId) setSheet(await reportRomaneio(transferId));
     } catch (err) {
       setError(err instanceof StockError || err instanceof RequestError ? err.message : "Não deu para mandar.");
     } finally {
@@ -209,6 +213,7 @@ export default function PedidosPage() {
           })}
         </ul>
       </ConfirmDialog>
+      {sheet ? <ReportPreview report={sheet} onClose={() => setSheet(null)} closeLabel="Voltar" /> : null}
     </AppShell>
   );
 }

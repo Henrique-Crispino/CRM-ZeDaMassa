@@ -14,7 +14,7 @@ import { cashDifferenceLabel, cashPeriodLabel, sessionLedger } from "./cash";
 import { catalogItems, listProductionLogs, stockByLocation } from "./queries";
 import { factoryMin, storeMin } from "./stock-min";
 import type { Niche } from "./types";
-import { adjustmentReasonLabel, isLiveSale, lotCost, receivedQtyOf, transferStatus, transferStatusLabel } from "./types";
+import { adjustmentReasonLabel, isLiveSale, lotCost, receivedQtyOf, transferKind, transferStatus, transferStatusLabel } from "./types";
 
 export type StoreScope = "all" | string;
 
@@ -405,7 +405,8 @@ export async function reportTransfers(window: ReportWindow, scope: StoreScope): 
   const db = getDb();
   const catalog = await catalogItems(false);
   const transfers = (await db.transfers.where("at").between(window.from, window.to, true, true).toArray()).filter(
-    (transfer) => scope === "all" || transfer.toLocationId === scope,
+    (transfer) =>
+      transferKind(transfer) === "envio" && (scope === "all" || transfer.toLocationId === scope),
   );
   const items = await db.transferItems.toArray();
   const lots = await db.lots.toArray();
@@ -451,6 +452,62 @@ export async function reportTransfers(window: ReportWindow, scope: StoreScope): 
     notes: [
       rows.length === 0 ? "Nenhum envio neste recorte." : `${totalQty} un. saíram da fábrica · custo de reposição ${money(totalCost)}.`,
       "Mandou é o que saiu da fábrica. Chegou é o que a loja conferiu. Em trânsito ainda não é estoque da loja.",
+      "Para o papel que vai com o motorista, use o romaneio do envio em Mandar para a loja.",
+    ],
+  };
+}
+
+export async function reportRomaneio(transferId: string): Promise<ReportTable> {
+  const db = getDb();
+  const transfer = await db.transfers.get(transferId);
+  if (!transfer) {
+    return {
+      title: "Romaneio",
+      subtitle: "Envio não encontrado",
+      headers: ["Produto", "Lote", "Validade", "Quantidade"],
+      rows: [],
+      notes: ["Este envio não existe mais."],
+    };
+  }
+  if (transferKind(transfer) === "devolucao") {
+    return {
+      title: "Romaneio",
+      subtitle: "Esta é uma devolução, não um envio da câmara.",
+      headers: ["Produto", "Lote", "Validade", "Quantidade"],
+      rows: [],
+    };
+  }
+
+  const [items, catalog, lots] = await Promise.all([
+    db.transferItems.where("transferId").equals(transfer.id).toArray(),
+    catalogItems(false),
+    db.lots.toArray(),
+  ]);
+  const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+  const dest = getLocation(transfer.toLocationId)?.name ?? transfer.toLocationId;
+  let totalQty = 0;
+  const rows: (string | number)[][] = [];
+
+  for (const part of items) {
+    const found = catalog.find((item) => item.niche.id === part.nicheId);
+    const lot = lotById.get(part.lotId);
+    totalQty += part.qty;
+    rows.push([
+      found?.label ?? "Produto",
+      lot?.madeAt ? formatDate(lot.madeAt) : "—",
+      lot?.expiresAt ? formatDate(lot.expiresAt) : "Sem validade",
+      part.qty,
+    ]);
+  }
+
+  return {
+    title: `Romaneio — ${dest}`,
+    subtitle: `Saiu da câmara ${formatDate(transfer.at)} às ${formatTime(transfer.at)} · Expedido por ${transfer.sentBy?.trim() || "Fábrica"} · ${transferStatusLabel(transferStatus(transfer))}`,
+    headers: ["Produto", "Lote feito em", "Validade", "Quantidade"],
+    rows: rows.length ? [...rows, ["TOTAL", "", "", totalQty]] : rows,
+    notes: [
+      "Este papel é o que saiu da câmara. Ainda não é estoque da loja até ela conferir em Receber.",
+      "Não é venda. Não é romaneio de devolução.",
     ],
   };
 }

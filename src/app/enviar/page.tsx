@@ -17,10 +17,12 @@ import {
   pickKindOptions,
   type PickKind,
 } from "@/components/pick-flow";
+import { ReportPreview } from "@/components/ReportPreview";
 import { Button, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { getLocation, getPanel, useLocationCatalog } from "@/lib/locations";
 import { listTransfers, sellableQty, stockByLocation } from "@/lib/queries";
 import { getLocationId } from "@/lib/session";
+import { reportRomaneio, type ReportTable } from "@/lib/reports";
 import { sendToStore, StockError } from "@/lib/stock";
 import { formatDate, formatTime } from "@/lib/money";
 import { useReady } from "@/lib/use-ready";
@@ -45,6 +47,7 @@ export default function EnviarPage() {
   const [ok, setOk] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [sheet, setSheet] = useState<ReportTable | null>(null);
 
   useEffect(() => {
     if (!storeId && stores[0]) setStoreId(stores[0].id);
@@ -102,13 +105,15 @@ export default function EnviarPage() {
     setOk("");
     setSaving(true);
     try {
-      await sendToStore({
+      const transferId = await sendToStore({
         toLocationId: storeId,
         items: selected.map((row) => ({ nicheId: row.item.niche.id, qty: row.qty })),
+        sentBy: panel?.name ?? "Fábrica",
       });
       setQty({});
       setConfirm(false);
-      setOk(`Saiu da fábrica. Está em trânsito para a ${storeName}. A loja confere em Receber.`);
+      setOk(`Saiu da fábrica. Está em trânsito para a ${storeName}. Imprima o romaneio para o motorista.`);
+      setSheet(await reportRomaneio(transferId));
     } catch (err) {
       setError(err instanceof StockError ? err.message : "Não deu para mandar. Confira as quantidades.");
       setConfirm(false);
@@ -132,8 +137,17 @@ export default function EnviarPage() {
             </p>
             <ul className="mt-2 space-y-1 text-stone-700">
               {(pending ?? []).slice(0, 4).map((row) => (
-                <li key={row.id} className="font-semibold">
-                  {row.storeName} · {row.sentQty} un. · {formatDate(row.at)} {formatTime(row.at)}
+                <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 font-semibold">
+                  <span>
+                    {row.storeName} · {row.sentQty} un. · {formatDate(row.at)} {formatTime(row.at)}
+                  </span>
+                  <button
+                    type="button"
+                    className="min-h-10 font-bold text-orange-800"
+                    onClick={async () => setSheet(await reportRomaneio(row.id))}
+                  >
+                    Romaneio
+                  </button>
                 </li>
               ))}
             </ul>
@@ -251,6 +265,7 @@ export default function EnviarPage() {
         </ul>
         <p className="mt-3 text-lg font-extrabold text-stone-900">Total: {selectedUnits} unidades</p>
       </ConfirmDialog>
+      {sheet ? <ReportPreview report={sheet} onClose={() => setSheet(null)} closeLabel="Voltar" /> : null}
     </AppShell>
   );
 }

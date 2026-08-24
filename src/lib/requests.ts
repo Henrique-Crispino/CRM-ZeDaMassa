@@ -173,7 +173,11 @@ export async function listRequests(status?: RequestStatus | "open"): Promise<Req
     });
 }
 
-export async function fulfillRequest(requestId: string, qtyByNiche?: Record<string, number>) {
+export async function fulfillRequest(
+  requestId: string,
+  qtyByNiche?: Record<string, number>,
+  sentBy?: string,
+) {
   const db = getDb();
   const request = await db.requests.get(requestId);
   if (!request || !isOpenRequest(request.status)) {
@@ -196,10 +200,12 @@ export async function fulfillRequest(requestId: string, qtyByNiche?: Record<stri
     throw new RequestError("Informe o que vai mandar.");
   }
 
+  let transferId = "";
   try {
-    await sendToStore({
+    transferId = await sendToStore({
       toLocationId: request.fromLocationId,
       items: payload.map((row) => ({ nicheId: row.item.nicheId, qty: row.qty })),
+      sentBy: sentBy?.trim() || "Fábrica",
     });
   } catch (error) {
     if (error instanceof StockError) throw error;
@@ -232,6 +238,8 @@ export async function fulfillRequest(requestId: string, qtyByNiche?: Record<stri
       refId: requestId,
     });
   });
+
+  return transferId;
 }
 
 export async function cancelRequest(requestId: string) {
