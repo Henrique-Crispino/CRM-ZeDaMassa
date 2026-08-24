@@ -60,9 +60,9 @@ function pageWindow(page: number, pages: number): Array<number | "gap"> {
   return out;
 }
 
-const btnBox = "h-12 min-h-12 max-h-12 shrink-0 px-0 text-sm sm:h-12 sm:min-h-12 sm:max-h-12 sm:text-base";
-const navBtn = cn(btnBox, "w-12 min-w-12 @[36rem]:w-auto @[36rem]:min-w-[7.25rem] @[36rem]:px-3");
-const numBtn = cn(btnBox, "w-11 min-w-11 max-w-11 @[36rem]:w-12 @[36rem]:min-w-12 @[36rem]:max-w-12");
+const navBtn =
+  "w-10 min-w-8 max-w-12 shrink @[24rem]:w-11 @[52rem]:w-auto @[52rem]:min-w-[7.25rem] @[52rem]:max-w-none @[52rem]:shrink-0 @[52rem]:px-3";
+const numBtn = "w-10 min-w-8 max-w-12 shrink @[24rem]:w-11";
 
 export function PageBoard({
   size,
@@ -111,40 +111,42 @@ export function Pager({
 }) {
   if (total <= 0 || pages <= 1) return null;
   return (
-    <nav className="@container mt-4 w-full" aria-label="Paginação">
-      <p className="font-semibold text-stone-600">
+    <nav className="@container mt-4 flex w-full flex-col items-center" aria-label="Paginação">
+      <p className="w-full text-center font-semibold text-stone-600">
         {total} {word}. Página {page} de {pages}.
       </p>
-      <div className="mt-2 flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-1">
+      <div className="mx-auto mt-2 flex max-w-full min-w-0 flex-nowrap items-center justify-center gap-0.5 @[24rem]:gap-1">
         <Button
           type="button"
           variant="ghost"
+          size="pager"
           className={navBtn}
           disabled={page <= 1}
           title="Primeira página"
           aria-label="Primeira página"
           onClick={() => onPage(1)}
         >
-          <ChevronsLeft className="size-5 shrink-0" />
-          <span className="hidden @[36rem]:inline">Primeira</span>
+          <ChevronsLeft className="size-4 shrink-0 @[52rem]:size-5" />
+          <span className="hidden @[52rem]:inline">Primeira</span>
         </Button>
         <Button
           type="button"
           variant="ghost"
+          size="pager"
           className={navBtn}
           disabled={page <= 1}
           title="Página anterior"
           aria-label="Página anterior"
           onClick={() => onPage(page - 1)}
         >
-          <ChevronLeft className="size-5 shrink-0" />
-          <span className="hidden @[36rem]:inline">Anterior</span>
+          <ChevronLeft className="size-4 shrink-0 @[52rem]:size-5" />
+          <span className="hidden @[52rem]:inline">Anterior</span>
         </Button>
         {pageWindow(page, pages).map((item, index) =>
           item === "gap" ? (
             <span
               key={`gap-${index}`}
-              className="inline-flex h-12 w-8 shrink-0 items-center justify-center font-extrabold text-stone-400"
+              className="inline-flex h-11 w-4 shrink-0 items-center justify-center text-sm font-extrabold text-stone-400"
             >
               …
             </span>
@@ -153,6 +155,7 @@ export function Pager({
               key={item}
               type="button"
               variant={item === page ? "primary" : "ghost"}
+              size="pager"
               className={numBtn}
               aria-current={item === page ? "page" : undefined}
               aria-label={`Página ${item}`}
@@ -165,26 +168,28 @@ export function Pager({
         <Button
           type="button"
           variant="ghost"
+          size="pager"
           className={navBtn}
           disabled={page >= pages}
           title="Próxima página"
           aria-label="Próxima página"
           onClick={() => onPage(page + 1)}
         >
-          <span className="hidden @[36rem]:inline">Próxima</span>
-          <ChevronRight className="size-5 shrink-0" />
+          <span className="hidden @[52rem]:inline">Próxima</span>
+          <ChevronRight className="size-4 shrink-0 @[52rem]:size-5" />
         </Button>
         <Button
           type="button"
           variant="ghost"
+          size="pager"
           className={navBtn}
           disabled={page >= pages}
           title="Última página"
           aria-label="Última página"
           onClick={() => onPage(pages)}
         >
-          <span className="hidden @[36rem]:inline">Última</span>
-          <ChevronsRight className="size-5 shrink-0" />
+          <span className="hidden @[52rem]:inline">Última</span>
+          <ChevronsRight className="size-4 shrink-0 @[52rem]:size-5" />
         </Button>
       </div>
     </nav>

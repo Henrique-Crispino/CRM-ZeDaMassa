@@ -36,11 +36,13 @@ export function Card({
 export function Button({
   children,
   variant = "primary",
+  size = "md",
   className,
   type = "button",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "ghost" | "danger" | "soft";
+  size?: "md" | "pager";
 }) {
   const styles = {
     primary: "bg-orange-600 text-white hover:bg-orange-700",
@@ -49,12 +51,18 @@ export function Button({
     danger: "bg-red-600 text-white hover:bg-red-700",
     soft: "bg-orange-50 text-orange-800 ring-1 ring-orange-200 hover:bg-orange-100",
   }[variant];
+  const sizes = {
+    md: "min-h-12 gap-2 rounded-2xl px-4 text-base sm:min-h-14 sm:px-5 sm:text-lg",
+    pager:
+      "h-11 min-h-11 max-h-11 gap-0 overflow-hidden rounded-xl px-0 text-sm sm:h-11 sm:min-h-11 sm:max-h-11 sm:px-0 sm:text-sm",
+  }[size];
 
   return (
     <button
       type={type}
       className={cn(
-        "inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl px-4 text-base font-bold transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-14 sm:px-5 sm:text-lg",
+        "inline-flex items-center justify-center font-bold transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200 disabled:cursor-not-allowed disabled:opacity-50",
+        sizes,
         styles,
         className,
       )}
