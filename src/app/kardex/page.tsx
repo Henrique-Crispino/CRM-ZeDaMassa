@@ -49,8 +49,8 @@ export default function KardexPage() {
   return (
     <AppShell>
       <PageTitle
-        title="Kardex"
-        hint="Extrato do estoque: quem tirou, quem pôs, em qual lote e quando. Escolha o produto e o local."
+        title="Extrato do estoque"
+        hint="O que entrou e saiu: quem tirou, quem pôs, em qual lote e quando. Escolha o produto e o local."
       />
 
       {!storeLocked ? (

@@ -10,6 +10,25 @@ export type BackTarget = {
 export function backTarget(pathname: string, panelType?: string): BackTarget | null {
   if (pathname === "/inicio") return null;
 
+  if (pathname === "/caixa/sangria" || pathname === "/caixa/fechar") {
+    return { href: "/caixa", label: "Voltar ao caixa" };
+  }
+
+  if (pathname === "/mais") {
+    return { href: "/inicio", label: "Voltar ao painel" };
+  }
+
+  if (
+    panelType === "store" &&
+    (pathname === "/devolver" ||
+      pathname === "/consumo-interno" ||
+      pathname === "/estoque" ||
+      pathname === "/inventario" ||
+      pathname === "/kardex")
+  ) {
+    return { href: "/mais", label: "Voltar ao Mais" };
+  }
+
   if (pathname === "/produtos/novo" || /^\/produtos\/[^/]+$/.test(pathname)) {
     return { href: "/produtos", label: "Voltar para produtos" };
   }
