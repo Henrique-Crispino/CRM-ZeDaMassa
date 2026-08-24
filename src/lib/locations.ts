@@ -46,8 +46,8 @@ export const FACTORY_PANEL: Panel = {
 export const DEFAULT_STORES: StoreRecord[] = [
   {
     id: "store_1",
-    name: "Loja 1",
-    shortName: "Loja 1",
+    name: "Loja Centro",
+    shortName: "Centro",
     address: "Rua das Flores, 120 — Centro",
     phone: "(11) 3333-1001",
     active: true,
@@ -55,8 +55,8 @@ export const DEFAULT_STORES: StoreRecord[] = [
   },
   {
     id: "store_2",
-    name: "Loja 2",
-    shortName: "Loja 2",
+    name: "Loja Jardim",
+    shortName: "Jardim",
     address: "Av. Brasil, 850 — Jardim América",
     phone: "(11) 3333-2002",
     active: true,
@@ -74,7 +74,7 @@ function toPanel(store: StoreRecord): Panel {
     name: store.name,
     shortName: store.shortName,
     type: "store",
-    hint: "Vender, abrir o caixa e lançar a sobra do dia.",
+    hint: store.id === "store_1" ? "Balcão do centro. Venda e caixa." : "Balcão do Jardim. Venda e caixa.",
   };
 }
 

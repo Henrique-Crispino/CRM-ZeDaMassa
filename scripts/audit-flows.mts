@@ -88,6 +88,81 @@ async function main() {
   await expectOk("Produzir coxinha na fábrica", () => produceItems({ madeAt: today, items: [{ nicheId: "cox-mini", qty: 100 }] }));
   await expectOk("Comprar Coca na fábrica", () => receivePurchase({ receivedAt: today, items: [{ nicheId: "coca-350", qty: 40, unitCost: 3.1 }] }));
 
+  await db.products.add({
+    id: "prod-suco",
+    name: "Suco de laranja",
+    category: "bebida",
+    perishable: true,
+    shelfLifeDays: 7,
+    createdAt: `${today}T10:00:00.000Z`,
+  });
+  await db.niches.add({
+    id: "suco-1l",
+    productId: "prod-suco",
+    name: "Garrafa 1L",
+    sellPrice: 8,
+    costPrice: 4,
+    minStock: 6,
+    minStockFactory: 20,
+    minStockStore: 6,
+    active: true,
+    promoAllowed: false,
+    promoPrice: 0,
+  });
+  await expectFail(
+    "Compra de suco perecível sem validade é recusada",
+    () => receivePurchase({ receivedAt: today, items: [{ nicheId: "suco-1l", qty: 6, unitCost: 4 }] }),
+    "validade",
+  );
+  await expectFail(
+    "Validade do suco antes da entrada é recusada",
+    () =>
+      receivePurchase({
+        receivedAt: today,
+        items: [{ nicheId: "suco-1l", qty: 6, unitCost: 4, expiresAt: addDays(today, -1) }],
+      }),
+    "antes",
+  );
+  await expectOk("Compra de suco com validade grava o lote", () =>
+    receivePurchase({
+      receivedAt: today,
+      items: [{ nicheId: "suco-1l", qty: 6, unitCost: 4, expiresAt: addDays(today, 7) }],
+    }),
+  );
+  const sucoLots = (await db.lots.toArray()).filter((lot) => lot.nicheId === "suco-1l");
+  record(
+    "Lote de suco tem a data da validade",
+    sucoLots.length === 1 && sucoLots[0]?.expiresAt === addDays(today, 7),
+    JSON.stringify(sucoLots.map((lot) => lot.expiresAt)),
+  );
+  await expectOk("Compra suco já vencido para testar descarte", () =>
+    receivePurchase({
+      receivedAt: addDays(today, -10),
+      items: [{ nicheId: "suco-1l", qty: 2, unitCost: 4, expiresAt: addDays(today, -1) }],
+    }),
+  );
+  await expectOk("Mandar só o suco que ainda vale", () =>
+    sendToStore({ toLocationId: "store_1", items: [{ nicheId: "suco-1l", qty: 6 }], sentBy: "Rita" }),
+  );
+  await expectFail(
+    "Envio recusa suco vencido",
+    () => sendToStore({ toLocationId: "store_1", items: [{ nicheId: "suco-1l", qty: 1 }], sentBy: "Rita" }),
+    "vencido",
+  );
+  const expiredSuco = (
+    await Promise.all(
+      (await db.lots.toArray())
+        .filter((lot) => lot.nicheId === "suco-1l" && lot.expiresAt && lot.expiresAt < today)
+        .map(async (lot) => {
+          const row = await db.stock.get(`factory:${lot.nicheId}:${lot.id}`);
+          return { locationId: "factory" as const, nicheId: lot.nicheId, lotId: lot.id, qty: row?.qty ?? 0 };
+        }),
+    )
+  ).filter((item) => item.qty > 0);
+  if (expiredSuco.length) {
+    await expectOk("Descarte baixa suco vencido", () => discardExpiredLots({ items: expiredSuco }));
+  }
+
   const factoryCox = await stockQty("factory", "cox-mini");
   record("Fábrica tem 100 coxinhas após produzir", factoryCox === 100, `qty=${factoryCox}`);
 

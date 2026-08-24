@@ -1,3 +1,4 @@
+import { addDays } from "./money";
 import type { Category } from "./types";
 
 export const CATEGORIES: { id: Category; label: string }[] = [
@@ -20,6 +21,14 @@ export function defaultShelfLife(category: Category) {
   if (category === "salgado") return 2;
   if (category === "bebida") return 180;
   return 0;
+}
+
+export function suggestedPurchaseExpiry(
+  receivedAt: string,
+  product: { perishable: boolean; shelfLifeDays: number },
+) {
+  if (!product.perishable || product.shelfLifeDays <= 0) return "";
+  return addDays(receivedAt, product.shelfLifeDays);
 }
 
 export function isManufactured(category: Category) {

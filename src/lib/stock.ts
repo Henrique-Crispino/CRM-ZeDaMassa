@@ -93,11 +93,15 @@ export async function receivePurchase(input: {
         throw new StockError(`${product.name} é fabricado. Lance em Produzir.`);
       }
       const unitCost = Number.isFinite(item.unitCost) ? Math.max(0, item.unitCost) : niche.costPrice;
-      const expiresAt =
-        item.expiresAt ||
-        (product.perishable && product.shelfLifeDays > 0
-          ? addDays(input.receivedAt, product.shelfLifeDays)
-          : undefined);
+      const expiresAt = item.expiresAt?.slice(0, 10) || undefined;
+      if (product.perishable) {
+        if (!expiresAt) {
+          throw new StockError(`${product.name} é perecível. Informe a validade do lote.`);
+        }
+        if (expiresAt < input.receivedAt.slice(0, 10)) {
+          throw new StockError(`A validade de ${product.name} não pode ser antes do dia da entrada.`);
+        }
+      }
       const lotId = newId();
       await db.lots.add({
         id: lotId,

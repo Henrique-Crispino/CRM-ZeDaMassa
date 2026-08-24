@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CATEGORIES, defaultPerishable, defaultShelfLife } from "@/lib/categories";
+import { CATEGORIES, defaultPerishable, defaultShelfLife, isPurchased } from "@/lib/categories";
 import { getDb } from "@/lib/db";
 import { newId } from "@/lib/money";
 import type { Category, Niche, Product } from "@/lib/types";
@@ -81,6 +81,11 @@ export function ProductForm({
       return;
     }
 
+    if (perishable && shelfLifeDays < 1) {
+      setError("Produto perecível precisa dos dias de validade.");
+      return;
+    }
+
     setSaving(true);
     try {
       const db = getDb();
@@ -139,6 +144,7 @@ export function ProductForm({
           <p className="mb-2 text-base font-bold text-stone-800">O que é?</p>
           <p className="mb-3 text-sm font-semibold text-stone-500">
             Salgado é produção. Bebida, limpeza, descartável e embalagem entram pela tela de Compras.
+            Bebida pode ter validade — ligue o vencimento se o rótulo tiver data.
           </p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {CATEGORIES.map((item) => (
@@ -170,13 +176,26 @@ export function ProductForm({
               if (next && shelfLifeDays <= 0) setShelfLifeDays(defaultShelfLife(category) || 2);
             }}
           >
-            {perishable ? "Perecível: controla vencimento" : "Não perecível"}
+            {perishable ? "Perecível: controla vencimento" : "Não perecível — sem data de validade"}
           </Button>
           {perishable ? (
-            <Field label="Validade depois de feito" hint="Quantos dias o lote pode ser usado.">
-              <NumberStepper value={shelfLifeDays} min={1} max={365} onChange={setShelfLifeDays} />
+            <Field
+              label={isPurchased(category) ? "Validade depois da entrada" : "Validade depois de feito"}
+              hint={
+                isPurchased(category)
+                  ? "Quantos dias o lote vale depois que chega. Na compra dá para pôr a data do rótulo."
+                  : "Quantos dias o lote pode ser usado."
+              }
+            >
+              <NumberStepper value={shelfLifeDays} min={1} max={730} onChange={setShelfLifeDays} />
             </Field>
-          ) : null}
+          ) : (
+            <p className="text-sm font-semibold leading-relaxed text-stone-500">
+              {category === "bebida"
+                ? "Refrigerante que não vence fica assim. Se vence, ligue o controle e coloque os dias."
+                : "Sem validade no lote."}
+            </p>
+          )}
         </div>
       </Card>
 

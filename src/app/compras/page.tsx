@@ -18,7 +18,7 @@ import {
 } from "@/components/pick-flow";
 import { Pager, usePager } from "@/components/pager";
 import { Button, Card, Empty, ErrorBox, Field, Input, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
-import { isPurchased } from "@/lib/categories";
+import { isPurchased, suggestedPurchaseExpiry } from "@/lib/categories";
 import { formatBRL, formatDate, formatTime, parseMoney, todayDate } from "@/lib/money";
 import { catalogItems, listPurchaseLogs } from "@/lib/queries";
 import { receivePurchase, StockError } from "@/lib/stock";
@@ -54,11 +54,17 @@ export default function ComprasPage() {
           item,
           qty: qty[item.niche.id] ?? 0,
           cost: extra[item.niche.id]?.cost ?? String(item.niche.costPrice).replace(".", ","),
-          expiresAt: extra[item.niche.id]?.expiresAt ?? "",
+          expiresAt: extra[item.niche.id]?.expiresAt ?? suggestedPurchaseExpiry(receivedAt, item.product),
         })),
-    [items, qty, extra],
+    [items, qty, extra, receivedAt],
   );
   const selectedUnits = selected.reduce((sum, row) => sum + row.qty, 0);
+
+  function expiryOf(nicheId: string, perishable: boolean, shelfLifeDays: number) {
+    const typed = extra[nicheId]?.expiresAt;
+    if (typed) return typed;
+    return suggestedPurchaseExpiry(receivedAt, { perishable, shelfLifeDays });
+  }
 
   const visible = useMemo(() => {
     return (items ?? []).filter((item) => {
@@ -93,6 +99,22 @@ export default function ComprasPage() {
     setOk("");
     setSaving(true);
     try {
+      const missingDate = selected.find(
+        (row) => row.item.product.perishable && !row.expiresAt,
+      );
+      if (missingDate) {
+        throw new StockError(
+          `${missingDate.item.product.name} é perecível. Informe a validade do lote.`,
+        );
+      }
+      const beforeEntry = selected.find(
+        (row) => row.item.product.perishable && row.expiresAt && row.expiresAt < receivedAt,
+      );
+      if (beforeEntry) {
+        throw new StockError(
+          `A validade de ${beforeEntry.item.product.name} não pode ser antes do dia da entrada.`,
+        );
+      }
       await receivePurchase({
         receivedAt,
         items: selected.map((row) => ({
@@ -122,7 +144,7 @@ export default function ComprasPage() {
         <div className="pb-36">
           <PageTitle
             title="Entrada de mercadoria"
-            hint="Coca, detergente e embalagem não se produzem. Informe quantidade, custo e validade se tiver."
+            hint="Coca, detergente e embalagem não se produzem. Bebida perecível precisa da data do lote."
           />
 
           <div className="mb-4 max-w-xs">
@@ -150,10 +172,22 @@ export default function ComprasPage() {
                   {group.map((item) => {
                     const amount = qty[item.niche.id] ?? 0;
                     const cost = extra[item.niche.id]?.cost ?? String(item.niche.costPrice).replace(".", ",");
-                    const expiresAt = extra[item.niche.id]?.expiresAt ?? "";
+                    const expiresAt = expiryOf(
+                      item.niche.id,
+                      item.product.perishable,
+                      item.product.shelfLifeDays,
+                    );
                     return (
                       <div key={item.niche.id}>
-                        <CompactRow title={item.niche.name} hint={`Custo atual do tipo: ${formatBRL(item.niche.costPrice)}`} selected={amount > 0}>
+                        <CompactRow
+                          title={item.niche.name}
+                          hint={
+                            item.product.perishable
+                              ? `Custo atual: ${formatBRL(item.niche.costPrice)} · perecível`
+                              : `Custo atual do tipo: ${formatBRL(item.niche.costPrice)}`
+                          }
+                          selected={amount > 0}
+                        >
                           <NumberStepper
                             size="sm"
                             value={amount}
@@ -171,7 +205,14 @@ export default function ComprasPage() {
                                 }
                               />
                             </Field>
-                            <Field label="Validade (se tiver)" hint="Deixe vazio se não vence.">
+                            <Field
+                              label={item.product.perishable ? "Validade do lote" : "Validade (se tiver)"}
+                              hint={
+                                item.product.perishable
+                                  ? "Obrigatória. Use a data do rótulo. Os dias do cadastro só sugerem."
+                                  : "Deixe vazio se não vence."
+                              }
+                            >
                               <Input
                                 type="date"
                                 value={expiresAt}
@@ -201,7 +242,7 @@ export default function ComprasPage() {
                     {formatDate(log.madeAt)} · {formatTime(log.at)} · {log.totalQty} un.
                   </p>
                   <p className="text-stone-600">
-                    {log.items.map((item) => `${item.qty}× ${item.label}`).join(" · ")}
+                    {log.items.map((item) => `${item.qty}× ${item.label}${item.expiresAt ? ` · vale ${formatDate(item.expiresAt)}` : ""}`).join(" · ")}
                   </p>
                 </Card>
               ))}
