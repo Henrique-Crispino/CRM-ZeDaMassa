@@ -142,6 +142,15 @@ export async function listFactoryOrders(status?: RequestStatus | "open"): Promis
     });
 }
 
+export async function lastFactoryOrder(customerId: string) {
+  const db = getDb();
+  const orders = await db.factoryOrders.where("customerId").equals(customerId).toArray();
+  if (orders.length === 0) return null;
+  const last = orders.sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id))[0];
+  const items = await db.factoryOrderItems.where("orderId").equals(last.id).toArray();
+  return items.map((item) => ({ nicheId: item.nicheId, qty: item.qty }));
+}
+
 export async function cancelFactoryOrder(orderId: string) {
   const db = getDb();
   const order = await db.factoryOrders.get(orderId);

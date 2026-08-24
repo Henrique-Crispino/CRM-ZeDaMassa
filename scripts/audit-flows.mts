@@ -45,7 +45,7 @@ async function main() {
   const { getDb } = await import("../src/lib/db.ts");
   const { refreshLocations, DEFAULT_STORES } = await import("../src/lib/locations.ts");
   const { DEFAULT_EMPLOYEES } = await import("../src/lib/seed.ts");
-  const { todayDate, addDays } = await import("../src/lib/money.ts");
+  const { todayDate, addDays, startOfDayIso, endOfDayIso } = await import("../src/lib/money.ts");
   const { stockQty } = await import("../src/lib/stock-core.ts");
   const {
     produceItems,
@@ -66,11 +66,12 @@ async function main() {
   const { createStoreRequest, fulfillRequest, listRequests, cancelRequest } = await import("../src/lib/requests.ts");
   const { registerInternalConsume } = await import("../src/lib/consume.ts");
   const { reportDayPack, reportWindow } = await import("../src/lib/reports.ts");
-  const { catalogItems, inventorySheet, setProductActive } = await import("../src/lib/queries.ts");
+  const { catalogItems, inventorySheet, setProductActive, loadKardex } = await import("../src/lib/queries.ts");
   const { saleCategories } = await import("../src/lib/categories.ts");
   const { saveCombo } = await import("../src/lib/combos.ts");
   const { listCustomers, saveCustomer } = await import("../src/lib/customers.ts");
-  const { createFactoryOrder, listFactoryOrders, deliverFactoryOrder } = await import("../src/lib/factory-orders.ts");
+  const { createFactoryOrder, listFactoryOrders, deliverFactoryOrder, lastFactoryOrder } =
+    await import("../src/lib/factory-orders.ts");
   const { customerKind } = await import("../src/lib/types.ts");
   const db = getDb();
   const today = todayDate();
@@ -1097,6 +1098,64 @@ async function main() {
     "Pedido da loja mais antiga continua com a reserva",
     storeStill?.items.find((item) => item.nicheId === "cox-mini")?.availableQty === 80,
     `${storeStill?.statusLabel ?? "sumiu"} · ${storeStill?.items.find((item) => item.nicheId === "cox-mini")?.availableQty}`,
+  );
+
+  const kardexFactory = await loadKardex({
+    nicheId: "cox-mini",
+    locationId: "factory",
+    from: startOfDayIso(today),
+    to: endOfDayIso(today),
+  });
+  const kardexCliente = kardexFactory.rows.find((row) => row.type === "cliente");
+  record(
+    "Extrato da fábrica diz Cliente e o nome da padaria",
+    Boolean(kardexCliente?.typeLabel.includes("Padaria")) && Math.abs(kardexCliente?.qty ?? 0) === 20,
+    kardexCliente ? `${kardexCliente.typeLabel} · ${kardexCliente.qty}` : "sumiu",
+  );
+
+  const storePackAfterCliente = await reportDayPack(reportWindow("today"), "store_1");
+  const storeSales = (await db.sales.toArray()).filter((sale) => sale.locationId === "store_1" && !sale.voidedAt);
+  const storeSoldQty = (
+    await Promise.all(storeSales.map((sale) => db.saleItems.where("saleId").equals(sale.id).toArray()))
+  )
+    .flat()
+    .reduce((sum, item) => sum + item.qty, 0);
+  const storeSoldRow = storePackAfterCliente.rows.find((row) => row[1] === "Vendeu");
+  const storeSoldPack = Number(String(storeSoldRow?.[2] ?? "").match(/(\d+) un/)?.[1] ?? -1);
+  record(
+    "Folha da loja não conta a saída da câmara",
+    storeSoldPack === storeSoldQty && !storePackAfterCliente.rows.some((row) => row[1] === "Cliente"),
+    `vendeu ${storeSoldPack} (caixa ${storeSoldQty}) · cliente ${storePackAfterCliente.rows.some((row) => row[1] === "Cliente") ? "entrou" : "fora"}`,
+  );
+
+  const factoryPackAfterCliente = await reportDayPack(reportWindow("today"), "factory");
+  const allPackAfterCliente = await reportDayPack(reportWindow("today"), "all");
+  record(
+    "Folha da fábrica e da rede mostram Cliente",
+    factoryPackAfterCliente.rows.some((row) => row[1] === "Cliente" && String(row[2]).includes("20")) &&
+      allPackAfterCliente.rows.some((row) => row[1] === "Cliente" && String(row[2]).includes("20")),
+    `fábrica ${factoryPackAfterCliente.rows.find((row) => row[1] === "Cliente")?.[2] ?? "sumiu"} · rede ${allPackAfterCliente.rows.find((row) => row[1] === "Cliente")?.[2] ?? "sumiu"}`,
+  );
+
+  const lastPadaria = await lastFactoryOrder(padaria?.id ?? "x");
+  record(
+    "Repetir o último copia as 50 da padaria",
+    lastPadaria?.some((item) => item.nicheId === "cox-mini" && item.qty === 50) === true,
+    JSON.stringify(lastPadaria),
+  );
+  await expectOk("Padaria pede de novo o último", () =>
+    createFactoryOrder({ customerId: padaria?.id ?? "x", items: lastPadaria ?? [] }),
+  );
+  const repeatWell = (await listFactoryOrders("open"))
+    .filter((row) => row.customerId === padaria?.id && row.id !== orderId)
+    .sort((a, b) => b.at.localeCompare(a.at))[0];
+  const factoryAfterRepeat = await stockQty("factory", "cox-mini");
+  record(
+    "Pedido repetido ainda só reserva o poço",
+    repeatWell?.status === "sem_saldo" &&
+      repeatWell.items.find((item) => item.nicheId === "cox-mini")?.availableQty === 0 &&
+      factoryAfterRepeat === factoryAfterDeliver,
+    `${repeatWell?.statusLabel ?? "sumiu"} · livres ${repeatWell?.items.find((item) => item.nicheId === "cox-mini")?.availableQty} · câmara ${factoryAfterRepeat}`,
   );
 
   await expectOk("Loja 2 pede 40 depois da entrega", () =>

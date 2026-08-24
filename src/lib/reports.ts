@@ -941,6 +941,9 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
   const packQty = movements
     .filter((row) => row.type === "uso")
     .reduce((sum, row) => sum + Math.abs(row.qty), 0);
+  const clienteQty = movements
+    .filter((row) => row.type === "cliente")
+    .reduce((sum, row) => sum + Math.abs(row.qty), 0);
 
   const dinheiro = ledgers.reduce((sum, ledger) => sum + ledger.byPayment.dinheiro, 0);
   const pix = ledgers.reduce((sum, ledger) => sum + ledger.byPayment.pix, 0);
@@ -1019,8 +1022,11 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
     );
   }
 
+  rows.push(["Saídas", "Vendeu", `${soldQty} un. · ${money(soldRev)}`]);
+  if ((scope === "all" || scope === "factory") && clienteQty > 0) {
+    rows.push(["Saídas", "Cliente", `${clienteQty} un.`]);
+  }
   rows.push(
-    ["Saídas", "Vendeu", `${soldQty} un. · ${money(soldRev)}`],
     ["Saídas", "Sobra", `${leftoverQty} un.`],
     ["Saídas", "Vencido", `${expiredQty} un.`],
     ["Saídas", "Consumo interno", `${consumeQty} un.`],
@@ -1052,6 +1058,7 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
       "Espécie no caixa é só a parte em dinheiro. Pix e cartão não entram na gaveta.",
       "Mandou é o que saiu da câmara. Confirmou é o que a loja conferiu. O que faltou volta para a fábrica. Em trânsito ainda não é estoque da loja.",
       "Sobra não é vencido. Inventário não é venda.",
+      "Cliente da câmara só aparece na folha da fábrica ou da rede. A loja não conta essas unidades.",
       closed.length < ledgers.length ? "Tem caixa ainda aberto neste recorte: o apurado fica em branco até encerrar." : "",
     ].filter(Boolean),
   };

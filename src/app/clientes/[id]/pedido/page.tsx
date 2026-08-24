@@ -19,7 +19,12 @@ import {
 import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { isSoldAtRegister, saleKindOptions } from "@/lib/categories";
 import { getCustomer } from "@/lib/customers";
-import { createFactoryOrder, FactoryOrderError, listFactoryOrders } from "@/lib/factory-orders";
+import {
+  createFactoryOrder,
+  FactoryOrderError,
+  lastFactoryOrder,
+  listFactoryOrders,
+} from "@/lib/factory-orders";
 import { catalogItems } from "@/lib/queries";
 import { factoryFreeByNiche } from "@/lib/requests";
 import { customerKind } from "@/lib/types";
@@ -34,6 +39,10 @@ export default function SepararPedidoPage() {
   const free = useLiveQuery(() => (ready ? factoryFreeByNiche() : new Map<string, number>()), [ready]);
   const mine = useLiveQuery(
     () => (ready && customerId ? listFactoryOrders().then((rows) => rows.filter((row) => row.customerId === customerId)) : []),
+    [ready, customerId],
+  );
+  const last = useLiveQuery(
+    () => (ready && customerId ? lastFactoryOrder(customerId) : null),
     [ready, customerId],
   );
   const [qty, setQty] = useState<Record<string, number>>({});
@@ -82,6 +91,16 @@ export default function SepararPedidoPage() {
   }, [visible]);
 
   const volume = customer ? customerKind(customer) === "volume" : false;
+
+  function repeatLast() {
+    if (!last?.length) return;
+    const next: Record<string, number> = {};
+    for (const item of last) next[item.nicheId] = item.qty;
+    setQty(next);
+    setKind("pedido");
+    setError("");
+    setOk("Copiei o último pedido. Confira se a câmara aguenta hoje — ainda não gravei.");
+  }
 
   async function save() {
     setError("");
@@ -214,16 +233,23 @@ export default function SepararPedidoPage() {
                 <p className="font-bold text-stone-700">
                   {selectedCount > 0 ? `${selectedCount} tipos · ${selectedUnits} un.` : "Nada escolhido ainda"}
                 </p>
-                <Button
-                  className="min-w-48"
-                  disabled={selectedCount === 0}
-                  onClick={() => {
-                    setOk("");
-                    setConfirm(true);
-                  }}
-                >
-                  Revisar pedido
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  {last?.length ? (
+                    <Button type="button" variant="ghost" onClick={repeatLast}>
+                      Repetir o último
+                    </Button>
+                  ) : null}
+                  <Button
+                    className="min-w-48"
+                    disabled={selectedCount === 0}
+                    onClick={() => {
+                      setOk("");
+                      setConfirm(true);
+                    }}
+                  >
+                    Revisar pedido
+                  </Button>
+                </div>
               </div>
             </StickyActionBar>
 

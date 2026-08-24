@@ -667,23 +667,28 @@ export async function loadKardex(input: {
   const found = catalog.find((item) => item.niche.id === input.nicheId);
   const label = found?.label ?? "Produto";
 
-  const [movements, lots, sales, sessions, consumptions, wastes, transfers, counts, lines] = await Promise.all([
-    db.movements.where("nicheId").equals(input.nicheId).toArray(),
-    db.lots.toArray(),
-    db.sales.toArray(),
-    db.cashSessions.toArray(),
-    db.consumptions.toArray(),
-    db.wastes.toArray(),
-    db.transfers.toArray(),
-    db.inventoryCounts.toArray(),
-    db.inventoryLines.toArray(),
-  ]);
+  const [movements, lots, sales, sessions, consumptions, wastes, transfers, counts, lines, factoryOrders, customers] =
+    await Promise.all([
+      db.movements.where("nicheId").equals(input.nicheId).toArray(),
+      db.lots.toArray(),
+      db.sales.toArray(),
+      db.cashSessions.toArray(),
+      db.consumptions.toArray(),
+      db.wastes.toArray(),
+      db.transfers.toArray(),
+      db.inventoryCounts.toArray(),
+      db.inventoryLines.toArray(),
+      db.factoryOrders.toArray(),
+      db.customers.toArray(),
+    ]);
 
   const lotById = new Map(lots.map((lot) => [lot.id, lot]));
   const saleById = new Map(sales.map((sale) => [sale.id, sale]));
   const sessionById = new Map(sessions.map((session) => [session.id, session]));
   const transferById = new Map(transfers.map((row) => [row.id, row]));
   const countById = new Map(counts.map((row) => [row.id, row]));
+  const factoryOrderById = new Map(factoryOrders.map((row) => [row.id, row]));
+  const customerById = new Map(customers.map((row) => [row.id, row]));
 
   const scoped = movements
     .filter((row) => !input.locationId || row.locationId === input.locationId)
@@ -703,6 +708,7 @@ export async function loadKardex(input: {
     const locationName = getLocation(movement.locationId)?.name ?? movement.locationId;
     let who = locationName;
     let note = "";
+    let typeLabel = movementLabel(movement.type);
 
     if (movement.type === "production") {
       who = "Fábrica";
@@ -781,8 +787,11 @@ export async function loadKardex(input: {
       who = locationName;
       note = "Abriu o pacote";
     } else if (movement.type === "cliente") {
-      who = "Fábrica";
+      const order = factoryOrderById.get(movement.refId);
+      const customer = order ? customerById.get(order.customerId) : undefined;
+      who = customer?.name ?? "Fábrica";
       note = "Saiu da câmara";
+      if (customer?.name) typeLabel = `Cliente · ${customer.name}`;
     }
 
     if (opening != null) running += movement.qty;
@@ -799,7 +808,7 @@ export async function loadKardex(input: {
           ? `Lote ${formatDate(lot.madeAt)}`
           : "Sem lote",
       type: movement.type,
-      typeLabel: movementLabel(movement.type),
+      typeLabel,
       qty: movement.qty,
       who,
       note,
