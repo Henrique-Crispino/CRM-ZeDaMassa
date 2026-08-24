@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import { SearchField } from "@/components/pick-flow";
 import { Button, Card, Empty, Field, Input, PageTitle } from "@/components/ui";
+import { Pager, usePager } from "@/components/pager";
 import { getPanel, useLocationCatalog } from "@/lib/locations";
 import { addDays, endOfDayIso, formatDate, formatTime, startOfDayIso, todayDate } from "@/lib/money";
 import { catalogItems, loadKardex } from "@/lib/queries";
@@ -30,6 +31,7 @@ export default function KardexPage() {
     const q = search.trim().toLowerCase();
     return (catalog ?? []).filter((item) => !q || item.label.toLowerCase().includes(q));
   }, [catalog, search]);
+  const productPage = usePager(products, 12, search);
 
   const chosen = (catalog ?? []).find((item) => item.niche.id === nicheId);
 
@@ -45,6 +47,7 @@ export default function KardexPage() {
         : undefined,
     [ready, nicheId, locationId, from, to],
   );
+  const movePage = usePager(extract?.rows ?? [], 10, `${nicheId}:${from}:${to}:${locationId}`);
 
   return (
     <AppShell>
@@ -86,18 +89,27 @@ export default function KardexPage() {
         <SearchField value={search} onChange={setSearch} placeholder="Procurar produto..." />
       </div>
 
-      <div className="mb-6 flex flex-wrap gap-2">
-        {products.slice(0, 24).map((item) => (
-          <Button
-            key={item.niche.id}
-            type="button"
-            variant={nicheId === item.niche.id ? "secondary" : "ghost"}
-            className="min-h-11 text-sm"
-            onClick={() => setNicheId(item.niche.id)}
-          >
-            {item.label}
-          </Button>
-        ))}
+      <div className="mb-6">
+        <div className="flex flex-wrap gap-2">
+          {productPage.rows.map((item) => (
+            <Button
+              key={item.niche.id}
+              type="button"
+              variant={nicheId === item.niche.id ? "secondary" : "ghost"}
+              className="min-h-11 text-sm"
+              onClick={() => setNicheId(item.niche.id)}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
+        <Pager
+          page={productPage.page}
+          pages={productPage.pages}
+          total={productPage.total}
+          onPage={productPage.setPage}
+          word="produtos"
+        />
       </div>
 
       {!nicheId ? (
@@ -119,33 +131,42 @@ export default function KardexPage() {
           {extract.rows.length === 0 ? (
             <Empty title="Nenhum movimento neste recorte" hint="Mude as datas ou escolha outro produto." />
           ) : (
-            <ul className="space-y-3">
-              {extract.rows.map((row) => (
-                <li key={row.id}>
-                  <Card className={row.qty < 0 ? "ring-1 ring-red-100" : undefined}>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-lg font-extrabold text-stone-900">{row.typeLabel}</p>
-                        <p className="font-semibold text-stone-600">
-                          {formatDate(row.at)} · {formatTime(row.at)} · {row.locationName}
-                        </p>
-                        <p className="text-sm font-semibold text-stone-500">{row.lotHint}</p>
-                        <p className="mt-1 font-bold text-stone-800">{row.who}</p>
-                        {row.note ? <p className="text-sm font-semibold text-stone-500">{row.note}</p> : null}
+            <>
+              <ul className="space-y-3">
+                {movePage.rows.map((row) => (
+                  <li key={row.id}>
+                    <Card className={row.qty < 0 ? "ring-1 ring-red-100" : undefined}>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-lg font-extrabold text-stone-900">{row.typeLabel}</p>
+                          <p className="font-semibold text-stone-600">
+                            {formatDate(row.at)} · {formatTime(row.at)} · {row.locationName}
+                          </p>
+                          <p className="text-sm font-semibold text-stone-500">{row.lotHint}</p>
+                          <p className="mt-1 font-bold text-stone-800">{row.who}</p>
+                          {row.note ? <p className="text-sm font-semibold text-stone-500">{row.note}</p> : null}
+                        </div>
+                        <div className="text-right">
+                          <p className={`text-2xl font-extrabold ${row.qty < 0 ? "text-red-700" : "text-emerald-800"}`}>
+                            {row.qty > 0 ? `+${row.qty}` : row.qty}
+                          </p>
+                          {row.balance != null ? (
+                            <p className="text-sm font-bold text-stone-500">Saldo {row.balance}</p>
+                          ) : null}
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className={`text-2xl font-extrabold ${row.qty < 0 ? "text-red-700" : "text-emerald-800"}`}>
-                          {row.qty > 0 ? `+${row.qty}` : row.qty}
-                        </p>
-                        {row.balance != null ? (
-                          <p className="text-sm font-bold text-stone-500">Saldo {row.balance}</p>
-                        ) : null}
-                      </div>
-                    </div>
-                  </Card>
-                </li>
-              ))}
-            </ul>
+                    </Card>
+                  </li>
+                ))}
+              </ul>
+              <Pager
+                page={movePage.page}
+                pages={movePage.pages}
+                total={movePage.total}
+                onPage={movePage.setPage}
+                word="movimentos"
+              />
+            </>
           )}
         </>
       )}

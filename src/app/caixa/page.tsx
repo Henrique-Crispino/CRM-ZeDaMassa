@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { ConfirmDialog } from "@/components/pick-flow";
 import { SessionSalesList } from "@/components/SessionSalesList";
+import { PageBoard, Pager, usePager } from "@/components/pager";
 import { CashMetric, OpenSessionCard, useCashWorkspace } from "@/components/caixa/workspace";
 import { Button, Card, Empty, ErrorBox, Field, Input, SuccessBox } from "@/components/ui";
 import {
@@ -87,6 +88,7 @@ export default function CaixaTurnoPage() {
   }
 
   const reopenTarget = (history ?? []).find((row) => row.id === reopenId);
+  const historyPage = usePager(history ?? [], 8, locationId ?? "");
 
   return (
     <>
@@ -187,26 +189,35 @@ export default function CaixaTurnoPage() {
       {!history?.length ? (
         <Empty title="Nenhum caixa registrado ainda" />
       ) : (
-        <div className="space-y-3">
-          {history.slice(0, 16).map((row) => (
-            <HistoryCard
-              key={row.id}
-              sessionId={row.id}
-              fallback={row}
-              canReopen={
-                isAdminPanel &&
-                Boolean(row.closedAt) &&
-                !session &&
-                cashDay(row.openedAt) === todayDate()
-              }
-              onReopen={() => {
-                setReopenId(row.id);
-                setReopenPassword("");
-                setReopenNote("");
-                setError("");
-              }}
-            />
-          ))}
+        <div>
+          <PageBoard size={historyPage.size} rowMin="7.25rem">
+            {historyPage.rows.map((row) => (
+              <HistoryCard
+                key={row.id}
+                sessionId={row.id}
+                fallback={row}
+                canReopen={
+                  isAdminPanel &&
+                  Boolean(row.closedAt) &&
+                  !session &&
+                  cashDay(row.openedAt) === todayDate()
+                }
+                onReopen={() => {
+                  setReopenId(row.id);
+                  setReopenPassword("");
+                  setReopenNote("");
+                  setError("");
+                }}
+              />
+            ))}
+          </PageBoard>
+          <Pager
+            page={historyPage.page}
+            pages={historyPage.pages}
+            total={historyPage.total}
+            onPage={historyPage.setPage}
+            word="caixas"
+          />
         </div>
       )}
 

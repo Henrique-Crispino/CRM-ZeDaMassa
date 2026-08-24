@@ -6,6 +6,7 @@ import { MapPin, Phone } from "lucide-react";
 import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
 import { Button, Card, Empty, ErrorBox, Field, Input, PageTitle, SuccessBox } from "@/components/ui";
+import { Pager, usePager } from "@/components/pager";
 import { getDb } from "@/lib/db";
 import { removeStore, saveStore, StoreError } from "@/lib/stores";
 import { useReady } from "@/lib/use-ready";
@@ -22,6 +23,7 @@ export default function LojasPage() {
   const [saving, setSaving] = useState(false);
 
   const visible = (stores ?? []).filter((store) => store.active).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const list = usePager(visible, 8);
 
   async function save() {
     setError("");
@@ -103,7 +105,7 @@ export default function LojasPage() {
           <Empty title="Nenhuma loja ativa" hint="Cadastre a primeira loja para vender." />
         ) : (
           <div className="space-y-3">
-            {visible.map((store) => (
+            {list.rows.map((store) => (
               <Card key={store.id} className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xl font-extrabold text-stone-900">{store.name}</p>
@@ -154,6 +156,7 @@ export default function LojasPage() {
                 </div>
               </Card>
             ))}
+            <Pager page={list.page} pages={list.pages} total={list.total} onPage={list.setPage} word="lojas" />
           </div>
         )}
       </AppShell>

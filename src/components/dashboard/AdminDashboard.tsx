@@ -33,49 +33,8 @@ export function AdminDashboard({
     <div>
       <PageTitle
         title="Visão geral"
-        hint="Primeiro o que está faltando. Depois, venda, lucro e perda."
+        hint="Primeiro o dinheiro: venda, lucro e perda. Reposição e validade vêm depois."
       />
-
-      <Card className="mb-6">
-        <p className="text-lg font-extrabold text-stone-900">Relatórios para baixar</p>
-        <p className="mt-1 text-stone-600">
-          Fechamento do dia, vendas, perdas, envios e estoque. Só a administração imprime ou salva no Excel.
-        </p>
-        <Link
-          href="/relatorios"
-          className="mt-4 inline-flex min-h-12 items-center gap-2 rounded-2xl bg-orange-600 px-4 text-base font-bold text-white hover:bg-orange-700"
-        >
-          <FileDown className="size-5" />
-          Abrir relatórios
-        </Link>
-      </Card>
-
-      <PendingRequests canSend={false} />
-
-      <ExpiryList items={data.expiryAlerts} />
-
-      <section className="mb-8">
-        <h2 className="mb-3 text-2xl font-extrabold text-stone-900">Reposição agora</h2>
-        <p className="mb-4 text-lg text-stone-600">
-          {data.factoryAlerts.length + data.storeAlerts.length > 0
-            ? `${data.factoryAlerts.length} na fábrica · ${data.storeAlerts.length} nas lojas`
-            : "Nada abaixo do mínimo neste momento."}
-        </p>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <AlertList
-            title="Lojas precisando de reposição"
-            hint="Mande estes itens da fábrica para a loja."
-            items={data.storeAlerts}
-            empty="As lojas estão abastecidas."
-          />
-          <AlertList
-            title="Fábrica com pouco estoque"
-            hint="A fábrica precisa de mais quantidade, para não deixar as lojas sem produto."
-            items={data.factoryAlerts}
-            empty="A fábrica está abastecida."
-          />
-        </div>
-      </section>
 
       <PeriodTabs value={period} onChange={onPeriod} />
 
@@ -162,6 +121,47 @@ export function AdminDashboard({
           <TrendLine data={data.daily} />
         </ChartCard>
       </div>
+
+      <Card className="mb-8 mt-8">
+        <p className="text-lg font-extrabold text-stone-900">Relatórios para baixar</p>
+        <p className="mt-1 text-stone-600">
+          Fechamento do dia, vendas, perdas, envios e estoque. Só a administração imprime ou salva no Excel.
+        </p>
+        <Link
+          href="/relatorios"
+          className="mt-4 inline-flex min-h-12 items-center gap-2 rounded-2xl bg-orange-600 px-4 text-base font-bold text-white hover:bg-orange-700"
+        >
+          <FileDown className="size-5" />
+          Abrir relatórios
+        </Link>
+      </Card>
+
+      <PendingRequests canSend={false} />
+
+      <ExpiryList items={data.expiryAlerts} />
+
+      <section className="mb-8">
+        <h2 className="mb-3 text-2xl font-extrabold text-stone-900">Reposição agora</h2>
+        <p className="mb-4 text-lg text-stone-600">
+          {data.factoryAlerts.length + data.storeAlerts.length > 0
+            ? `${data.factoryAlerts.length} na fábrica · ${data.storeAlerts.length} nas lojas`
+            : "Nada abaixo do mínimo neste momento."}
+        </p>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <AlertList
+            title="Lojas precisando de reposição"
+            hint="Mande estes itens da fábrica para a loja."
+            items={data.storeAlerts}
+            empty="As lojas estão abastecidas."
+          />
+          <AlertList
+            title="Fábrica com pouco estoque"
+            hint="A fábrica precisa de mais quantidade, para não deixar as lojas sem produto."
+            items={data.factoryAlerts}
+            empty="A fábrica está abastecida."
+          />
+        </div>
+      </section>
     </div>
   );
 }

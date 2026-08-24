@@ -3,30 +3,31 @@
 import Link from "next/link";
 import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
+import { FACTORY_MORE, STORE_MORE } from "@/components/nav";
 import { PageTitle } from "@/components/ui";
-
-const MORE = [
-  { href: "/devolver", label: "Devolver para a fábrica", hint: "Saiu errado ou sobrou sem ser sobra do dia." },
-  { href: "/consumo-interno", label: "Consumo interno", hint: "Quem da equipe retirou para comer." },
-  { href: "/estoque", label: "Estoque", hint: "O que tem agora, com validade." },
-  { href: "/inventario", label: "Inventário", hint: "Contar o físico e acertar o sistema." },
-  { href: "/kardex", label: "Extrato do estoque", hint: "O que entrou e saiu de um produto." },
-];
+import { getPanel } from "@/lib/locations";
+import { getLocationId } from "@/lib/session";
+import { useReady } from "@/lib/use-ready";
 
 export default function MaisPage() {
+  const ready = useReady();
+  const panel = ready ? getPanel(getLocationId() ?? "") : undefined;
+  const factory = panel?.type === "factory";
+  const items = factory ? FACTORY_MORE : STORE_MORE;
+
   return (
     <AccessGate
-      allow={["store"]}
-      title="Mais é da loja"
-      hint="A fábrica e a administração usam o menu delas. Aqui é o que não cabe no turno da loja."
+      allow={["store", "factory"]}
+      title="Mais não é da administração"
+      hint="A loja e a fábrica guardam aqui o que não cabe no turno. Relatório e cadastro ficam no menu da administração."
     >
       <AppShell>
         <PageTitle
-          title="Mais coisas da loja"
-          hint="Isto não é o turno. Devolver, contar e olhar o extrato ficam aqui para não misturar com vender e caixa."
+          title={factory ? "Mais coisas da fábrica" : "Mais coisas da loja"}
+          hint="O caminho do dia é o botão Mais no menu da esquerda. Esta página é a mesma lista, se alguém cair aqui."
         />
         <div className="grid gap-3">
-          {MORE.map((item) => (
+          {items.map((item) => (
             <Link
               key={item.href}
               href={item.href}

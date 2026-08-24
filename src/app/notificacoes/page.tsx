@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import { Card, Empty, PageTitle } from "@/components/ui";
+import { PageBoard, Pager, usePager } from "@/components/pager";
 import { getPanel } from "@/lib/locations";
 import { allNotifications, markNotificationsRead, requestWhen } from "@/lib/requests";
 import { getLocationId } from "@/lib/session";
@@ -19,6 +20,7 @@ export default function NotificacoesPage() {
     () => (ready && audience ? allNotifications(audience) : []),
     [ready, audience],
   );
+  const list = usePager(items ?? [], 8);
 
   useEffect(() => {
     if (audience) void markNotificationsRead(audience);
@@ -42,19 +44,22 @@ export default function NotificacoesPage() {
       {!items?.length ? (
         <Empty title="Nenhum aviso ainda" hint="Quando uma loja pedir produto, o aviso aparece aqui." />
       ) : (
-        <div className="space-y-3">
-          {items.map((item) => (
-            <Card key={item.id} className={item.readAt ? "" : "ring-2 ring-orange-300"}>
-              <p className="text-xl font-extrabold text-stone-900">{item.title}</p>
-              <p className="mt-1 text-lg text-stone-700">{item.body}</p>
-              <p className="mt-2 text-sm font-semibold text-stone-500">{requestWhen(item.at)}</p>
-              {item.type === "store_request" ? (
-                <Link href="/pedidos" className="mt-3 inline-block text-base font-bold text-orange-700">
-                  Ver pedido →
-                </Link>
-              ) : null}
-            </Card>
-          ))}
+        <div>
+          <PageBoard size={list.size} rowMin="8.25rem">
+            {list.rows.map((item) => (
+              <Card key={item.id} className={item.readAt ? "h-full" : "h-full ring-2 ring-orange-300"}>
+                <p className="text-xl font-extrabold text-stone-900">{item.title}</p>
+                <p className="mt-1 text-lg text-stone-700">{item.body}</p>
+                <p className="mt-2 text-sm font-semibold text-stone-500">{requestWhen(item.at)}</p>
+                {item.type === "store_request" ? (
+                  <Link href="/pedidos" className="mt-3 inline-block text-base font-bold text-orange-700">
+                    Ver pedido →
+                  </Link>
+                ) : null}
+              </Card>
+            ))}
+          </PageBoard>
+          <Pager page={list.page} pages={list.pages} total={list.total} onPage={list.setPage} word="avisos" />
         </div>
       )}
     </AppShell>

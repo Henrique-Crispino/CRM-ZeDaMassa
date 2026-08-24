@@ -40,7 +40,6 @@ export function StoreDashboard({
           { href: "/pedir", label: "Pedir para a fábrica" },
           { href: "/receber", label: "Conferir o que chegou" },
           { href: "/sobras", label: "Lançar sobra do dia", className: "bg-stone-900 hover:bg-stone-800" },
-          { href: "/mais", label: "Mais coisas da loja" },
         ]}
       />
       <ExpiryList items={data.expiryAlerts} />

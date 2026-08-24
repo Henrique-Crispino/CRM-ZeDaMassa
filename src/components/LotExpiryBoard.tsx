@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, CalendarClock, CheckCircle2, MapPin, Package } from "lucide-react";
+import { PageBoard, Pager, usePager } from "@/components/pager";
 import { Button, Card, cn } from "@/components/ui";
 import { formatDate } from "@/lib/money";
 import { expiryLevelLabel, type ExpiryAlert, type ExpiryLevel } from "@/lib/queries";
@@ -96,71 +97,113 @@ export function LotExpiryBoard({
           {GROUPS.map((group) => {
             const rows = items.filter((item) => item.level === group.id);
             if (rows.length === 0) return null;
-            const look = tone(group.id);
             return (
-              <div key={group.id}>
-                <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-                  <div>
-                    <p className="text-xl font-extrabold text-stone-900">{group.title}</p>
-                    <p className="text-stone-600">{group.hint}</p>
-                  </div>
-                  <span className={cn("rounded-full px-3 py-1 text-sm font-extrabold", look.chip)}>
-                    {rows.length} {rows.length === 1 ? "lote" : "lotes"}
-                  </span>
-                </div>
-                <div className={compact ? "space-y-2" : "grid gap-3 lg:grid-cols-2"}>
-                  {rows.map((item) => (
-                    <article
-                      key={`${item.locationId}-${item.lotId}`}
-                      className={cn("rounded-3xl p-4 shadow-sm ring-1", look.card)}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-lg font-extrabold text-stone-900">{item.label}</p>
-                          <p className={cn("mt-1 text-sm font-bold", look.text)}>{expiryLevelLabel(item)}</p>
-                        </div>
-                        <p className="text-right">
-                          <span className="block text-2xl font-extrabold text-stone-900">{item.qty}</span>
-                          <span className="text-xs font-bold uppercase tracking-wide text-stone-500">un.</span>
-                        </p>
-                      </div>
-                      <dl className="mt-3 grid gap-2 text-sm font-semibold text-stone-700 sm:grid-cols-3">
-                        <div className="flex items-center gap-2">
-                          <MapPin className={cn("size-4 shrink-0", look.icon)} />
-                          {item.locationName}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Package className={cn("size-4 shrink-0", look.icon)} />
-                          Feito {formatDate(item.madeAt)}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {item.level === "expired" ? (
-                            <AlertTriangle className={cn("size-4 shrink-0", look.icon)} />
-                          ) : (
-                            <CalendarClock className={cn("size-4 shrink-0", look.icon)} />
-                          )}
-                          Validade {formatDate(item.expiresAt)}
-                        </div>
-                      </dl>
-                      {canDiscard && item.level === "expired" ? (
-                        <Button
-                          variant="danger"
-                          className="mt-4 min-h-11 w-full text-sm"
-                          disabled={discarding}
-                          onClick={() => onDiscard?.(item)}
-                        >
-                          Descartar este lote
-                        </Button>
-                      ) : null}
-                    </article>
-                  ))}
-                </div>
-              </div>
+              <ExpiryGroup
+                key={group.id}
+                group={group}
+                rows={rows}
+                compact={compact}
+                canDiscard={Boolean(canDiscard)}
+                discarding={Boolean(discarding)}
+                onDiscard={onDiscard}
+              />
             );
           })}
         </div>
       )}
     </section>
+  );
+}
+
+function ExpiryGroup({
+  group,
+  rows,
+  compact,
+  canDiscard,
+  discarding,
+  onDiscard,
+}: {
+  group: (typeof GROUPS)[number];
+  rows: ExpiryAlert[];
+  compact: boolean;
+  canDiscard: boolean;
+  discarding: boolean;
+  onDiscard?: (item: ExpiryAlert) => void;
+}) {
+  const look = tone(group.id);
+  const page = usePager(rows, compact ? 4 : 6, `${group.id}:${rows.length}:${rows[0]?.lotId ?? ""}`);
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <p className="text-xl font-extrabold text-stone-900">{group.title}</p>
+          <p className="text-stone-600">{group.hint}</p>
+        </div>
+        <span className={cn("rounded-full px-3 py-1 text-sm font-extrabold", look.chip)}>
+          {rows.length} {rows.length === 1 ? "lote" : "lotes"}
+        </span>
+      </div>
+      <PageBoard
+        size={page.size}
+        cols={compact ? 1 : 2}
+        rowMin={compact ? "9.25rem" : "10.5rem"}
+        className={compact ? "mt-0" : undefined}
+      >
+        {page.rows.map((item) => (
+          <article
+            key={`${item.locationId}-${item.lotId}`}
+            className={cn("rounded-3xl p-4 shadow-sm ring-1", look.card)}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-lg font-extrabold text-stone-900">{item.label}</p>
+                <p className={cn("mt-1 text-sm font-bold", look.text)}>{expiryLevelLabel(item)}</p>
+              </div>
+              <p className="text-right">
+                <span className="block text-2xl font-extrabold text-stone-900">{item.qty}</span>
+                <span className="text-xs font-bold uppercase tracking-wide text-stone-500">un.</span>
+              </p>
+            </div>
+            <dl className="mt-3 grid gap-2 text-sm font-semibold text-stone-700 sm:grid-cols-3">
+              <div className="flex items-center gap-2">
+                <MapPin className={cn("size-4 shrink-0", look.icon)} />
+                {item.locationName}
+              </div>
+              <div className="flex items-center gap-2">
+                <Package className={cn("size-4 shrink-0", look.icon)} />
+                Feito {formatDate(item.madeAt)}
+              </div>
+              <div className="flex items-center gap-2">
+                {item.level === "expired" ? (
+                  <AlertTriangle className={cn("size-4 shrink-0", look.icon)} />
+                ) : (
+                  <CalendarClock className={cn("size-4 shrink-0", look.icon)} />
+                )}
+                Validade {formatDate(item.expiresAt)}
+              </div>
+            </dl>
+            {canDiscard && item.level === "expired" ? (
+              <Button
+                variant="danger"
+                className="mt-4 min-h-11 w-full text-sm"
+                disabled={discarding}
+                onClick={() => onDiscard?.(item)}
+              >
+                Descartar este lote
+              </Button>
+            ) : null}
+          </article>
+        ))}
+      </PageBoard>
+      <Pager
+        page={page.page}
+        pages={page.pages}
+        total={page.total}
+        onPage={page.setPage}
+        word="lotes"
+      />
+    </div>
   );
 }
 

@@ -6,6 +6,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
 import { Button, Card, Empty, Field, Input, PageTitle } from "@/components/ui";
+import { Pager, usePager } from "@/components/pager";
 import { getPanel } from "@/lib/locations";
 import { formatDate, formatTime, todayDate } from "@/lib/money";
 import { listProductionLogs } from "@/lib/queries";
@@ -20,6 +21,7 @@ export default function ProducaoPage() {
     () => (ready ? listProductionLogs(80, date || undefined) : []),
     [ready, date],
   );
+  const list = usePager(logs ?? [], 8, date);
 
   const summary = useMemo(() => {
     const rows = logs ?? [];
@@ -88,7 +90,7 @@ export default function ProducaoPage() {
           />
         ) : (
           <div className="space-y-3">
-            {logs.map((log) => (
+            {list.rows.map((log) => (
               <Card key={log.refId}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
@@ -116,6 +118,7 @@ export default function ProducaoPage() {
                 </ul>
               </Card>
             ))}
+            <Pager page={list.page} pages={list.pages} total={list.total} onPage={list.setPage} word="lotes" />
           </div>
         )}
       </AppShell>

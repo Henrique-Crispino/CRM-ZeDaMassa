@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { ConfirmDialog } from "@/components/pick-flow";
+import { PageBoard, Pager, usePager } from "@/components/pager";
 import { Button, Card, ErrorBox } from "@/components/ui";
 import { listSessionTickets } from "@/lib/cash";
 import { formatBRL, formatTime } from "@/lib/money";
@@ -24,6 +25,7 @@ export function SessionSalesList({
   canVoid: boolean;
 }) {
   const tickets = useLiveQuery(() => listSessionTickets(sessionId), [sessionId]);
+  const pager = usePager(tickets ?? [], 8, sessionId);
   const [saleId, setSaleId] = useState<string | null>(null);
   const [reason, setReason] = useState<SaleVoidReason | "">("");
   const [busy, setBusy] = useState(false);
@@ -71,55 +73,64 @@ export function SessionSalesList({
       {tickets.length === 0 ? (
         <p className="font-semibold text-stone-500">Nenhuma venda neste caixa ainda.</p>
       ) : (
-        <ul className="divide-y divide-stone-100 rounded-2xl bg-stone-50">
-          {tickets.map((ticket) => {
-            const live = isLiveSale(ticket.sale);
-            return (
-              <li key={ticket.sale.id} className="space-y-2 px-4 py-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className={live ? "font-extrabold text-stone-900" : "font-extrabold text-stone-400 line-through"}>
-                      {formatBRL(ticket.sale.total)}
-                    </p>
-                    <p className="text-sm font-semibold text-stone-500">
-                      {formatTime(ticket.sale.at)} ·{" "}
-                      {salePayments(ticket.sale)
-                        .map((row) => `${paymentMethodLabel(row.method)} ${formatBRL(row.amount)}`)
-                        .join(" + ")}{" "}
-                      ·{" "}
-                      {CHANNEL_LABEL[ticket.sale.channel]}
-                    </p>
-                    <p className="text-sm font-semibold text-stone-600">
-                      {ticket.items
-                        .map((item) => `${item.qty}× ${item.label}${item.promo ? " (promo)" : ""}`)
-                        .join(" · ")}
-                    </p>
-                    {!live ? (
-                      <p className="text-sm font-bold text-red-700">
-                        Estornada · {saleVoidReasonLabel(ticket.sale.voidReason)}
+        <>
+          <PageBoard size={pager.size} rowMin="5.75rem">
+            {pager.rows.map((ticket) => {
+              const live = isLiveSale(ticket.sale);
+              return (
+                <div key={ticket.sale.id} className="space-y-2 rounded-2xl bg-stone-50 px-4 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className={live ? "font-extrabold text-stone-900" : "font-extrabold text-stone-400 line-through"}>
+                        {formatBRL(ticket.sale.total)}
                       </p>
+                      <p className="text-sm font-semibold text-stone-500">
+                        {formatTime(ticket.sale.at)} ·{" "}
+                        {salePayments(ticket.sale)
+                          .map((row) => `${paymentMethodLabel(row.method)} ${formatBRL(row.amount)}`)
+                          .join(" + ")}{" "}
+                        ·{" "}
+                        {CHANNEL_LABEL[ticket.sale.channel]}
+                      </p>
+                      <p className="text-sm font-semibold text-stone-600">
+                        {ticket.items
+                          .map((item) => `${item.qty}× ${item.label}${item.promo ? " (promo)" : ""}`)
+                          .join(" · ")}
+                      </p>
+                      {!live ? (
+                        <p className="text-sm font-bold text-red-700">
+                          Estornada · {saleVoidReasonLabel(ticket.sale.voidReason)}
+                        </p>
+                      ) : null}
+                    </div>
+                    {live && canVoid ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="min-h-11 shrink-0 text-sm"
+                        onClick={() => {
+                          setError("");
+                          setOk("");
+                          setReason("");
+                          setSaleId(ticket.sale.id);
+                        }}
+                      >
+                        Estornar
+                      </Button>
                     ) : null}
                   </div>
-                  {live && canVoid ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="min-h-11 shrink-0 text-sm"
-                      onClick={() => {
-                        setError("");
-                        setOk("");
-                        setReason("");
-                        setSaleId(ticket.sale.id);
-                      }}
-                    >
-                      Estornar
-                    </Button>
-                  ) : null}
                 </div>
-              </li>
-            );
-          })}
-        </ul>
+              );
+            })}
+          </PageBoard>
+          <Pager
+            page={pager.page}
+            pages={pager.pages}
+            total={pager.total}
+            onPage={pager.setPage}
+            word="vendas"
+          />
+        </>
       )}
 
       <ConfirmDialog

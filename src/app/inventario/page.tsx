@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog, SearchField } from "@/components/pick-flow";
 import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
+import { Pager, usePager } from "@/components/pager";
 import { getLocation, getPanel, useLocationCatalog } from "@/lib/locations";
 import { formatDate, formatTime } from "@/lib/money";
 import { inventorySheet } from "@/lib/queries";
@@ -39,6 +40,7 @@ export default function InventarioPage() {
     () => (ready ? listInventoryCounts(panel?.type === "admin" ? undefined : locationId) : []),
     [ready, panel?.type, locationId],
   );
+  const historyPage = usePager(history ?? [], 8, locationId);
 
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<Record<string, Draft>>({});
@@ -219,9 +221,16 @@ export default function InventarioPage() {
         <Empty title="Nenhum inventário lançado ainda" hint="A primeira contagem vira o histórico." />
       ) : (
         <div className="space-y-3">
-          {history.slice(0, 12).map((row) => (
+          {historyPage.rows.map((row) => (
             <HistoryCard key={row.id} countId={row.id} />
           ))}
+          <Pager
+            page={historyPage.page}
+            pages={historyPage.pages}
+            total={historyPage.total}
+            onPage={historyPage.setPage}
+            word="contagens"
+          />
         </div>
       )}
 

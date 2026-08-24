@@ -15,6 +15,7 @@ import {
   pickKindOptions,
   type PickKind,
 } from "@/components/pick-flow";
+import { Pager, usePager } from "@/components/pager";
 import {
   Button,
   Card,
@@ -77,6 +78,7 @@ export default function PedirPage() {
     }
     return [...map.values()];
   }, [visible]);
+  const minePage = usePager(mine ?? [], 8);
 
   if (panel && panel.type !== "store") {
     return (
@@ -174,7 +176,7 @@ export default function PedirPage() {
               Pedidos já feitos ({mine?.length})
             </summary>
             <div className="mt-3 space-y-3">
-              {mine?.slice(0, 8).map((request) => (
+              {minePage.rows.map((request) => (
                 <Card key={request.id} className="p-4">
                   <p className="font-extrabold">
                     {request.statusLabel}
@@ -192,6 +194,13 @@ export default function PedirPage() {
                   </ul>
                 </Card>
               ))}
+              <Pager
+                page={minePage.page}
+                pages={minePage.pages}
+                total={minePage.total}
+                onPage={minePage.setPage}
+                word="pedidos"
+              />
             </div>
           </details>
         ) : null}

@@ -16,6 +16,7 @@ import {
   pickKindOptions,
   type PickKind,
 } from "@/components/pick-flow";
+import { Pager, usePager } from "@/components/pager";
 import { Button, Card, Empty, ErrorBox, Field, Input, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { isPurchased } from "@/lib/categories";
 import { formatBRL, formatDate, formatTime, parseMoney, todayDate } from "@/lib/money";
@@ -34,7 +35,8 @@ export default function ComprasPage() {
     () => (ready ? catalogItems().then((rows) => rows.filter((item) => isPurchased(item.product.category))) : []),
     [ready],
   );
-  const logs = useLiveQuery(() => (ready ? listPurchaseLogs(12) : []), [ready]);
+  const logs = useLiveQuery(() => (ready ? listPurchaseLogs(80) : []), [ready]);
+  const logsPage = usePager(logs ?? [], 8);
   const [qty, setQty] = useState<Record<string, number>>({});
   const [extra, setExtra] = useState<Record<string, Extra>>({});
   const [receivedAt, setReceivedAt] = useState(todayDate());
@@ -193,7 +195,7 @@ export default function ComprasPage() {
             <Empty title="Nenhuma compra lançada ainda" />
           ) : (
             <div className="space-y-3">
-              {logs.map((log) => (
+              {logsPage.rows.map((log) => (
                 <Card key={log.refId}>
                   <p className="font-extrabold text-stone-900">
                     {formatDate(log.madeAt)} · {formatTime(log.at)} · {log.totalQty} un.
@@ -203,6 +205,13 @@ export default function ComprasPage() {
                   </p>
                 </Card>
               ))}
+              <Pager
+                page={logsPage.page}
+                pages={logsPage.pages}
+                total={logsPage.total}
+                onPage={logsPage.setPage}
+                word="entradas"
+              />
             </div>
           )}
         </div>

@@ -7,6 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { LotExpiryBoard } from "@/components/LotExpiryBoard";
 import { ConfirmDialog, SearchField } from "@/components/pick-flow";
 import { Button, Card, Empty, ErrorBox, PageTitle, SegmentedControl, SuccessBox } from "@/components/ui";
+import { PageBoard, Pager, usePager } from "@/components/pager";
 import { getPanel, useLocationCatalog, type Location } from "@/lib/locations";
 import { formatDate } from "@/lib/money";
 import { expiryAlertsFor, stockByLocation, type ExpiryAlert } from "@/lib/queries";
@@ -54,6 +55,7 @@ export default function EstoquePage() {
     const q = search.trim().toLowerCase();
     return (stock ?? []).filter((item) => !q || item.label.toLowerCase().includes(q));
   }, [search, stock]);
+  const stockPage = usePager(rows, 10, `${search}:${filter}:${view}`);
   const grid = columnsFor(visible);
   useEffect(() => {
     if (openedLots) return;
@@ -186,7 +188,7 @@ export default function EstoquePage() {
         <Empty title="Nada com esse nome" hint="Tente outro trecho: coxinha, mini, coca." />
       ) : (
         <>
-          <div className="hidden overflow-x-auto rounded-3xl bg-white ring-1 ring-stone-200 md:block">
+          <div className="hidden min-h-[40rem] overflow-x-auto rounded-3xl bg-white ring-1 ring-stone-200 md:block">
             <div
               className={`grid min-w-[640px] ${grid} bg-stone-100 px-4 py-3 text-sm font-extrabold uppercase tracking-wide text-stone-600`}
             >
@@ -197,7 +199,7 @@ export default function EstoquePage() {
                 </span>
               ))}
             </div>
-            {rows.map((item) => (
+            {stockPage.rows.map((item) => (
               <div
                 key={item.niche.id}
                 className={`grid min-w-[640px] ${grid} items-center border-t border-stone-100 px-4 py-4`}
@@ -228,8 +230,9 @@ export default function EstoquePage() {
             ))}
           </div>
 
-          <div className="space-y-3 md:hidden">
-            {rows.map((item) => (
+          <div className="md:hidden">
+            <PageBoard size={stockPage.size} rowMin="8.5rem">
+              {stockPage.rows.map((item) => (
               <Card key={`m-${item.niche.id}`}>
                 <p className="font-extrabold text-stone-900">{item.label}</p>
                 <div className={`mt-3 grid gap-2 text-center ${visible.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
@@ -256,7 +259,15 @@ export default function EstoquePage() {
                 </div>
               </Card>
             ))}
+            </PageBoard>
           </div>
+          <Pager
+            page={stockPage.page}
+            pages={stockPage.pages}
+            total={stockPage.total}
+            onPage={stockPage.setPage}
+            word="produtos"
+          />
         </>
       )}
 

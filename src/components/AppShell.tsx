@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   Factory,
   Home,
@@ -24,42 +25,36 @@ import {
   PackageCheck,
   Undo2,
   MoreHorizontal,
+  type LucideIcon,
 } from "lucide-react";
 import { useLocationCatalog } from "@/lib/locations";
 import { clearLocationId, getLocationId } from "@/lib/session";
 import { useReady } from "@/lib/use-ready";
 import { BackLink, backTarget } from "./BackLink";
+import { FACTORY_MORE, FACTORY_MORE_HREFS, STORE_MORE, STORE_MORE_HREFS, moreActive, type MoreItem } from "./nav";
 import { ConfirmDialog } from "./pick-flow";
 import { NotificationBell } from "./NotificationBell";
 import { Button, cn } from "./ui";
 
-const factoryLinks = [
+const factoryLinks: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/inicio", label: "Início", icon: Home },
   { href: "/pedidos", label: "Pedidos", icon: ClipboardList },
   { href: "/produzir", label: "Produzir", icon: Factory },
   { href: "/compras", label: "Compras", icon: ShoppingBag },
   { href: "/enviar", label: "Mandar p/ loja", icon: Truck },
   { href: "/receber", label: "Receber", icon: PackageCheck },
-  { href: "/devolver", label: "Devolver", icon: Undo2 },
-  { href: "/produtos", label: "Produtos", icon: Package },
-  { href: "/estoque", label: "Estoque", icon: Warehouse },
-  { href: "/inventario", label: "Inventário", icon: ClipboardPen },
-  { href: "/kardex", label: "Kardex", icon: ScrollText },
 ];
 
-const storeLinks = [
+const storeLinks: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/inicio", label: "Início", icon: Home },
   { href: "/caixa", label: "Caixa", icon: Wallet },
   { href: "/vender", label: "Vender", icon: ShoppingCart },
   { href: "/pedir", label: "Pedir mais", icon: ClipboardList },
   { href: "/receber", label: "Receber", icon: PackageCheck },
   { href: "/sobras", label: "Sobra do dia", icon: Trash2 },
-  { href: "/mais", label: "Mais", icon: MoreHorizontal },
 ];
 
-const storeMoreHrefs = ["/mais", "/devolver", "/consumo-interno", "/estoque", "/inventario", "/kardex"];
-
-const adminLinks = [
+const adminLinks: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/inicio", label: "Início", icon: BarChart3 },
   { href: "/relatorios", label: "Relatórios", icon: FileDown },
   { href: "/caixa", label: "Caixa", icon: Wallet },
@@ -74,6 +69,13 @@ const adminLinks = [
   { href: "/inventario", label: "Inventário", icon: ClipboardPen },
   { href: "/kardex", label: "Kardex", icon: ScrollText },
 ];
+
+function navClass(active: boolean) {
+  return cn(
+    "inline-flex min-h-12 w-full items-center gap-3 rounded-2xl px-3 text-left text-base font-bold focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200",
+    active ? "bg-orange-600 text-white" : "text-stone-800 hover:bg-orange-50",
+  );
+}
 
 export function AppShell({ children }: { children: ReactNode }) {
   const ready = useReady();
@@ -96,73 +98,68 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   const panel = panels.find((item) => item.id === panelId);
-  const links = panel?.type === "admin" ? adminLinks : panel?.type === "factory" ? factoryLinks : storeLinks;
-  const wide = panel?.type === "admin";
-  const back = backTarget(pathname, panel?.type);
+  const role = panel?.type;
+  const links = role === "admin" ? adminLinks : role === "factory" ? factoryLinks : storeLinks;
+  const moreItems = role === "factory" ? FACTORY_MORE : STORE_MORE;
+  const moreHrefs = role === "factory" ? FACTORY_MORE_HREFS : STORE_MORE_HREFS;
+  const showMore = role === "store" || role === "factory";
+  const back = backTarget(pathname, role);
   const here =
-    panel?.type === "store"
-      ? `Você está na ${panel.name}`
-      : panel?.type === "factory"
+    role === "store"
+      ? `Você está na ${panel?.name}`
+      : role === "factory"
         ? "Você está na fábrica"
         : "Você está na administração";
 
   return (
-    <div className="min-h-screen bg-orange-50">
-      <header className="sticky top-0 z-20 border-b border-orange-100 bg-white/95 backdrop-blur print:hidden">
-        {back ? (
-          <div className={cn("mx-auto px-4 pt-3", wide ? "max-w-7xl" : "max-w-6xl")}>
-            <BackLink href={back.href} label={back.label} className="w-full justify-center sm:w-auto sm:justify-start" />
-          </div>
-        ) : null}
-        <div className={cn("mx-auto flex items-center justify-between gap-4 px-4 py-3", wide ? "max-w-7xl" : "max-w-6xl")}>
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-orange-700">
-              Controle da fábrica
-            </p>
-            <p className="text-xl font-extrabold text-stone-900">{here}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {panel?.type === "admin" || panel?.type === "factory" ? (
-              <NotificationBell audience={panel.type} />
-            ) : null}
-            <Button variant="ghost" className="min-h-12 text-base" onClick={() => setLeave(true)}>
-              <LogOut className="size-5" />
-              Trocar de lugar
-            </Button>
-          </div>
+    <div className="flex min-h-screen bg-orange-50">
+      <aside className="sticky top-0 z-30 flex h-screen w-60 shrink-0 flex-col border-r border-orange-100 bg-white print:hidden">
+        <div className="border-b border-orange-100 px-4 py-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-orange-700">Controle da fábrica</p>
+          <p className="mt-1 text-lg font-extrabold leading-tight text-stone-900">{panel?.name}</p>
         </div>
-        <nav className={cn("mx-auto flex gap-2 overflow-x-auto px-4 pb-3", wide ? "max-w-7xl" : "max-w-6xl")}>
+        <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3" aria-label="Menu">
           {links.map((link) => {
             const Icon = link.icon;
             const nested =
-              (link.href === "/cadastros" &&
-                ["/lojas", "/funcionarios", "/promocoes", "/consumo"].some(
-                  (href) => pathname === href || pathname.startsWith(`${href}/`),
-                )) ||
-              (link.href === "/mais" &&
-                storeMoreHrefs.some((href) => pathname === href || pathname.startsWith(`${href}/`)));
+              link.href === "/cadastros" &&
+              ["/lojas", "/funcionarios", "/promocoes", "/consumo"].some(
+                (href) => pathname === href || pathname.startsWith(`${href}/`),
+              );
             const active = nested || pathname === link.href || pathname.startsWith(`${link.href}/`);
             return (
-              <Link
-                key={link.href}
-                href={link.href}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "inline-flex min-h-12 shrink-0 items-center gap-2 rounded-2xl px-4 text-base font-bold focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200",
-                  active ? "bg-orange-600 text-white" : "bg-orange-50 text-stone-800 ring-1 ring-orange-100",
-                )}
-              >
-                <Icon className="size-5" />
+              <Link key={link.href} href={link.href} aria-current={active ? "page" : undefined} className={navClass(active)}>
+                <Icon className="size-5 shrink-0" />
                 {link.label}
               </Link>
             );
           })}
+          {showMore ? <MaisMenu items={moreItems} active={moreActive(pathname, moreHrefs)} /> : null}
         </nav>
-      </header>
-      <main className={cn("mx-auto px-4 py-6", wide ? "max-w-7xl" : "max-w-6xl")}>{children}</main>
+        <div className="border-t border-orange-100 p-3">
+          <Button variant="ghost" className="w-full justify-start" onClick={() => setLeave(true)}>
+            <LogOut className="size-5" />
+            Trocar de lugar
+          </Button>
+        </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-20 border-b border-orange-100 bg-white/95 px-4 py-3 backdrop-blur print:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              {back ? <BackLink href={back.href} label={back.label} className="mb-2" /> : null}
+              <p className="truncate text-xl font-extrabold text-stone-900">{here}</p>
+            </div>
+            {role === "admin" || role === "factory" ? <NotificationBell audience={role} /> : null}
+          </div>
+        </header>
+        <main className="px-4 py-6">{children}</main>
+      </div>
+
       <ConfirmDialog
         open={leave}
-        title={`Sair ${panel?.type === "store" ? `da ${panel.name}` : panel?.type === "factory" ? "da fábrica" : "da administração"}?`}
+        title={`Sair ${role === "store" ? `da ${panel?.name}` : role === "factory" ? "da fábrica" : "da administração"}?`}
         hint="Você vai escolher outro lugar. Isto não é senha. Os dados deste computador continuam aqui."
         confirmLabel="Trocar de lugar"
         confirmVariant="secondary"
@@ -176,5 +173,103 @@ export function AppShell({ children }: { children: ReactNode }) {
         <p className="font-semibold text-stone-700">Agora: {panel?.name}</p>
       </ConfirmDialog>
     </div>
+  );
+}
+
+function MaisMenu({ items, active }: { items: MoreItem[]; active: boolean }) {
+  const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const pathname = usePathname();
+
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!open) return;
+    function place() {
+      const box = buttonRef.current?.getBoundingClientRect();
+      const menu = menuRef.current;
+      if (!box) return;
+      const width = menu?.offsetWidth || 288;
+      const height = menu?.offsetHeight || 0;
+      let left = box.right + 8;
+      let top = box.top;
+      if (left + width > window.innerWidth - 8) {
+        left = Math.max(8, box.left - width - 8);
+      }
+      if (height && top + height > window.innerHeight - 8) {
+        top = Math.max(8, window.innerHeight - height - 8);
+      }
+      setPos({ top, left });
+    }
+    place();
+    const frame = window.requestAnimationFrame(place);
+    function onDoc(event: MouseEvent) {
+      const node = event.target as Node;
+      if (buttonRef.current?.contains(node) || menuRef.current?.contains(node)) return;
+      setOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className={navClass(active || open)}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <MoreHorizontal className="size-5 shrink-0" />
+        Mais
+      </button>
+      {open && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={menuRef}
+              role="menu"
+              style={{ top: pos.top, left: pos.left }}
+              className="fixed z-50 max-h-[calc(100vh-16px)] w-72 overflow-y-auto rounded-2xl bg-white p-2 shadow-xl ring-1 ring-stone-200"
+            >
+              {items.map((item) => {
+                const current = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    role="menuitem"
+                    className={cn(
+                      "block rounded-xl px-3 py-3 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200",
+                      current ? "bg-orange-50" : "hover:bg-stone-50",
+                    )}
+                  >
+                    <p className="font-extrabold text-stone-900">{item.label}</p>
+                    <p className="text-sm font-semibold text-stone-500">{item.hint}</p>
+                  </Link>
+                );
+              })}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }

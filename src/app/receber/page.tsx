@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/pick-flow";
 import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
+import { Pager, usePager } from "@/components/pager";
 import { getPanel } from "@/lib/locations";
 import { formatDate, formatTime } from "@/lib/money";
 import { listTransfers, type TransferView } from "@/lib/queries";
@@ -35,9 +36,10 @@ export default function ReceberPage() {
     [transfers],
   );
   const history = useMemo(
-    () => (transfers ?? []).filter((row) => row.status !== "em_transito").slice(0, 12),
+    () => (transfers ?? []).filter((row) => row.status !== "em_transito"),
     [transfers],
   );
+  const historyPage = usePager(history, 8);
   const selected = pending.find((row) => row.id === picked);
 
   const review = useMemo(() => {
@@ -202,12 +204,19 @@ export default function ReceberPage() {
         <section>
           <h2 className="mb-3 text-2xl font-extrabold text-stone-900">Já conferidos</h2>
           <ul className="space-y-3">
-            {history.map((row) => (
+            {historyPage.rows.map((row) => (
               <li key={row.id}>
                 <HistoryCard row={row} />
               </li>
             ))}
           </ul>
+          <Pager
+            page={historyPage.page}
+            pages={historyPage.pages}
+            total={historyPage.total}
+            onPage={historyPage.setPage}
+            word="envios"
+          />
         </section>
       ) : null}
 

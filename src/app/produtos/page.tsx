@@ -7,6 +7,7 @@ import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
 import { SearchField } from "@/components/pick-flow";
 import { Card, Empty, PageTitle } from "@/components/ui";
+import { PageBoard, Pager, usePager } from "@/components/pager";
 import { categoryLabel } from "@/lib/categories";
 import { getDb } from "@/lib/db";
 import { formatBRL } from "@/lib/money";
@@ -29,6 +30,8 @@ export default function ProdutosPage() {
       );
     });
   }, [niches, products, search]);
+
+  const list = usePager(visible, 8, search);
 
   return (
     <AccessGate
@@ -72,36 +75,39 @@ export default function ProdutosPage() {
       ) : visible.length === 0 ? (
         <Empty title="Nada com esse nome" hint="Tente outro trecho: coxinha, mini, coca." />
       ) : (
-        <div className="space-y-4">
-          {visible.map((product) => {
-            const types = (niches ?? []).filter((niche) => niche.productId === product.id);
-            return (
-              <Link key={product.id} href={`/produtos/${product.id}`}>
-                <Card className="mb-4 transition hover:ring-orange-300">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-bold uppercase text-orange-700">
-                        {categoryLabel(product.category)}
-                        {product.perishable ? " · perecível" : ""}
-                      </p>
-                      <h2 className="text-2xl font-extrabold text-stone-900">{product.name}</h2>
+        <div>
+          <PageBoard size={list.size} rowMin="8.5rem">
+            {list.rows.map((product) => {
+              const types = (niches ?? []).filter((niche) => niche.productId === product.id);
+              return (
+                <Link key={product.id} href={`/produtos/${product.id}`} className="block h-full">
+                  <Card className="h-full transition hover:ring-orange-300">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-bold uppercase text-orange-700">
+                          {categoryLabel(product.category)}
+                          {product.perishable ? " · perecível" : ""}
+                        </p>
+                        <h2 className="text-2xl font-extrabold text-stone-900">{product.name}</h2>
+                      </div>
+                      <span className="rounded-full bg-orange-50 px-3 py-1 text-sm font-bold text-orange-800">
+                        Editar
+                      </span>
                     </div>
-                    <span className="rounded-full bg-orange-50 px-3 py-1 text-sm font-bold text-orange-800">
-                      Editar
-                    </span>
-                  </div>
-                  <ul className="mt-4 space-y-1 text-lg text-stone-700">
-                    {types.map((niche) => (
-                      <li key={niche.id}>
-                        {niche.name} · vende por {formatBRL(niche.sellPrice)}
-                        {!niche.active ? " · escondido" : ""}
-                      </li>
-                    ))}
-                  </ul>
-                </Card>
-              </Link>
-            );
-          })}
+                    <ul className="mt-4 space-y-1 text-lg text-stone-700">
+                      {types.map((niche) => (
+                        <li key={niche.id}>
+                          {niche.name} · vende por {formatBRL(niche.sellPrice)}
+                          {!niche.active ? " · escondido" : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </Card>
+                </Link>
+              );
+            })}
+          </PageBoard>
+          <Pager page={list.page} pages={list.pages} total={list.total} onPage={list.setPage} word="produtos" />
         </div>
       )}
     </AppShell>

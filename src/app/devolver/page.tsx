@@ -16,6 +16,7 @@ import {
   pickKindOptions,
   type PickKind,
 } from "@/components/pick-flow";
+import { Pager, usePager } from "@/components/pager";
 import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { getPanel } from "@/lib/locations";
 import { formatDate, formatTime } from "@/lib/money";
@@ -53,6 +54,7 @@ function StoreReturn({ locationId }: { locationId: string }) {
     () => (ready ? listTransfers({ fromLocationId: locationId, kind: "devolucao" }) : []),
     [ready, locationId],
   );
+  const minePage = usePager(mine ?? [], 8, locationId);
   const [qty, setQty] = useState<Record<string, number>>({});
   const [reason, setReason] = useState<ReturnReason>("excedente");
   const [search, setSearch] = useState("");
@@ -179,12 +181,19 @@ function StoreReturn({ locationId }: { locationId: string }) {
         <section className="mt-8">
           <h2 className="mb-3 text-2xl font-extrabold text-stone-900">Já devolvidas</h2>
           <ul className="space-y-3">
-            {(mine ?? []).slice(0, 8).map((row) => (
+            {minePage.rows.map((row) => (
               <li key={row.id}>
                 <HistoryCard row={row} />
               </li>
             ))}
           </ul>
+          <Pager
+            page={minePage.page}
+            pages={minePage.pages}
+            total={minePage.total}
+            onPage={minePage.setPage}
+            word="devoluções"
+          />
         </section>
       ) : null}
 
@@ -244,9 +253,10 @@ function FactoryReturn() {
     [transfers],
   );
   const history = useMemo(
-    () => (transfers ?? []).filter((row) => row.status !== "em_transito").slice(0, 12),
+    () => (transfers ?? []).filter((row) => row.status !== "em_transito"),
     [transfers],
   );
+  const historyPage = usePager(history, 8);
   const selected = pending.find((row) => row.id === picked);
 
   const review = useMemo(() => {
@@ -404,12 +414,19 @@ function FactoryReturn() {
         <section>
           <h2 className="mb-3 text-2xl font-extrabold text-stone-900">Já conferidas</h2>
           <ul className="space-y-3">
-            {history.map((row) => (
+            {historyPage.rows.map((row) => (
               <li key={row.id}>
                 <HistoryCard row={row} />
               </li>
             ))}
           </ul>
+          <Pager
+            page={historyPage.page}
+            pages={historyPage.pages}
+            total={historyPage.total}
+            onPage={historyPage.setPage}
+            word="devoluções"
+          />
         </section>
       ) : null}
 

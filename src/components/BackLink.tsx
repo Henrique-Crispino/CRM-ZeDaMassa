@@ -19,14 +19,20 @@ export function backTarget(pathname: string, panelType?: string): BackTarget | n
   }
 
   if (
-    panelType === "store" &&
-    (pathname === "/devolver" ||
-      pathname === "/consumo-interno" ||
-      pathname === "/estoque" ||
-      pathname === "/inventario" ||
-      pathname === "/kardex")
+    (panelType === "store" &&
+      (pathname === "/devolver" ||
+        pathname === "/consumo-interno" ||
+        pathname === "/estoque" ||
+        pathname === "/inventario" ||
+        pathname === "/kardex")) ||
+    (panelType === "factory" &&
+      (pathname === "/devolver" ||
+        pathname === "/produtos" ||
+        pathname === "/estoque" ||
+        pathname === "/inventario" ||
+        pathname === "/kardex"))
   ) {
-    return { href: "/mais", label: "Voltar ao Mais" };
+    return { href: "/inicio", label: "Voltar ao início" };
   }
 
   if (pathname === "/produtos/novo" || /^\/produtos\/[^/]+$/.test(pathname)) {

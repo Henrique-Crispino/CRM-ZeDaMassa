@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
+import { Pager, usePager } from "@/components/pager";
 import { Button, Card, Empty, ErrorBox, Field, Input, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import {
   ConsumeError,
@@ -29,6 +30,9 @@ export default function ConsumoAdminPage() {
   const users = useLiveQuery(() => (ready ? listConsumeUsers() : []), [ready]);
   const items = useLiveQuery(() => (ready ? listAllowances() : []), [ready]);
   const history = useLiveQuery(() => (ready ? listConsumptions("admin") : []), [ready]);
+  const usersPage = usePager(users ?? [], 8);
+  const itemsPage = usePager(items ?? [], 8);
+  const historyPage = usePager(history ?? [], 8);
   const [tab, setTab] = useState<"users" | "products">("users");
   const [form, setForm] = useState(emptyUser);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -163,7 +167,7 @@ export default function ConsumoAdminPage() {
               />
             ) : (
               <div className="space-y-3">
-                {users.map((user) => (
+                {usersPage.rows.map((user) => (
                   <Card key={user.id} className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-lg font-extrabold">{user.name}</p>
@@ -204,6 +208,13 @@ export default function ConsumoAdminPage() {
                     </div>
                   </Card>
                 ))}
+                <Pager
+                  page={usersPage.page}
+                  pages={usersPage.pages}
+                  total={usersPage.total}
+                  onPage={usersPage.setPage}
+                  word="funcionários"
+                />
               </div>
             )}
           </>
@@ -214,7 +225,7 @@ export default function ConsumoAdminPage() {
               <Empty title="Cadastre produtos primeiro" />
             ) : (
               <div className="space-y-3">
-                {items.map((item) => {
+                {itemsPage.rows.map((item) => {
                   const limit = limits[item.niche.id] ?? item.allowance.dailyLimit;
                   const personLimit = personLimits[item.niche.id] ?? item.allowance.personLimit ?? 1;
                   return (
@@ -292,6 +303,13 @@ export default function ConsumoAdminPage() {
                     </Card>
                   );
                 })}
+                <Pager
+                  page={itemsPage.page}
+                  pages={itemsPage.pages}
+                  total={itemsPage.total}
+                  onPage={itemsPage.setPage}
+                  word="produtos"
+                />
               </div>
             )}
 
@@ -300,7 +318,7 @@ export default function ConsumoAdminPage() {
               <Empty title="Nenhum consumo interno ainda" />
             ) : (
               <div className="space-y-2">
-                {history.slice(0, 20).map((row) => (
+                {historyPage.rows.map((row) => (
                   <Card key={row.id} className="flex flex-wrap items-center justify-between gap-2">
                     <p className="font-bold">
                       {row.qty} un. · {getLocation(row.locationId)?.name ?? row.locationId}
@@ -311,6 +329,13 @@ export default function ConsumoAdminPage() {
                     </p>
                   </Card>
                 ))}
+                <Pager
+                  page={historyPage.page}
+                  pages={historyPage.pages}
+                  total={historyPage.total}
+                  onPage={historyPage.setPage}
+                  word="consumos"
+                />
               </div>
             )}
           </>

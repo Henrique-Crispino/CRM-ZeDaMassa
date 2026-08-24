@@ -15,6 +15,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { PageBoard, Pager, usePager } from "@/components/pager";
 import { Button, Card, cn } from "@/components/ui";
 import { LotExpiryBoard } from "@/components/LotExpiryBoard";
 import type { AlertItem, DashboardData, ExpiryAlert } from "@/lib/queries";
@@ -180,6 +181,7 @@ export function AlertList({
   items: AlertItem[];
   empty: string;
 }) {
+  const list = usePager(items, 6, `${title}:${items.length}:${items[0]?.nicheId ?? ""}`);
   return (
     <Card>
       <h3 className="text-xl font-extrabold text-stone-900">{title}</h3>
@@ -187,19 +189,28 @@ export function AlertList({
       {items.length === 0 ? (
         <p className="mt-4 text-lg font-semibold text-emerald-700">{empty}</p>
       ) : (
-        <ul className="mt-4 space-y-3">
-          {items.map((item) => (
-            <li
-              key={`${item.locationId}-${item.nicheId}`}
-              className="rounded-2xl bg-red-50 px-4 py-3 ring-1 ring-red-100"
-            >
-              <p className="font-extrabold text-stone-900">{item.label}</p>
-              <p className="text-red-700">
-                {item.locationName}: tem {item.qty} · precisa de {item.min} · falta {item.missing}
-              </p>
-            </li>
-          ))}
-        </ul>
+        <>
+          <PageBoard size={list.size} rowMin="4.75rem" className="mt-4">
+            {list.rows.map((item) => (
+              <div
+                key={`${item.locationId}-${item.nicheId}`}
+                className="rounded-2xl bg-red-50 px-4 py-3 ring-1 ring-red-100"
+              >
+                <p className="font-extrabold text-stone-900">{item.label}</p>
+                <p className="text-red-700">
+                  {item.locationName}: tem {item.qty} · precisa de {item.min} · falta {item.missing}
+                </p>
+              </div>
+            ))}
+          </PageBoard>
+          <Pager
+            page={list.page}
+            pages={list.pages}
+            total={list.total}
+            onPage={list.setPage}
+            word="itens"
+          />
+        </>
       )}
     </Card>
   );

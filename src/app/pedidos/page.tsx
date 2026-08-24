@@ -6,6 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/pick-flow";
 import { ReportPreview } from "@/components/ReportPreview";
 import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
+import { Pager, usePager } from "@/components/pager";
 import { getPanel } from "@/lib/locations";
 import { reportRomaneio, type ReportTable } from "@/lib/reports";
 import { cancelRequest, fulfillRequest, listRequests, requestWhen, RequestError } from "@/lib/requests";
@@ -25,6 +26,9 @@ export default function PedidosPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [sheet, setSheet] = useState<ReportTable | null>(null);
+  const pending = (requests ?? []).filter((row) => isOpenRequest(row.status));
+  const others = (requests ?? []).filter((row) => !isOpenRequest(row.status));
+  const othersPage = usePager(others, 8);
 
   if (panel && panel.type === "store") {
     return (
@@ -33,9 +37,6 @@ export default function PedidosPage() {
       </AppShell>
     );
   }
-
-  const pending = (requests ?? []).filter((row) => isOpenRequest(row.status));
-  const others = (requests ?? []).filter((row) => !isOpenRequest(row.status));
 
   function chosenQty(requestId: string, nicheId: string, fallback: number) {
     return qty[requestId]?.[nicheId] ?? fallback;
@@ -168,7 +169,7 @@ export default function PedidosPage() {
         <section className="mt-10">
           <h2 className="mb-3 text-2xl font-extrabold">Já resolvidos</h2>
           <div className="space-y-3">
-            {others.slice(0, 10).map((request) => (
+            {othersPage.rows.map((request) => (
               <Card key={request.id}>
                 <p className="font-extrabold">
                   {request.storeName} · {request.statusLabel}
@@ -184,6 +185,13 @@ export default function PedidosPage() {
                 </ul>
               </Card>
             ))}
+            <Pager
+              page={othersPage.page}
+              pages={othersPage.pages}
+              total={othersPage.total}
+              onPage={othersPage.setPage}
+              word="pedidos"
+            />
           </div>
         </section>
       ) : null}

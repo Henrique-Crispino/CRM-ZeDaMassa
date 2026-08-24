@@ -5,6 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
 import { Button, Card, Empty, ErrorBox, Field, Input, PageTitle, SuccessBox } from "@/components/ui";
+import { Pager, usePager } from "@/components/pager";
 import { consumeWorkplaceLabel, consumeWorkplaces } from "@/lib/consume";
 import {
   deactivatePerson,
@@ -43,6 +44,7 @@ export default function FuncionariosPage() {
   }, [form.locationId, places]);
 
   const active = (people ?? []).filter((item) => item.active);
+  const list = usePager(active, 8);
 
   function resetForm() {
     setEditingId(null);
@@ -179,7 +181,7 @@ export default function FuncionariosPage() {
           <Empty title="Ninguém cadastrado ainda" hint="Cadastre quem abre o caixa e quem retira consumo interno." />
         ) : (
           <div className="space-y-3">
-            {active.map((item) => (
+            {list.rows.map((item) => (
               <Card key={item.id} className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-lg font-extrabold">{item.name}</p>
@@ -226,6 +228,7 @@ export default function FuncionariosPage() {
                 </div>
               </Card>
             ))}
+            <Pager page={list.page} pages={list.pages} total={list.total} onPage={list.setPage} word="pessoas" />
           </div>
         )}
       </AppShell>

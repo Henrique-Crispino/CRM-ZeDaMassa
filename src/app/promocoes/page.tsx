@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
+import { Pager, usePager } from "@/components/pager";
 import { Button, Card, Empty, ErrorBox, Field, Input, PageTitle, SuccessBox } from "@/components/ui";
 import { getDb } from "@/lib/db";
 import { formatBRL, formatDate, formatTime } from "@/lib/money";
@@ -39,6 +40,7 @@ function defaultTo() {
 export default function PromocoesPage() {
   const ready = useReady();
   const items = useLiveQuery(() => (ready ? catalogItems(false) : []), [ready]);
+  const list = usePager(items ?? [], 8);
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [froms, setFroms] = useState<Record<string, string>>({});
   const [tos, setTos] = useState<Record<string, string>>({});
@@ -123,7 +125,7 @@ export default function PromocoesPage() {
           <Empty title="Cadastre produtos primeiro" hint="Sem produto, não tem promoção." />
         ) : (
           <div className="mt-4 space-y-3">
-            {items.map((item) => {
+            {list.rows.map((item) => {
               const value = prices[item.niche.id] ?? String(item.niche.promoPrice || "").replace(".", ",");
               const status = promoStatus(item.niche);
               return (
@@ -193,6 +195,13 @@ export default function PromocoesPage() {
                 </Card>
               );
             })}
+            <Pager
+              page={list.page}
+              pages={list.pages}
+              total={list.total}
+              onPage={list.setPage}
+              word="produtos"
+            />
           </div>
         )}
       </AppShell>
