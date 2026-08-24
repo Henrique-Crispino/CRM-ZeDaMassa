@@ -1,4 +1,5 @@
 import { isClosedPackage, isPurchased, isSoldAtRegister, notForSaleMessage } from "./categories";
+import { ComboError, loadComboForCheckout, splitComboPrice } from "./combos";
 import { currentCashSession, money2 } from "./cash";
 import { getDb } from "./db";
 import { isStore } from "./locations";
@@ -501,14 +502,16 @@ export async function checkout(input: {
   channel: SaleChannel;
   payment?: PaymentMethod;
   payments?: SalePayment[];
-  items: { nicheId: string; qty: number; promo?: boolean }[];
+  items?: { nicheId: string; qty: number; promo?: boolean }[];
+  combos?: { comboId: string; qty: number }[];
 }) {
   if (!isStore(input.locationId)) {
     throw new StockError("A venda é feita na loja, não na fábrica.");
   }
 
-  const items = input.items.filter((item) => item.qty > 0);
-  if (items.length === 0) {
+  const items = (input.items ?? []).filter((item) => item.qty > 0);
+  const comboLines = (input.combos ?? []).filter((item) => item.qty > 0);
+  if (items.length === 0 && comboLines.length === 0) {
     throw new StockError("Coloque pelo menos um item na venda.");
   }
 
@@ -532,7 +535,18 @@ export async function checkout(input: {
 
   await db.transaction(
     "rw",
-    [db.stock, db.lots, db.movements, db.sales, db.saleItems, db.niches, db.cashSessions],
+    [
+      db.stock,
+      db.lots,
+      db.movements,
+      db.sales,
+      db.saleItems,
+      db.niches,
+      db.products,
+      db.combos,
+      db.comboItems,
+      db.cashSessions,
+    ],
     async () => {
       let total = 0;
 
@@ -580,6 +594,79 @@ export async function checkout(input: {
           });
           total += chunk.qty * unitPrice;
         }
+      }
+
+      for (const line of comboLines) {
+        let loaded: Awaited<ReturnType<typeof loadComboForCheckout>>;
+        try {
+          loaded = await loadComboForCheckout(line.comboId);
+        } catch (err) {
+          throw err instanceof ComboError ? new StockError(err.message) : err;
+        }
+        const { combo, items: parts } = loaded;
+        await assertLiveNiches(parts.map((part) => part.nicheId));
+        const partNiches = await db.niches.bulkGet(parts.map((part) => part.nicheId));
+        const partProducts = await db.products.bulkGet(partNiches.map((niche) => niche?.productId ?? ""));
+        for (const product of partProducts) {
+          if (product && !isSoldAtRegister(product.category)) {
+            throw new StockError(notForSaleMessage(product.name, product.category));
+          }
+        }
+        const expanded = parts.map((part, index) => ({
+          nicheId: part.nicheId,
+          qty: part.qty * line.qty,
+          sellPrice: partNiches[index]?.sellPrice ?? 0,
+          label: partProducts[index]?.name ?? "produto",
+        }));
+        const packTotal = money2(combo.price * line.qty);
+        const allocated = splitComboPrice(packTotal, expanded);
+        const plans = [];
+        for (const alloc of allocated) {
+          try {
+            const chunks = await oldestLots(input.locationId, alloc.nicheId, alloc.qty, { skipExpired: true });
+            plans.push({ ...alloc, chunks });
+          } catch {
+            const label = expanded.find((row) => row.nicheId === alloc.nicheId)?.label ?? "um item";
+            throw new StockError(
+              `O combo ${combo.name} não fecha: falta ${label} nesta loja. Não vende metade.`,
+            );
+          }
+        }
+        for (const plan of plans) {
+          let leftover = plan.lineTotal;
+          for (const [chunkIndex, chunk] of plan.chunks.entries()) {
+            const last = chunkIndex === plan.chunks.length - 1;
+            const chunkMoney = last ? leftover : money2(plan.unitPrice * chunk.qty);
+            leftover = money2(leftover - chunkMoney);
+            const lot = await db.lots.get(chunk.lotId);
+            const niche = await db.niches.get(plan.nicheId);
+            await changeStock(input.locationId, plan.nicheId, chunk.lotId, -chunk.qty);
+            await db.saleItems.add({
+              id: newId(),
+              saleId,
+              nicheId: plan.nicheId,
+              lotId: chunk.lotId,
+              qty: chunk.qty,
+              unitPrice: chunk.qty > 0 ? money2(chunkMoney / chunk.qty) : 0,
+              unitCost: lotCost(lot, niche?.costPrice ?? 0),
+              promo: true,
+              comboId: combo.id,
+              comboName: combo.name,
+              comboPacks: line.qty,
+            });
+            await db.movements.add({
+              id: newId(),
+              locationId: input.locationId,
+              nicheId: plan.nicheId,
+              lotId: chunk.lotId,
+              qty: -chunk.qty,
+              type: "sale",
+              refId: saleId,
+              at,
+            });
+          }
+        }
+        total = money2(total + packTotal);
       }
 
       const payments = normalizeSalePayments(total, input);

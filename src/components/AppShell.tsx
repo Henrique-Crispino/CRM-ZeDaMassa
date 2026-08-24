@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
+  Contact,
   Factory,
   Home,
   Package,
@@ -49,6 +50,7 @@ const factoryTurno: NavItem[] = [
 const factoryRest: NavItem[] = [
   { href: "/devolver", label: "Devoluções", icon: Undo2 },
   { href: "/produtos", label: "Produtos", icon: Package },
+  { href: "/clientes", label: "Clientes", icon: Contact },
   { href: "/pacote", label: "Abrir pacote", icon: PackageOpen },
   { href: "/estoque", label: "Estoque", icon: Warehouse },
   { href: "/inventario", label: "Inventário", icon: ClipboardPen },
@@ -99,7 +101,7 @@ function navClass(active: boolean) {
 function linkActive(pathname: string, href: string) {
   const nested =
     href === "/cadastros" &&
-    ["/lojas", "/funcionarios", "/promocoes", "/consumo"].some(
+    ["/lojas", "/funcionarios", "/promocoes", "/consumo", "/clientes"].some(
       (path) => pathname === path || pathname.startsWith(`${path}/`),
     );
   return nested || pathname === href || pathname.startsWith(`${href}/`);

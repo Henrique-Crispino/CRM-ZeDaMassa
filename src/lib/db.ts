@@ -4,8 +4,11 @@ import type {
   AppSetting,
   CashMovement,
   CashSession,
+  Combo,
+  ComboItem,
   ConsumeGroup,
   ConsumeUser,
+  Customer,
   Employee,
   InternalAllowance,
   InternalConsumption,
@@ -58,9 +61,12 @@ class AppDB extends Dexie {
   cashSessions!: Table<CashSession, string>;
   internalAllowances!: Table<InternalAllowance, string>;
   consumeGroups!: Table<ConsumeGroup, string>;
+  combos!: Table<Combo, string>;
+  comboItems!: Table<ComboItem, string>;
   settings!: Table<AppSetting, string>;
   consumptions!: Table<InternalConsumption, string>;
   consumeUsers!: Table<ConsumeUser, string>;
+  customers!: Table<Customer, string>;
   cashMovements!: Table<CashMovement, string>;
   inventoryCounts!: Table<InventoryCount, string>;
   inventoryLines!: Table<InventoryLine, string>;
@@ -248,6 +254,45 @@ class AppDB extends Dexie {
       settings: "id",
       consumptions: "id, locationId, nicheId, at, dayKey",
       consumeUsers: "id, login, locationId, active",
+      cashMovements: "id, sessionId, locationId, type, at",
+      inventoryCounts: "id, locationId, at",
+      inventoryLines: "id, countId, nicheId",
+    });
+    this.version(10).stores({
+      ...baseStores,
+      requests: "id, fromLocationId, status, at",
+      requestItems: "id, requestId, nicheId",
+      notifications: "id, audience, at, type",
+      stores: "id, name, active",
+      employees: "id, storeId, locationId, active, name",
+      cashSessions: "id, locationId, period, openedAt, closedAt",
+      internalAllowances: "id, nicheId, enabled",
+      consumeGroups: "id, enabled",
+      combos: "id, enabled",
+      comboItems: "id, comboId, nicheId",
+      settings: "id",
+      consumptions: "id, locationId, nicheId, at, dayKey",
+      consumeUsers: "id, login, locationId, active",
+      cashMovements: "id, sessionId, locationId, type, at",
+      inventoryCounts: "id, locationId, at",
+      inventoryLines: "id, countId, nicheId",
+    });
+    this.version(11).stores({
+      ...baseStores,
+      requests: "id, fromLocationId, status, at",
+      requestItems: "id, requestId, nicheId",
+      notifications: "id, audience, at, type",
+      stores: "id, name, active",
+      employees: "id, storeId, locationId, active, name",
+      cashSessions: "id, locationId, period, openedAt, closedAt",
+      internalAllowances: "id, nicheId, enabled",
+      consumeGroups: "id, enabled",
+      combos: "id, enabled",
+      comboItems: "id, comboId, nicheId",
+      settings: "id",
+      consumptions: "id, locationId, nicheId, at, dayKey",
+      consumeUsers: "id, login, locationId, active",
+      customers: "id, name, active",
       cashMovements: "id, sessionId, locationId, type, at",
       inventoryCounts: "id, locationId, at",
       inventoryLines: "id, countId, nicheId",

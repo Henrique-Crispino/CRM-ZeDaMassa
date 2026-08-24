@@ -24,6 +24,7 @@ import { currentCashSession } from "@/lib/cash";
 import { cashPeriodLabel } from "@/lib/cash";
 import { getPanel } from "@/lib/locations";
 import { formatBRL, parseMoney } from "@/lib/money";
+import { comboMissingLabel, comboPacksAvailable, listLiveCombos } from "@/lib/combos";
 import { expiryAlertsFor, sellableQty, stockByLocation } from "@/lib/queries";
 import { getLocationId } from "@/lib/session";
 import { checkout, StockError } from "@/lib/stock";
@@ -53,9 +54,11 @@ export default function VenderPage() {
     [ready, locationId],
   );
   const expiredHere = (expiry ?? []).filter((item) => item.level === "expired");
+  const combos = useLiveQuery(() => (ready ? listLiveCombos() : []), [ready]);
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState<Kind>("todos");
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [comboCart, setComboCart] = useState<Record<string, number>>({});
   const [promo, setPromo] = useState<Record<string, boolean>>({});
   const [channel, setChannel] = useState<SaleChannel>("caixa");
   const [payment, setPayment] = useState<PaymentMethod>("pix");
@@ -106,7 +109,32 @@ export default function VenderPage() {
     [cart, stock, locationId, promo],
   );
 
-  const total = cartItems.reduce((sum, item) => sum + item.cartQty * item.unitPrice, 0);
+  const sellableByNiche = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const item of stock ?? []) {
+      map[item.niche.id] = locationId ? sellableQty(item, locationId) : 0;
+    }
+    return map;
+  }, [stock, locationId]);
+
+  const comboOffers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (combos ?? [])
+      .filter((combo) => !q || combo.name.toLowerCase().includes(q))
+      .map((combo) => ({
+        ...combo,
+        packsLeft: comboPacksAvailable(combo.items, sellableByNiche),
+        missing: comboMissingLabel(combo.items, sellableByNiche),
+      }));
+  }, [combos, search, sellableByNiche]);
+
+  const comboCartItems = comboOffers
+    .filter((combo) => (comboCart[combo.id] ?? 0) > 0)
+    .map((combo) => ({ ...combo, cartQty: comboCart[combo.id] ?? 0 }));
+
+  const total =
+    cartItems.reduce((sum, item) => sum + item.cartQty * item.unitPrice, 0) +
+    comboCartItems.reduce((sum, item) => sum + item.cartQty * item.price, 0);
   const paymentLines = split
     ? PAYMENT_METHODS.map((item) => ({ method: item.id, amount: parseMoney(splitAmounts[item.id]) })).filter(
         (row) => row.amount > 0,
@@ -144,8 +172,10 @@ export default function VenderPage() {
           qty: item.cartQty,
           promo: item.usePromo,
         })),
+        combos: comboCartItems.map((item) => ({ comboId: item.id, qty: item.cartQty })),
       });
       setCart({});
+      setComboCart({});
       setPromo({});
       setSplit(false);
       setSplitAmounts({ dinheiro: "", pix: "", cartao: "" });
@@ -163,7 +193,7 @@ export default function VenderPage() {
     <AppShell>
       <PageTitle
         title="Vender"
-        hint="Só salgado e bebida. Embalagem, limpeza e insumo não vendem aqui. Sem estoque ou só vencido fica na lista, apagado."
+        hint="Só salgado e bebida. Combo baixa os dois. Embalagem, limpeza e insumo não vendem aqui. Sem estoque ou só vencido fica na lista, apagado."
       />
 
       <DiscardExpiredBanner
@@ -206,7 +236,42 @@ export default function VenderPage() {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <div className="grid gap-3 sm:grid-cols-2">
-          {catalog.length === 0 ? (
+          {comboOffers.length > 0
+            ? comboOffers.map((combo) => {
+                const selected = comboCart[combo.id] ?? 0;
+                const blocked = combo.packsLeft <= 0;
+                return (
+                  <button
+                    key={combo.id}
+                    type="button"
+                    disabled={blocked}
+                    onClick={() =>
+                      setComboCart((current) => ({
+                        ...current,
+                        [combo.id]: Math.min(combo.packsLeft, (current[combo.id] ?? 0) + 1),
+                      }))
+                    }
+                    className={cn(
+                      "rounded-3xl p-4 text-left shadow-sm ring-1 ring-orange-200",
+                      blocked ? "bg-stone-50" : "bg-orange-50",
+                      selected > 0 && "ring-2 ring-orange-500",
+                    )}
+                  >
+                    <p className="text-sm font-extrabold uppercase tracking-wide text-orange-800">Combo</p>
+                    <p className="text-xl font-extrabold text-stone-900">{combo.name}</p>
+                    <p className="text-stone-600">{combo.items.map((item) => `${item.qty}× ${item.label}`).join(" + ")}</p>
+                    <p className="mt-2 text-lg font-extrabold text-orange-700">{formatBRL(combo.price)}</p>
+                    <p className={cn("mt-1 text-sm font-semibold", blocked ? "text-stone-700" : "text-stone-500")}>
+                      {blocked
+                        ? `Falta ${combo.missing ?? "um item"} nesta loja. O combo inteiro fica parado.`
+                        : `${combo.packsLeft} combo${combo.packsLeft === 1 ? "" : "s"} neste estoque`}
+                      {selected > 0 ? ` · ${selected} no pedido` : ""}
+                    </p>
+                  </button>
+                );
+              })
+            : null}
+          {catalog.length === 0 && comboOffers.length === 0 ? (
             <div className="sm:col-span-2">
               {search.trim() ? (
                 <Empty
@@ -293,10 +358,26 @@ export default function VenderPage() {
 
         <Card className="h-fit space-y-4 lg:sticky lg:top-28">
           <h2 className="text-2xl font-extrabold">Pedido</h2>
-          {cartItems.length === 0 ? (
-            <p className="text-stone-600">Toque nos produtos para montar o pedido.</p>
+          {cartItems.length === 0 && comboCartItems.length === 0 ? (
+            <p className="text-stone-600">Toque nos produtos ou no combo para montar o pedido.</p>
           ) : (
-            cartItems.map((item) => (
+            <>
+              {comboCartItems.map((item) => (
+                <div key={item.id} className="space-y-2 border-b border-stone-100 pb-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="font-bold">Combo · {item.name}</p>
+                      <p className="text-sm text-stone-500">{formatBRL(item.price)}</p>
+                    </div>
+                    <NumberStepper
+                      value={item.cartQty}
+                      max={item.packsLeft}
+                      onChange={(value) => setComboCart((current) => ({ ...current, [item.id]: value }))}
+                    />
+                  </div>
+                </div>
+              ))}
+              {cartItems.map((item) => (
               <div key={item.niche.id} className="space-y-2 border-b border-stone-100 pb-3">
                 <div className="flex items-center justify-between gap-2">
                   <div>
@@ -327,6 +408,8 @@ export default function VenderPage() {
                 ) : null}
               </div>
             ))
+            }
+            </>
           )}
 
           <div>
@@ -413,7 +496,7 @@ export default function VenderPage() {
           <SuccessBox message={ok} />
           <Button
             className="w-full"
-            disabled={saving || cartItems.length === 0 || !session || !payReady}
+            disabled={saving || (cartItems.length === 0 && comboCartItems.length === 0) || !session || !payReady}
             onClick={() => {
               setOk("");
               setConfirm(true);
@@ -440,6 +523,14 @@ export default function VenderPage() {
         onCancel={() => setConfirm(false)}
       >
         <ul className="divide-y divide-stone-100 rounded-2xl bg-stone-50 px-4">
+          {comboCartItems.map((item) => (
+            <li key={item.id} className="flex justify-between gap-3 py-3">
+              <span className="font-bold text-stone-800">
+                {item.cartQty}× Combo {item.name}
+              </span>
+              <span className="font-extrabold">{formatBRL(item.cartQty * item.price)}</span>
+            </li>
+          ))}
           {cartItems.map((item) => (
             <li key={item.niche.id} className="flex justify-between gap-3 py-3">
               <span className="font-bold text-stone-800">

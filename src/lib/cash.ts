@@ -335,14 +335,38 @@ export async function listSessionTickets(sessionId: string): Promise<SessionTick
   const tickets = await Promise.all(
     sales.map(async (sale) => {
       const items = await db.saleItems.where("saleId").equals(sale.id).toArray();
+      const grouped = new Map<string, typeof items>();
+      const loose: typeof items = [];
+      for (const item of items) {
+        if (item.comboId) {
+          const rows = grouped.get(item.comboId) ?? [];
+          rows.push(item);
+          grouped.set(item.comboId, rows);
+        } else {
+          loose.push(item);
+        }
+      }
+      const comboRows: SessionTicketItem[] = [...grouped.values()].map((rows) => {
+        const packs = rows[0]?.comboPacks ?? 1;
+        const revenue = rows.reduce((sum, row) => sum + row.unitPrice * row.qty, 0);
+        return {
+          label: rows[0]?.comboName ?? "Combo",
+          qty: packs,
+          unitPrice: packs > 0 ? money2(revenue / packs) : revenue,
+          promo: true,
+        };
+      });
       return {
         sale,
-        items: items.map((item) => ({
-          label: labels.get(item.nicheId) ?? "Produto",
-          qty: item.qty,
-          unitPrice: item.unitPrice,
-          promo: item.promo,
-        })),
+        items: [
+          ...comboRows,
+          ...loose.map((item) => ({
+            label: labels.get(item.nicheId) ?? "Produto",
+            qty: item.qty,
+            unitPrice: item.unitPrice,
+            promo: item.promo,
+          })),
+        ],
       };
     }),
   );

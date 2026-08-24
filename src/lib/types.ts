@@ -164,6 +164,49 @@ export function promoStatusLabel(status: PromoStatus) {
   }[status];
 }
 
+export type Combo = {
+  id: string;
+  name: string;
+  price: number;
+  enabled: boolean;
+  promoFrom: string;
+  promoTo: string;
+};
+
+export type ComboItem = {
+  id: string;
+  comboId: string;
+  nicheId: string;
+  qty: number;
+};
+
+export type Customer = {
+  id: string;
+  name: string;
+  phone: string;
+  note: string;
+  address: string;
+  active: boolean;
+  createdAt: string;
+};
+
+export function comboAsPromo(combo: Pick<Combo, "enabled" | "price" | "promoFrom" | "promoTo">) {
+  return {
+    promoAllowed: combo.enabled,
+    promoPrice: combo.price,
+    promoFrom: combo.promoFrom,
+    promoTo: combo.promoTo,
+  };
+}
+
+export function comboStatus(combo: Pick<Combo, "enabled" | "price" | "promoFrom" | "promoTo">, at = new Date()) {
+  return promoStatus(comboAsPromo(combo), at);
+}
+
+export function comboIsLive(combo: Pick<Combo, "enabled" | "price" | "promoFrom" | "promoTo">, at = new Date()) {
+  return comboStatus(combo, at) === "live";
+}
+
 export type Lot = {
   id: string;
   nicheId: string;
@@ -282,6 +325,9 @@ export type SaleItem = {
   unitPrice: number;
   unitCost: number;
   promo?: boolean;
+  comboId?: string;
+  comboName?: string;
+  comboPacks?: number;
 };
 
 export type RequestStatus = "pending" | "parcial" | "sem_saldo" | "sent" | "cancelled";

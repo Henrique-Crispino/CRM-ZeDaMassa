@@ -7,8 +7,11 @@ import { createStoreRequest } from "./requests";
 import type {
   CashMovement,
   CashSession,
+  Combo,
+  ComboItem,
   ConsumeGroup,
   ConsumeUser,
+  Customer,
   Employee,
   InternalAllowance,
   InternalConsumption,
@@ -265,6 +268,34 @@ export const DEFAULT_CONSUME_GROUPS: ConsumeGroup[] = [
   },
 ];
 
+export const DEFAULT_COMBOS: Combo[] = [
+  {
+    id: "combo-10mini-coca",
+    name: "10 mini + Coca",
+    price: 18,
+    enabled: true,
+    promoFrom: startOfDayIso(),
+    promoTo: endOfDayIso(addDays(todayDate(), 14)),
+  },
+];
+
+export const DEFAULT_COMBO_ITEMS: ComboItem[] = [
+  { id: "combo-10mini-coca-cox", comboId: "combo-10mini-coca", nicheId: "cox-mini", qty: 10 },
+  { id: "combo-10mini-coca-coca", comboId: "combo-10mini-coca", nicheId: "coca-350", qty: 1 },
+];
+
+export const DEFAULT_CUSTOMERS: Customer[] = [
+  {
+    id: "cust-marcia",
+    name: "Dona Márcia",
+    phone: "(11) 98888-1010",
+    note: "Festa sábado. Retirada na fábrica.",
+    address: "",
+    active: true,
+    createdAt: `${todayDate()}T10:00:00.000Z`,
+  },
+];
+
 function lotExpiry(nicheId: string, madeAt: string) {
   const product = PRODUCT_BY_NICHE.get(nicheId);
   if (!product?.perishable || product.shelfLifeDays <= 0) return undefined;
@@ -355,6 +386,19 @@ export async function ensureAppDefaults() {
         dailyLimit: Math.max(pastel.dailyLimit, 10),
       });
     }
+  }
+
+  if ((await db.combos.count()) === 0) {
+    const cox = await db.niches.get("cox-mini");
+    const coca = await db.niches.get("coca-350");
+    if (cox && coca) {
+      await db.combos.bulkAdd(DEFAULT_COMBOS);
+      await db.comboItems.bulkAdd(DEFAULT_COMBO_ITEMS);
+    }
+  }
+
+  if ((await db.customers.count()) === 0) {
+    await db.customers.bulkAdd(DEFAULT_CUSTOMERS);
   }
 
   const cox = await db.niches.get("cox-mini");
@@ -928,9 +972,12 @@ export async function loadDemoData() {
       db.cashSessions,
       db.internalAllowances,
       db.consumeGroups,
+      db.combos,
+      db.comboItems,
       db.settings,
       db.consumptions,
       db.consumeUsers,
+      db.customers,
       db.cashMovements,
       db.inventoryCounts,
       db.inventoryLines,
@@ -955,9 +1002,12 @@ export async function loadDemoData() {
         db.cashSessions.clear(),
         db.internalAllowances.clear(),
         db.consumeGroups.clear(),
+        db.combos.clear(),
+        db.comboItems.clear(),
         db.settings.clear(),
         db.consumptions.clear(),
         db.consumeUsers.clear(),
+        db.customers.clear(),
         db.cashMovements.clear(),
         db.inventoryCounts.clear(),
         db.inventoryLines.clear(),
@@ -977,7 +1027,10 @@ export async function loadDemoData() {
       await db.cashSessions.bulkAdd([...cashSessions.values()]);
       await db.internalAllowances.bulkAdd(DEFAULT_ALLOWANCES);
       await db.consumeGroups.bulkAdd(DEFAULT_CONSUME_GROUPS);
+      await db.combos.bulkAdd(DEFAULT_COMBOS);
+      await db.comboItems.bulkAdd(DEFAULT_COMBO_ITEMS);
       await db.consumeUsers.bulkAdd(DEFAULT_CONSUME_USERS);
+      await db.customers.bulkAdd(DEFAULT_CUSTOMERS);
       await db.consumptions.bulkAdd(consumptions);
       if (cashMovements.length) await db.cashMovements.bulkAdd(cashMovements);
       await db.settings.put({ id: CASH_REOPEN_SETTING, value: CASH_REOPEN_CODE });

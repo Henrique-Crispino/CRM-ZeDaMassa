@@ -29,6 +29,7 @@ export function backTarget(pathname: string, panelType?: string): BackTarget | n
     (panelType === "factory" &&
       (pathname === "/devolver" ||
         pathname === "/produtos" ||
+        pathname === "/clientes" ||
         pathname === "/pacote" ||
         pathname === "/estoque" ||
         pathname === "/inventario" ||
@@ -41,7 +42,7 @@ export function backTarget(pathname: string, panelType?: string): BackTarget | n
     return { href: "/produtos", label: "Voltar para produtos" };
   }
 
-  if (pathname === "/lojas" || pathname === "/funcionarios" || pathname === "/promocoes" || pathname === "/consumo") {
+  if (pathname === "/lojas" || pathname === "/funcionarios" || pathname === "/promocoes" || pathname === "/consumo" || pathname === "/clientes") {
     return { href: "/cadastros", label: "Voltar para organização" };
   }
 

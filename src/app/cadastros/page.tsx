@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Coffee, Store, Tag, Users } from "lucide-react";
+import { Coffee, Contact, Store, Tag, Users } from "lucide-react";
 import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
 import { PageTitle } from "@/components/ui";
@@ -22,7 +22,7 @@ const items = [
   {
     href: "/promocoes",
     title: "Promoções",
-    hint: "Libere o produto e o preço que a loja pode usar.",
+    hint: "Preço de um produto ou combo de vários, com início e fim.",
     icon: Tag,
   },
   {
@@ -31,6 +31,12 @@ const items = [
     hint: "A equipe é a mesma da ficha. Aqui liberam-se produtos e senha de consumo.",
     icon: Coffee,
   },
+  {
+    href: "/clientes",
+    title: "Clientes",
+    hint: "Nome, telefone e recado de quem encomenda festa. Sem nota e sem crédito.",
+    icon: Contact,
+  },
 ];
 
 export default function CadastrosPage() {
@@ -38,7 +44,7 @@ export default function CadastrosPage() {
     <AccessGate
       allow={["admin"]}
       title="Cadastros só a administração altera"
-      hint="Loja, equipe, promoção e consumo interno ficam neste menu."
+      hint="Loja, equipe, promoção, consumo interno e clientes leves ficam neste menu."
     >
       <AppShell>
         <PageTitle

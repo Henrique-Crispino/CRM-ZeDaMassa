@@ -5,11 +5,13 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
 import { Pager, usePager } from "@/components/pager";
-import { Button, Card, Empty, ErrorBox, Field, Input, PageTitle, SuccessBox } from "@/components/ui";
+import { Button, Card, Empty, ErrorBox, Field, Input, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
+import { isSoldAtRegister } from "@/lib/categories";
+import { ComboError, listCombos, removeCombo, saveCombo } from "@/lib/combos";
 import { getDb } from "@/lib/db";
 import { formatBRL, formatDate, formatTime } from "@/lib/money";
 import { catalogItems } from "@/lib/queries";
-import { promoStatus, promoStatusLabel } from "@/lib/types";
+import { comboStatus, promoStatus, promoStatusLabel, productIsLive } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 function toLocalInput(iso?: string) {
@@ -37,13 +39,27 @@ function defaultTo() {
   return toLocalInput(date.toISOString());
 }
 
+const emptyCombo = {
+  id: "",
+  name: "",
+  price: "",
+  enabled: true,
+  from: "",
+  to: "",
+  qtys: {} as Record<string, number>,
+};
+
 export default function PromocoesPage() {
   const ready = useReady();
   const items = useLiveQuery(() => (ready ? catalogItems(false) : []), [ready]);
+  const combos = useLiveQuery(() => (ready ? listCombos() : []), [ready]);
   const list = usePager(items ?? [], 8);
+  const combosPage = usePager(combos ?? [], 8);
+  const [tab, setTab] = useState<"produtos" | "combos">("produtos");
   const [prices, setPrices] = useState<Record<string, string>>({});
   const [froms, setFroms] = useState<Record<string, string>>({});
   const [tos, setTos] = useState<Record<string, string>>({});
+  const [comboForm, setComboForm] = useState(emptyCombo);
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
 
@@ -116,12 +132,21 @@ export default function PromocoesPage() {
       <AppShell>
         <PageTitle
           title="Promoções"
-          hint="Toda promoção tem início e fim. Depois do fim, a loja não aplica mais — mesmo que o interruptor tenha ficado ligado."
+          hint="Preço de um produto ou combo de vários. Toda promoção tem início e fim. Depois do fim, a loja não aplica mais."
         />
+        <div className="mb-6 flex flex-wrap gap-2">
+          <Button type="button" variant={tab === "produtos" ? "primary" : "ghost"} onClick={() => setTab("produtos")}>
+            Por produto
+          </Button>
+          <Button type="button" variant={tab === "combos" ? "primary" : "ghost"} onClick={() => setTab("combos")}>
+            Combos
+          </Button>
+        </div>
         <ErrorBox message={error} />
         <SuccessBox message={ok} />
 
-        {!items?.length ? (
+        {tab === "produtos" ? (
+          !items?.length ? (
           <Empty title="Cadastre produtos primeiro" hint="Sem produto, não tem promoção." />
         ) : (
           <div ref={list.listRef} className="mt-4 scroll-mt-36 space-y-3">
@@ -203,6 +228,186 @@ export default function PromocoesPage() {
               word="produtos"
             />
           </div>
+        )
+        ) : (
+          <>
+            <p className="mb-4 max-w-2xl text-base leading-relaxed text-stone-600">
+              O combo tem um preço só. Na venda a loja baixa cada produto do estoque. Se faltar um, o combo inteiro
+              para — não vende metade.
+            </p>
+            <Card className="mb-6 space-y-4">
+              <Field label="Nome do combo">
+                <Input
+                  value={comboForm.name}
+                  onChange={(event) => setComboForm((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="Ex.: 10 mini + Coca"
+                />
+              </Field>
+              <Field label="Preço do combo">
+                <Input
+                  inputMode="decimal"
+                  value={comboForm.price}
+                  onChange={(event) => setComboForm((current) => ({ ...current, price: event.target.value }))}
+                  placeholder="18,00"
+                />
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Começa">
+                  <Input
+                    type="datetime-local"
+                    value={comboForm.from || defaultFrom()}
+                    onChange={(event) => setComboForm((current) => ({ ...current, from: event.target.value }))}
+                  />
+                </Field>
+                <Field label="Termina">
+                  <Input
+                    type="datetime-local"
+                    value={comboForm.to || defaultTo()}
+                    onChange={(event) => setComboForm((current) => ({ ...current, to: event.target.value }))}
+                  />
+                </Field>
+              </div>
+              <div>
+                <p className="mb-2 font-bold">O que entra neste combo</p>
+                <p className="mb-2 text-sm text-stone-500">Pelo menos dois. A quantidade é o que sai do estoque em cada venda.</p>
+                <div className="space-y-2">
+                  {(items ?? [])
+                    .filter(
+                      (item) =>
+                        productIsLive(item.product) &&
+                        item.niche.active &&
+                        isSoldAtRegister(item.product.category),
+                    )
+                    .map((item) => (
+                      <div key={item.niche.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-stone-50 px-4 py-3">
+                        <p className="font-bold">{item.label}</p>
+                        <NumberStepper
+                          value={comboForm.qtys[item.niche.id] ?? 0}
+                          onChange={(value) =>
+                            setComboForm((current) => ({
+                              ...current,
+                              qtys: { ...current.qtys, [item.niche.id]: value },
+                            }))
+                          }
+                        />
+                      </div>
+                    ))}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant={comboForm.enabled ? "primary" : "ghost"}
+                  onClick={() => setComboForm((current) => ({ ...current, enabled: !current.enabled }))}
+                >
+                  {comboForm.enabled ? "Combo ligado" : "Combo desligado"}
+                </Button>
+                <Button
+                  onClick={async () => {
+                    setError("");
+                    setOk("");
+                    try {
+                      await saveCombo({
+                        id: comboForm.id || undefined,
+                        name: comboForm.name,
+                        price: Number(comboForm.price.replace(",", ".")),
+                        enabled: comboForm.enabled,
+                        promoFrom: fromLocalInput(comboForm.from || defaultFrom()),
+                        promoTo: fromLocalInput(comboForm.to || defaultTo()),
+                        items: Object.entries(comboForm.qtys).map(([nicheId, qty]) => ({ nicheId, qty })),
+                      });
+                      setComboForm({ ...emptyCombo, from: defaultFrom(), to: defaultTo() });
+                      setOk(comboForm.id ? "Combo atualizado." : "Combo salvo. A loja vê enquanto estiver na vigência.");
+                    } catch (err) {
+                      setError(err instanceof ComboError ? err.message : "Não deu para salvar o combo.");
+                    }
+                  }}
+                >
+                  {comboForm.id ? "Salvar combo" : "Criar combo"}
+                </Button>
+                {comboForm.id ? (
+                  <Button type="button" variant="ghost" onClick={() => setComboForm({ ...emptyCombo, from: defaultFrom(), to: defaultTo() })}>
+                    Cancelar
+                  </Button>
+                ) : null}
+              </div>
+            </Card>
+
+            {!combos?.length ? (
+              <Empty title="Nenhum combo ainda" hint="Monte um: 10 coxinha mini + 1 coca, com preço e data de validade." />
+            ) : (
+              <div ref={combosPage.listRef} className="scroll-mt-36 space-y-3">
+                {combosPage.rows.map((combo) => {
+                  const status = comboStatus(combo);
+                  return (
+                    <Card key={combo.id} className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-lg font-extrabold">{combo.name}</p>
+                        <p className="text-sm font-semibold text-stone-500">
+                          {formatBRL(combo.price)} · {combo.items.map((item) => `${item.qty}× ${item.label}`).join(" + ")}
+                        </p>
+                        <p
+                          className={
+                            status === "live"
+                              ? "font-bold text-emerald-800"
+                              : status === "ended"
+                                ? "font-bold text-red-700"
+                                : "font-semibold text-stone-500"
+                          }
+                        >
+                          {promoStatusLabel(status)}
+                          {combo.promoTo && status !== "off"
+                            ? ` · até ${formatDate(combo.promoTo)} ${formatTime(combo.promoTo)}`
+                            : ""}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="min-h-12"
+                          onClick={() => {
+                            setComboForm({
+                              id: combo.id,
+                              name: combo.name,
+                              price: String(combo.price).replace(".", ","),
+                              enabled: combo.enabled,
+                              from: toLocalInput(combo.promoFrom),
+                              to: toLocalInput(combo.promoTo),
+                              qtys: Object.fromEntries(combo.items.map((item) => [item.nicheId, item.qty])),
+                            });
+                            setOk("");
+                            setError("");
+                          }}
+                        >
+                          Editar
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="danger"
+                          className="min-h-12"
+                          onClick={async () => {
+                            await removeCombo(combo.id);
+                            if (comboForm.id === combo.id) setComboForm({ ...emptyCombo, from: defaultFrom(), to: defaultTo() });
+                            setOk("Combo removido.");
+                          }}
+                        >
+                          Remover
+                        </Button>
+                      </div>
+                    </Card>
+                  );
+                })}
+                <Pager
+                  page={combosPage.page}
+                  pages={combosPage.pages}
+                  total={combosPage.total}
+                  onPage={combosPage.setPage}
+                  word="combos"
+                />
+              </div>
+            )}
+          </>
         )}
       </AppShell>
     </AccessGate>

@@ -68,6 +68,8 @@ async function main() {
   const { reportDayPack, reportWindow } = await import("../src/lib/reports.ts");
   const { catalogItems, inventorySheet, setProductActive } = await import("../src/lib/queries.ts");
   const { saleCategories } = await import("../src/lib/categories.ts");
+  const { saveCombo } = await import("../src/lib/combos.ts");
+  const { listCustomers, saveCustomer } = await import("../src/lib/customers.ts");
   const db = getDb();
   const today = todayDate();
 
@@ -709,6 +711,88 @@ async function main() {
     "cota",
   );
 
+  const comboId = (await expectOk("Admin monta combo 10 mini + Coca", () =>
+    saveCombo({
+      name: "10 mini + Coca",
+      price: 18,
+      enabled: true,
+      promoFrom: `${today}T00:00:00.000Z`,
+      promoTo: `${addDays(today, 14)}T23:59:59.999Z`,
+      items: [
+        { nicheId: "cox-mini", qty: 10 },
+        { nicheId: "coca-350", qty: 1 },
+      ],
+    }),
+  )) as string | null;
+
+  await expectFail(
+    "Combo sem Coca na Loja 1 é recusado inteiro",
+    () =>
+      checkout({
+        locationId: "store_1",
+        channel: "caixa",
+        payment: "dinheiro",
+        combos: [{ comboId: comboId ?? "combo-ausente", qty: 1 }],
+      }),
+    "não fecha",
+  );
+
+  const comboCocaSend = (await expectOk("Mandar Coca para a Loja 1 vender o combo", () =>
+    sendToStore({ toLocationId: "store_1", items: [{ nicheId: "coca-350", qty: 5 }], sentBy: "Rita" }),
+  )) as string | null;
+  if (comboCocaSend) {
+    const comboCocaParts = await db.transferItems.where("transferId").equals(comboCocaSend).toArray();
+    await expectOk("Loja 1 recebe a Coca do combo", () =>
+      receiveTransfer({
+        transferId: comboCocaSend,
+        receivedBy: "Ana",
+        items: comboCocaParts.map((part) => ({ id: part.id, receivedQty: part.qty })),
+      }),
+    );
+  }
+
+  const coxBeforeCombo = await stockQty("store_1", "cox-mini");
+  const cocaBeforeCombo = await stockQty("store_1", "coca-350");
+  const comboSaleId = comboId
+    ? ((await expectOk("Ana vende 1 combo", () =>
+        checkout({
+          locationId: "store_1",
+          channel: "caixa",
+          payment: "dinheiro",
+          combos: [{ comboId, qty: 1 }],
+        }),
+      )) as string | null)
+    : null;
+  if (comboSaleId) {
+    const comboSale = await db.sales.get(comboSaleId);
+    const coxAfterCombo = await stockQty("store_1", "cox-mini");
+    const cocaAfterCombo = await stockQty("store_1", "coca-350");
+    record("Combo cobra o preço do pacote (18)", comboSale?.total === 18, `total=${comboSale?.total}`);
+    record(
+      "Combo baixa 10 coxinha e 1 Coca",
+      coxAfterCombo === coxBeforeCombo - 10 && cocaAfterCombo === cocaBeforeCombo - 1,
+      `cox ${coxBeforeCombo}→${coxAfterCombo} coca ${cocaBeforeCombo}→${cocaAfterCombo}`,
+    );
+  } else {
+    record("Combo cobra o preço do pacote (18)", false, "venda do combo não gravou");
+    record("Combo baixa 10 coxinha e 1 Coca", false, "venda do combo não gravou");
+  }
+
+  if (comboId) {
+    await db.combos.update(comboId, { promoTo: `${addDays(today, -1)}T23:59:59.999Z` });
+    await expectFail(
+      "Combo fora da vigência é recusado",
+      () =>
+        checkout({
+          locationId: "store_1",
+          channel: "caixa",
+          payment: "dinheiro",
+          combos: [{ comboId, qty: 1 }],
+        }),
+      "acabou",
+    );
+  }
+
   const returnId = (await expectOk("Loja devolve 2 para a fábrica", async () => {
     const qty = Math.min(2, await stockQty("store_1", "cox-mini"));
     if (qty < 2) throw new Error("loja sem saldo para devolver 2");
@@ -816,6 +900,25 @@ async function main() {
     }
     await openCashSession({ locationId: "store_1", period: "manha", employeeId: "emp-ana", openingAmount: 100 });
   }, "já foi usado");
+
+  await expectFail(
+    "Cliente sem nome é recusado",
+    () => saveCustomer({ name: "   ", note: "festa" }),
+    "nome",
+  );
+  await expectOk("Rita cadastra Dona Márcia", () =>
+    saveCustomer({
+      name: "Dona Márcia",
+      phone: "(11) 98888-1010",
+      note: "festa sábado",
+    }),
+  );
+  const found = await listCustomers("márcia");
+  record(
+    "Rita acha Dona Márcia na lista",
+    found.some((row) => row.name === "Dona Márcia" && row.note.toLowerCase().includes("festa")),
+    found.map((row) => row.name).join(","),
+  );
 
   const passed = rows.filter((row) => row.pass).length;
   const failed = rows.filter((row) => !row.pass).length;
