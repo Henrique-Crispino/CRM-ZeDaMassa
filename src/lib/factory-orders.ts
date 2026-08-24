@@ -169,64 +169,77 @@ export async function cancelFactoryOrder(orderId: string) {
 
 export async function deliverFactoryOrder(orderId: string, qtyByNiche?: Record<string, number>) {
   const db = getDb();
-  const order = await db.factoryOrders.get(orderId);
-  if (!order || !isOpenRequest(order.status)) {
-    throw new FactoryOrderError("Esse pedido já foi resolvido.");
-  }
-
-  const views = await listFactoryOrders();
-  const view = views.find((row) => row.id === orderId);
-  if (!view) throw new FactoryOrderError("Esse pedido já foi resolvido.");
-
-  const items = await db.factoryOrderItems.where("orderId").equals(orderId).toArray();
-  const payload = items
-    .map((item) => {
-      const line = view.items.find((row) => row.nicheId === item.nicheId);
-      const remaining = Math.max(0, item.qty - (item.sentQty ?? 0));
-      const available = line?.availableQty ?? 0;
-      const asked = qtyByNiche?.[item.nicheId] ?? available;
-      const qty = Math.max(0, Math.floor(asked));
-      return { item, line, remaining, available, qty };
-    })
-    .filter((row) => row.qty > 0);
-
-  if (payload.length === 0) {
-    throw new FactoryOrderError("Informe o que o cliente levou.");
-  }
-
-  for (const row of payload) {
-    if (row.qty > row.available) {
-      throw new FactoryOrderError(
-        `Não tem ${row.qty} livres neste pedido de ${row.line?.label ?? "produto"}. A câmara reserva ${row.available}; o resto já está na fila da loja.`,
-      );
-    }
-    if (row.qty > row.remaining) {
-      throw new FactoryOrderError("Não dá para levar mais do que o pedido.");
-    }
-  }
-
-  try {
-    await assertLiveNiches(payload.map((row) => row.item.nicheId));
-  } catch (err) {
-    throw err instanceof StockError ? new FactoryOrderError(err.message) : err;
-  }
-
-  const catalog = await catalogItems(false);
-  for (const row of payload) {
-    const found = catalog.find((item) => item.niche.id === row.item.nicheId);
-    if (found && !isSoldAtRegister(found.product.category)) {
-      throw new FactoryOrderError(`${found.product.name} não sai da câmara para cliente. Só salgado e bebida.`);
-    }
-  }
-
-  const at = new Date().toISOString();
-  const customer = await getCustomer(order.customerId);
 
   try {
     await db.transaction(
       "rw",
-      [db.stock, db.lots, db.movements, db.factoryOrders, db.factoryOrderItems, db.notifications, db.niches, db.products],
+      [
+        db.stock,
+        db.lots,
+        db.movements,
+        db.factoryOrders,
+        db.factoryOrderItems,
+        db.notifications,
+        db.niches,
+        db.products,
+        db.requests,
+        db.requestItems,
+        db.customers,
+      ],
       async () => {
+        const order = await db.factoryOrders.get(orderId);
+        if (!order || !isOpenRequest(order.status)) {
+          throw new FactoryOrderError("Esse pedido já foi resolvido.");
+        }
+
+        const views = await listFactoryOrders();
+        const view = views.find((row) => row.id === orderId);
+        if (!view) throw new FactoryOrderError("Esse pedido já foi resolvido.");
+
+        const items = await db.factoryOrderItems.where("orderId").equals(orderId).toArray();
+        const payload = items
+          .map((item) => {
+            const line = view.items.find((row) => row.nicheId === item.nicheId);
+            const remaining = Math.max(0, item.qty - (item.sentQty ?? 0));
+            const available = line?.availableQty ?? 0;
+            const asked = qtyByNiche?.[item.nicheId] ?? available;
+            const qty = Math.max(0, Math.floor(asked));
+            return { item, line, remaining, available, qty };
+          })
+          .filter((row) => row.qty > 0);
+
+        if (payload.length === 0) {
+          throw new FactoryOrderError("Informe o que o cliente levou.");
+        }
+
+        for (const row of payload) {
+          if (row.qty > row.available) {
+            throw new FactoryOrderError(
+              `Não tem ${row.qty} livres neste pedido de ${row.line?.label ?? "produto"}. A câmara reserva ${row.available}; o resto já está na fila da loja.`,
+            );
+          }
+          if (row.qty > row.remaining) {
+            throw new FactoryOrderError("Não dá para levar mais do que o pedido.");
+          }
+        }
+
+        try {
+          await assertLiveNiches(payload.map((row) => row.item.nicheId));
+        } catch (err) {
+          throw err instanceof StockError ? new FactoryOrderError(err.message) : err;
+        }
+
+        const catalog = await catalogItems(false);
+        for (const row of payload) {
+          const found = catalog.find((item) => item.niche.id === row.item.nicheId);
+          if (found && !isSoldAtRegister(found.product.category)) {
+            throw new FactoryOrderError(`${found.product.name} não sai da câmara para cliente. Só salgado e bebida.`);
+          }
+        }
+
+        const at = new Date().toISOString();
+        const customer = await getCustomer(order.customerId);
+
         for (const row of payload) {
           const chunks = await oldestLots("factory", row.item.nicheId, row.qty, { skipExpired: true });
           for (const chunk of chunks) {
@@ -242,8 +255,9 @@ export async function deliverFactoryOrder(orderId: string, qtyByNiche?: Record<s
               at,
             });
           }
+          const fresh = await db.factoryOrderItems.get(row.item.id);
           await db.factoryOrderItems.update(row.item.id, {
-            sentQty: (row.item.sentQty ?? 0) + row.qty,
+            sentQty: (fresh?.sentQty ?? 0) + row.qty,
           });
         }
 

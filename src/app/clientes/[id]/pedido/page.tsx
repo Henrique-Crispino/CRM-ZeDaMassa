@@ -34,7 +34,10 @@ export default function SepararPedidoPage() {
   const ready = useReady();
   const router = useRouter();
   const customerId = String(useParams().id ?? "");
-  const customer = useLiveQuery(() => (ready && customerId ? getCustomer(customerId) : undefined), [ready, customerId]);
+  const customer = useLiveQuery(
+    () => (ready && customerId ? getCustomer(customerId).then((row) => row ?? null) : undefined),
+    [ready, customerId],
+  );
   const catalog = useLiveQuery(() => (ready ? catalogItems() : []), [ready]);
   const free = useLiveQuery(() => (ready ? factoryFreeByNiche() : new Map<string, number>()), [ready]);
   const mine = useLiveQuery(
@@ -128,9 +131,11 @@ export default function SepararPedidoPage() {
       hint="A loja não monta pedido de cliente. Quem separa é a fábrica."
     >
       <AppShell>
-        {!customer && ready ? (
+        {customer === undefined ? (
+          <p className="font-extrabold text-stone-600">Carregando o cliente...</p>
+        ) : customer === null ? (
           <Empty title="Cliente não encontrado" hint="Volte à lista e escolha de novo." />
-        ) : customer && !volume ? (
+        ) : !volume ? (
           <Empty
             title={`${customer.name} é festa ou retirada`}
             hint="Só quem está marcado como compra na fábrica monta pedido da câmara."

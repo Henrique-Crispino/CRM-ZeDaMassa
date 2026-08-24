@@ -36,6 +36,7 @@ export default function FuncionariosPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!form.locationId && places[0]) {
@@ -147,9 +148,12 @@ export default function FuncionariosPage() {
           <SuccessBox message={ok} />
           <div className="flex flex-wrap gap-2">
             <Button
+              disabled={saving}
               onClick={async () => {
+                if (saving) return;
                 setError("");
                 setOk("");
+                setSaving(true);
                 try {
                   await savePerson({
                     id: editingId ?? undefined,
@@ -164,6 +168,8 @@ export default function FuncionariosPage() {
                   resetForm();
                 } catch (err) {
                   setError(err instanceof PeopleError ? err.message : "Não deu para salvar.");
+                } finally {
+                  setSaving(false);
                 }
               }}
             >

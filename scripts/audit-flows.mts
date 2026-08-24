@@ -45,8 +45,8 @@ async function main() {
   const { getDb } = await import("../src/lib/db.ts");
   const { refreshLocations, DEFAULT_STORES } = await import("../src/lib/locations.ts");
   const { DEFAULT_EMPLOYEES } = await import("../src/lib/seed.ts");
-  const { todayDate, addDays, startOfDayIso, endOfDayIso } = await import("../src/lib/money.ts");
-  const { stockQty } = await import("../src/lib/stock-core.ts");
+  const { todayDate, addDays, startOfDayIso, endOfDayIso, parseMoney, formatBRL } = await import("../src/lib/money.ts");
+  const { stockQty, changeStock } = await import("../src/lib/stock-core.ts");
   const {
     produceItems,
     receivePurchase,
@@ -65,12 +65,12 @@ async function main() {
     await import("../src/lib/cash.ts");
   const { createStoreRequest, fulfillRequest, listRequests, cancelRequest, factoryFreeByNiche } = await import("../src/lib/requests.ts");
   const { registerInternalConsume } = await import("../src/lib/consume.ts");
-  const { reportDayPack, reportWindow } = await import("../src/lib/reports.ts");
+  const { reportDayPack, reportWindow, reportClosing } = await import("../src/lib/reports.ts");
   const { catalogItems, inventorySheet, setProductActive, loadKardex } = await import("../src/lib/queries.ts");
   const { saleCategories } = await import("../src/lib/categories.ts");
   const { saveCombo } = await import("../src/lib/combos.ts");
   const { listCustomers, saveCustomer } = await import("../src/lib/customers.ts");
-  const { createFactoryOrder, listFactoryOrders, deliverFactoryOrder, lastFactoryOrder } =
+  const { createFactoryOrder, listFactoryOrders, deliverFactoryOrder, lastFactoryOrder, cancelFactoryOrder } =
     await import("../src/lib/factory-orders.ts");
   const { customerKind } = await import("../src/lib/types.ts");
   const db = getDb();
@@ -1272,6 +1272,122 @@ async function main() {
     "Pedido novo da loja envelhece se o poço acabou",
     store2Ask?.status === "sem_saldo" && store2Ask.items[0]?.availableQty === 0,
     `${store2Ask?.statusLabel ?? "sumiu"} · livres ${store2Ask?.items[0]?.availableQty}`,
+  );
+
+  record("parseMoney 1.500 é milhar", parseMoney("1.500") === 1500, String(parseMoney("1.500")));
+  record("parseMoney 1,50 é decimal", parseMoney("1,50") === 1.5, String(parseMoney("1,50")));
+  record("parseMoney 1.50 é decimal", parseMoney("1.50") === 1.5, String(parseMoney("1.50")));
+  record("parseMoney texto vira NaN", Number.isNaN(parseMoney("abc")), String(parseMoney("abc")));
+  await expectFail("changeStock recusa quantidade NaN", () => changeStock("factory", "cox-mini", "lot-x", Number.NaN), "número");
+
+  const lotWrong = "lot-wrong-niche";
+  await db.lots.add({
+    id: lotWrong,
+    nicheId: "cox-mini",
+    madeAt: addDays(today, -5),
+    expiresAt: addDays(today, -1),
+    unitCost: 0.45,
+    unitPrice: 1.5,
+  });
+  await db.stock.put({
+    id: `factory:cox-mini:${lotWrong}`,
+    locationId: "factory",
+    nicheId: "cox-mini",
+    lotId: lotWrong,
+    qty: 2,
+  });
+  await expectFail(
+    "Descarte recusa lote de outro produto",
+    () =>
+      discardExpiredLots({
+        items: [{ locationId: "factory", nicheId: "coca-350", lotId: lotWrong, qty: 1 }],
+      }),
+    "lote",
+  );
+
+  for (const row of await listRequests("open")) {
+    await cancelRequest(row.id);
+  }
+  for (const row of await listFactoryOrders("open")) {
+    await cancelFactoryOrder(row.id);
+  }
+  await produceItems({ items: [{ nicheId: "cox-mini", qty: 20 }], madeAt: today });
+  const raceReq = await createStoreRequest({
+    fromLocationId: "store_1",
+    items: [{ nicheId: "cox-mini", qty: 10 }],
+  });
+  const factoryBeforeRace = await stockQty("factory", "cox-mini");
+  const raceSend = await Promise.allSettled([
+    fulfillRequest(raceReq, { "cox-mini": 10 }, "Rita"),
+    fulfillRequest(raceReq, { "cox-mini": 10 }, "Rita"),
+  ]);
+  const sentOk = raceSend.filter((row) => row.status === "fulfilled").length;
+  const factoryAfterRace = await stockQty("factory", "cox-mini");
+  const raceItems = await db.requestItems.where("requestId").equals(raceReq).toArray();
+  record(
+    "Dois Mandar no mesmo pedido só expedem uma vez",
+    sentOk === 1 && factoryBeforeRace - factoryAfterRace === 10 && (raceItems[0]?.sentQty ?? 0) === 10,
+    `ok=${sentOk} baixou ${factoryBeforeRace - factoryAfterRace} · sentQty ${raceItems[0]?.sentQty}`,
+  );
+
+  await produceItems({ items: [{ nicheId: "cox-mini", qty: 20 }], madeAt: today });
+  const raceOrder = await createFactoryOrder({
+    customerId: padaria?.id ?? "x",
+    items: [{ nicheId: "cox-mini", qty: 10 }],
+  });
+  const factoryBeforeDeliverRace = await stockQty("factory", "cox-mini");
+  const raceDeliver = await Promise.allSettled([
+    deliverFactoryOrder(raceOrder, { "cox-mini": 10 }),
+    deliverFactoryOrder(raceOrder, { "cox-mini": 10 }),
+  ]);
+  const deliveredOk = raceDeliver.filter((row) => row.status === "fulfilled").length;
+  const factoryAfterDeliverRace = await stockQty("factory", "cox-mini");
+  const raceOrderItems = await db.factoryOrderItems.where("orderId").equals(raceOrder).toArray();
+  record(
+    "Dois Cliente levou no mesmo pedido só baixam uma vez",
+    deliveredOk === 1 &&
+      factoryBeforeDeliverRace - factoryAfterDeliverRace === 10 &&
+      (raceOrderItems[0]?.sentQty ?? 0) === 10,
+    `ok=${deliveredOk} baixou ${factoryBeforeDeliverRace - factoryAfterDeliverRace} · sentQty ${raceOrderItems[0]?.sentQty}`,
+  );
+
+  await db.sales.add({
+    id: "sale-round-test",
+    locationId: "store_1",
+    channel: "caixa",
+    payment: "pix",
+    total: 10,
+    at: `${today}T20:00:00.000Z`,
+    cashSessionId: "sess-round",
+  });
+  await db.saleItems.add({
+    id: "sale-round-item",
+    saleId: "sale-round-test",
+    nicheId: "cox-mini",
+    lotId: "lot-x",
+    qty: 3,
+    unitPrice: 3.33,
+    unitCost: 0.45,
+  });
+  const closingWindow = reportWindow("today");
+  const closing = await reportClosing(closingWindow, "store_1");
+  const liveCupons = (await db.sales.toArray()).filter(
+    (sale) =>
+      sale.locationId === "store_1" &&
+      !sale.voidedAt &&
+      sale.at >= closingWindow.from &&
+      sale.at <= closingWindow.to,
+  );
+  const fromCupom = liveCupons.reduce((sum, sale) => sum + sale.total, 0);
+  const cupomItems = (
+    await Promise.all(liveCupons.map((sale) => db.saleItems.where("saleId").equals(sale.id).toArray()))
+  ).flat();
+  const fromItems = cupomItems.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
+  const totalRow = closing.rows.find((row) => row[0] === "TOTAL");
+  record(
+    "Fechamento fatura pelo total do cupom",
+    String(totalRow?.[3]) === formatBRL(fromCupom) && Math.abs(fromCupom - fromItems) > 0.004,
+    `faturamento ${String(totalRow?.[3])} · cupom ${formatBRL(fromCupom)} · itens ${formatBRL(fromItems)}`,
   );
 
   const passed = rows.filter((row) => row.pass).length;

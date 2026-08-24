@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import { DiscardExpiredBanner } from "@/components/DiscardExpiredBanner";
-import { ConfirmDialog, FilterChips, SearchField } from "@/components/pick-flow";
+import { ConfirmDialog, FilterChips, SearchField, StickyActionBar } from "@/components/pick-flow";
 import { SessionSalesList } from "@/components/SessionSalesList";
 import {
   Button,
@@ -62,6 +62,7 @@ export default function VenderPage() {
   const [comboCart, setComboCart] = useState<Record<string, number>>({});
   const [promo, setPromo] = useState<Record<string, boolean>>({});
   const [channel, setChannel] = useState<SaleChannel>("caixa");
+  const [moreSale, setMoreSale] = useState(false);
   const [payment, setPayment] = useState<PaymentMethod>("pix");
   const [split, setSplit] = useState(false);
   const [splitAmounts, setSplitAmounts] = useState<Record<PaymentMethod, string>>({
@@ -142,7 +143,7 @@ export default function VenderPage() {
     comboCartItems.reduce((sum, item) => sum + item.cartQty * item.price, 0);
   const paymentLines = split
     ? PAYMENT_METHODS.map((item) => ({ method: item.id, amount: parseMoney(splitAmounts[item.id]) })).filter(
-        (row) => row.amount > 0,
+        (row) => Number.isFinite(row.amount) && row.amount > 0,
       )
     : total > 0
       ? [{ method: payment, amount: total }]
@@ -230,6 +231,7 @@ export default function VenderPage() {
         </Card>
       )}
 
+      <div className="pb-32 lg:pb-0">
       <div className="mb-4 space-y-3">
         <SearchField
           value={search}
@@ -423,19 +425,28 @@ export default function VenderPage() {
 
           <div>
             <p className="mb-2 font-bold">Como o cliente comprou?</p>
-            <div className="grid grid-cols-3 gap-2">
-              {channels.map((item) => (
-                <Button
-                  key={item.id}
-                  type="button"
-                  variant={channel === item.id ? "primary" : "ghost"}
-                  className="min-h-12 px-2 text-sm"
-                  onClick={() => setChannel(item.id)}
-                >
-                  {item.label}
+            {moreSale || channel !== "caixa" ? (
+              <div className="grid grid-cols-3 gap-2">
+                {channels.map((item) => (
+                  <Button
+                    key={item.id}
+                    type="button"
+                    variant={channel === item.id ? "primary" : "ghost"}
+                    className="min-h-12 px-2 text-sm"
+                    onClick={() => setChannel(item.id)}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="rounded-2xl bg-orange-50 px-4 py-3 font-extrabold text-orange-900">No caixa</p>
+                <Button type="button" variant="ghost" className="w-full min-h-11 text-sm" onClick={() => setMoreSale(true)}>
+                  Mais nesta venda
                 </Button>
-              ))}
-            </div>
+              </div>
+            )}
           </div>
 
           <div>
@@ -504,7 +515,7 @@ export default function VenderPage() {
           <ErrorBox message={error} />
           <SuccessBox message={ok} />
           <Button
-            className="w-full"
+            className="hidden w-full lg:inline-flex"
             disabled={saving || (cartItems.length === 0 && comboCartItems.length === 0) || !session || !payReady}
             onClick={() => {
               setOk("");
@@ -521,6 +532,25 @@ export default function VenderPage() {
           <SessionSalesList sessionId={session.id} canVoid={!session.closedAt} />
         </div>
       ) : null}
+      </div>
+
+      <div className="lg:hidden">
+        <StickyActionBar>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-2xl font-extrabold">{formatBRL(total)}</p>
+            <Button
+              className="min-w-44"
+              disabled={saving || (cartItems.length === 0 && comboCartItems.length === 0) || !session || !payReady}
+              onClick={() => {
+                setOk("");
+                setConfirm(true);
+              }}
+            >
+              Revisar e fechar
+            </Button>
+          </div>
+        </StickyActionBar>
+      </div>
 
       <ConfirmDialog
         open={confirm}

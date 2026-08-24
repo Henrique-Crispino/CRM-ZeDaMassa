@@ -6,13 +6,15 @@ export function formatBRL(value: number) {
 }
 
 export function parseMoney(value: string) {
-  const cleaned = value.trim().replace(/\s/g, "").replace("R$", "");
+  const cleaned = value.trim().replace(/\s/g, "").replace(/R\$/gi, "");
   if (!cleaned) return 0;
   const normalized = cleaned.includes(",")
     ? cleaned.replace(/\./g, "").replace(",", ".")
-    : cleaned;
+    : /^\d{1,3}(\.\d{3})+$/.test(cleaned)
+      ? cleaned.replace(/\./g, "")
+      : cleaned;
   const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
 export function todayDate() {

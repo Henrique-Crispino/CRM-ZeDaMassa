@@ -90,7 +90,7 @@ const adminLinks: NavItem[] = [
   { href: "/devolver", label: "Devolver", icon: Undo2 },
   { href: "/estoque", label: "Estoque", icon: Warehouse },
   { href: "/inventario", label: "Inventário", icon: ClipboardPen },
-  { href: "/kardex", label: "Kardex", icon: ScrollText },
+  { href: "/kardex", label: "Extrato", icon: ScrollText },
 ];
 
 function navClass(active: boolean) {

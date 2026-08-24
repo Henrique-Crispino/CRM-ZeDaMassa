@@ -170,7 +170,7 @@ export async function reportClosing(window: ReportWindow, scope: StoreScope): Pr
     await Promise.all(sales.map((sale) => db.saleItems.where("saleId").equals(sale.id).toArray()))
   ).flat();
 
-  const revenue = saleItems.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
+  const revenue = sales.reduce((sum, sale) => sum + sale.total, 0);
   const cost = saleItems.reduce((sum, item) => sum + item.unitCost * item.qty, 0);
   const soldQty = saleItems.reduce((sum, item) => sum + item.qty, 0);
   let leftoverQty = 0;
@@ -218,7 +218,7 @@ export async function reportClosing(window: ReportWindow, scope: StoreScope): Pr
       const storeWaste = wastes.filter((row) => row.locationId === location.id);
       const storeConsume = consumptions.filter((row) => row.locationId === location.id);
       const items = saleItems.filter((item) => storeSales.some((sale) => sale.id === item.saleId));
-      const rec = items.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
+      const rec = storeSales.reduce((sum, sale) => sum + sale.total, 0);
       const cst = items.reduce((sum, item) => sum + item.unitCost * item.qty, 0);
       const qtySold = items.reduce((sum, item) => sum + item.qty, 0);
       const leftover = storeWaste

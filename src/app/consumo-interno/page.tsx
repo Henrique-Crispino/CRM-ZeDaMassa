@@ -76,6 +76,7 @@ export default function ConsumoInternoPage() {
   );
   const factoryBlocked = Boolean(chosen && isFactoryConsumeStaff(chosen.locationId) && (factoryToday?.length ?? 0) > 0);
   const cashClosed = Boolean(placeId && session === null);
+  const cashLoading = Boolean(placeId && session === undefined);
 
   const usedByPerson = useLiveQuery(
     () =>
@@ -194,7 +195,11 @@ export default function ConsumoInternoPage() {
           hint="Funcionário da loja retira aqui. Funcionário da fábrica também pode, uma vez por dia, em qualquer loja. Só com o caixa aberto. Cota de grupo (ex.: 3 salgados locais) vale misturada."
         />
 
-        {cashClosed ? (
+        {cashLoading ? (
+          <Card className="mb-4">
+            <p className="text-lg font-bold text-stone-600">Carregando o caixa...</p>
+          </Card>
+        ) : cashClosed ? (
           <Card className="mb-4 bg-red-50 ring-red-200">
             <p className="font-extrabold text-red-800">O caixa desta loja está fechado.</p>
             <p className="mt-1 text-stone-700">Consumo interno só com o turno aberto. Senão o estoque some e o caixa não vê o dia.</p>
@@ -301,7 +306,7 @@ export default function ConsumoInternoPage() {
           <ErrorBox message={error} />
           <SuccessBox message={ok} />
           <Button
-            disabled={selected.length === 0 || !login || !password || factoryBlocked || cashClosed}
+            disabled={selected.length === 0 || !login || !password || factoryBlocked || cashClosed || cashLoading || saving}
             onClick={() => setConfirm(true)}
           >
             Confirmar consumo

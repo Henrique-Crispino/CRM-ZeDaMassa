@@ -7,7 +7,6 @@ import { Card, PageTitle } from "@/components/ui";
 import { currentCashSession, cashPeriodLabel } from "@/lib/cash";
 import { expiryAlertsFor } from "@/lib/queries";
 import { useReady } from "@/lib/use-ready";
-import { ActionGrid } from "./shared";
 
 export function StoreDashboard({
   locationId,
@@ -32,15 +31,6 @@ export function StoreDashboard({
       <PageTitle
         title={storeName}
         hint="Venda no caixa e, no fim do dia, lance o que foi frito e não vendeu. Gráfico e canal ficam na administração."
-      />
-      <ActionGrid
-        actions={[
-          { href: "/vender", label: "Vender no caixa" },
-          { href: "/caixa", label: "Abrir ou fechar o caixa" },
-          { href: "/pedir", label: "Pedir para a fábrica" },
-          { href: "/receber", label: "Conferir o que chegou" },
-          { href: "/sobras", label: "Lançar sobra do dia", className: "bg-stone-900 hover:bg-stone-800" },
-        ]}
       />
 
       {session === undefined ? (

@@ -25,8 +25,11 @@ export async function changeStock(
   const db = getDb();
   const id = stockKey(locationId, nicheId, lotId);
   const current = await db.stock.get(id);
+  if (!Number.isFinite(qty)) {
+    throw new StockError("A quantidade do movimento não é um número.");
+  }
   const next = (current?.qty ?? 0) + qty;
-  if (next < 0) {
+  if (!Number.isFinite(next) || next < 0) {
     throw new StockError("Não tem quantidade suficiente no estoque.");
   }
   if (next === 0) {

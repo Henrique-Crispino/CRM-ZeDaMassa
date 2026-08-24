@@ -171,19 +171,31 @@ export async function sendToStore(input: {
 
   await assertLiveNiches(items.map((item) => item.nicheId));
 
-  if (input.respectWell !== false) {
-    const { assertFactoryFreeQty } = await import("./requests");
-    await assertFactoryFreeQty(items);
-  }
-
   const db = getDb();
   const transferId = newId();
   const at = new Date().toISOString();
 
   await db.transaction(
     "rw",
-    [db.stock, db.lots, db.movements, db.transfers, db.transferItems],
+    [
+      db.stock,
+      db.lots,
+      db.movements,
+      db.transfers,
+      db.transferItems,
+      db.requests,
+      db.requestItems,
+      db.factoryOrders,
+      db.factoryOrderItems,
+      db.customers,
+      db.niches,
+      db.products,
+    ],
     async () => {
+      if (input.respectWell !== false) {
+        const { assertFactoryFreeQty } = await import("./requests");
+        await assertFactoryFreeQty(items);
+      }
       await db.transfers.add({
         id: transferId,
         fromLocationId: "factory",
@@ -562,6 +574,11 @@ export async function checkout(input: {
       db.cashSessions,
     ],
     async () => {
+      const live = await db.cashSessions.get(session.id);
+      if (!live || live.closedAt || live.locationId !== input.locationId) {
+        throw new StockError("Abra o caixa deste período antes de vender.");
+      }
+
       let total = 0;
 
       for (const [index, item] of items.entries()) {
@@ -685,6 +702,7 @@ export async function checkout(input: {
         total = money2(total + packTotal);
       }
 
+      total = money2(total);
       const payments = normalizeSalePayments(total, input);
       await db.sales.add({
         id: saleId,
@@ -694,7 +712,7 @@ export async function checkout(input: {
         payments: payments.length > 1 ? payments : undefined,
         total,
         at,
-        cashSessionId: session.id,
+        cashSessionId: live.id,
       });
     },
   );
@@ -883,6 +901,9 @@ export async function discardExpiredLots(input: {
       if (!lot?.expiresAt || lot.expiresAt >= today) {
         throw new StockError("Só dá para descartar lote que já venceu.");
       }
+      if (lot.nicheId !== item.nicheId) {
+        throw new StockError("Este lote não é deste produto.");
+      }
       const niche = await db.niches.get(item.nicheId);
       await changeStock(item.locationId, item.nicheId, item.lotId, -item.qty);
       await db.wastes.add({
@@ -939,62 +960,63 @@ export async function applyInventory(input: {
   const db = getDb();
   const countId = newId();
   const at = new Date().toISOString();
-  const diffs: InventoryLine[] = [];
-
-  for (const line of input.lines) {
-    const countedQty = Math.max(0, Math.floor(line.countedQty));
-    const systemQty = line.lotId
-      ? await stockOnLot(input.locationId, line.nicheId, line.lotId)
-      : await stockOnNiche(input.locationId, line.nicheId);
-    const delta = countedQty - systemQty;
-    if (delta === 0) continue;
-    if (!line.reason || !ADJUSTMENT_REASONS.some((item) => item.id === line.reason)) {
-      throw new StockError("Informe o motivo de cada diferença: quebra, furto, erro de lançamento ou contagem.");
-    }
-    diffs.push({
-      id: newId(),
-      countId,
-      nicheId: line.nicheId,
-      lotId: line.lotId,
-      systemQty,
-      countedQty,
-      reason: line.reason,
-    });
-  }
-
-  if (diffs.length === 0) {
-    throw new StockError("A contagem bateu com o sistema. Não há ajuste para lançar.");
-  }
-
-  const big = diffs.filter((line) => needsInventoryRecount(line.countedQty - line.systemQty));
-  let recountedBy: string | undefined;
-  if (big.length > 0) {
-    recountedBy = input.recountedBy?.trim() ?? "";
-    if (recountedBy.length < 2) {
-      throw new StockError("Diferença maior que 5: conte de novo e escreva quem conferiu.");
-    }
-    const seconds = input.secondCounts ?? [];
-    for (const line of big) {
-      const found = seconds.find(
-        (row) => row.nicheId === line.nicheId && (row.lotId ?? "") === (line.lotId ?? ""),
-      );
-      if (found == null || !Number.isFinite(found.countedQty)) {
-        throw new StockError("Diferença maior que 5: conte de novo antes de lançar.");
-      }
-      const secondCount = Math.max(0, Math.floor(found.countedQty));
-      if (secondCount !== line.countedQty) {
-        throw new StockError(
-          "A segunda contagem tem que bater com a primeira. Se achou outro valor, corrija o físico e conte de novo.",
-        );
-      }
-      line.secondCount = secondCount;
-    }
-  }
 
   await db.transaction(
     "rw",
     [db.stock, db.lots, db.movements, db.niches, db.products, db.inventoryCounts, db.inventoryLines],
     async () => {
+      const diffs: InventoryLine[] = [];
+
+      for (const line of input.lines) {
+        const countedQty = Math.max(0, Math.floor(line.countedQty));
+        const systemQty = line.lotId
+          ? await stockOnLot(input.locationId, line.nicheId, line.lotId)
+          : await stockOnNiche(input.locationId, line.nicheId);
+        const delta = countedQty - systemQty;
+        if (delta === 0) continue;
+        if (!line.reason || !ADJUSTMENT_REASONS.some((item) => item.id === line.reason)) {
+          throw new StockError("Informe o motivo de cada diferença: quebra, furto, erro de lançamento ou contagem.");
+        }
+        diffs.push({
+          id: newId(),
+          countId,
+          nicheId: line.nicheId,
+          lotId: line.lotId,
+          systemQty,
+          countedQty,
+          reason: line.reason,
+        });
+      }
+
+      if (diffs.length === 0) {
+        throw new StockError("A contagem bateu com o sistema. Não há ajuste para lançar.");
+      }
+
+      const big = diffs.filter((line) => needsInventoryRecount(line.countedQty - line.systemQty));
+      let recountedBy: string | undefined;
+      if (big.length > 0) {
+        recountedBy = input.recountedBy?.trim() ?? "";
+        if (recountedBy.length < 2) {
+          throw new StockError("Diferença maior que 5: conte de novo e escreva quem conferiu.");
+        }
+        const seconds = input.secondCounts ?? [];
+        for (const line of big) {
+          const found = seconds.find(
+            (row) => row.nicheId === line.nicheId && (row.lotId ?? "") === (line.lotId ?? ""),
+          );
+          if (found == null || !Number.isFinite(found.countedQty)) {
+            throw new StockError("Diferença maior que 5: conte de novo antes de lançar.");
+          }
+          const secondCount = Math.max(0, Math.floor(found.countedQty));
+          if (secondCount !== line.countedQty) {
+            throw new StockError(
+              "A segunda contagem tem que bater com a primeira. Se achou outro valor, corrija o físico e conte de novo.",
+            );
+          }
+          line.secondCount = secondCount;
+        }
+      }
+
       await db.inventoryCounts.add({
         id: countId,
         locationId: input.locationId,
@@ -1003,13 +1025,14 @@ export async function applyInventory(input: {
         recountedBy,
       });
 
+      const today = todayDate();
       for (const line of diffs) {
         const delta = line.countedQty - line.systemQty;
         let lotId = line.lotId;
         if (lotId) {
           await changeStock(input.locationId, line.nicheId, lotId, delta);
         } else if (delta < 0) {
-          const chunks = await oldestLots(input.locationId, line.nicheId, -delta);
+          const chunks = await oldestLots(input.locationId, line.nicheId, -delta, { skipExpired: true });
           for (const chunk of chunks) {
             await changeStock(input.locationId, line.nicheId, chunk.lotId, -chunk.qty);
             await db.movements.add({
@@ -1034,7 +1057,10 @@ export async function applyInventory(input: {
             .toArray();
           const lots = await db.lots.bulkGet(existing.map((row) => row.lotId));
           const newest = lots
-            .filter((lot): lot is NonNullable<typeof lot> => Boolean(lot))
+            .filter(
+              (lot): lot is NonNullable<typeof lot> =>
+                Boolean(lot) && (!lot.expiresAt || lot.expiresAt >= today),
+            )
             .sort((a, b) => b.madeAt.localeCompare(a.madeAt))[0];
           if (newest) {
             lotId = newest.id;
@@ -1044,10 +1070,10 @@ export async function applyInventory(input: {
             await db.lots.add({
               id: lotId,
               nicheId: line.nicheId,
-              madeAt: todayDate(),
+              madeAt: today,
               expiresAt:
                 product?.perishable && product.shelfLifeDays > 0
-                  ? addDays(todayDate(), product.shelfLifeDays)
+                  ? addDays(today, product.shelfLifeDays)
                   : undefined,
               unitCost: niche?.costPrice ?? 0,
               unitPrice: niche?.sellPrice ?? 0,

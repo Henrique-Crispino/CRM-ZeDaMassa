@@ -15,7 +15,10 @@ export default function EditarProdutoPage() {
   const ready = useReady();
   const params = useParams();
   const id = String(params.id);
-  const product = useLiveQuery(() => (ready ? getDb().products.get(id) : undefined), [ready, id]);
+  const product = useLiveQuery(
+    () => (ready ? getDb().products.get(id).then((row) => row ?? null) : undefined),
+    [ready, id],
+  );
   const niches = useLiveQuery(
     () => (ready ? getDb().niches.where("productId").equals(id).toArray() : []),
     [ready, id],
@@ -36,14 +39,16 @@ export default function EditarProdutoPage() {
             : "Mude o nome, os preços, a validade ou acrescente um tipo novo. Dá para fechar o produto sem apagar o histórico."
         }
       />
-      {product ? (
-        <ProductForm product={product} niches={niches ?? []} />
-      ) : (
+      {product === undefined ? (
+        <p className="font-extrabold text-stone-600">Carregando o produto...</p>
+      ) : product === null ? (
         <Empty
           title="Produto não encontrado"
           hint="Volte na lista e toque no produto de novo."
           action={<BackLink href="/produtos" label="Voltar para produtos" />}
         />
+      ) : (
+        <ProductForm product={product} niches={niches ?? []} />
       )}
     </AppShell>
     </AccessGate>

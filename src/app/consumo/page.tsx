@@ -48,6 +48,7 @@ export default function ConsumoAdminPage() {
   const [personLimits, setPersonLimits] = useState<Record<string, number>>({});
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!form.locationId && places[0]) {
@@ -135,9 +136,12 @@ export default function ConsumoAdminPage() {
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button
+                  disabled={saving}
                   onClick={async () => {
+                    if (saving) return;
                     setError("");
                     setOk("");
+                    setSaving(true);
                     try {
                       await saveConsumeUser({
                         id: editingId ?? undefined,
@@ -151,6 +155,8 @@ export default function ConsumoAdminPage() {
                       setOk(editingId ? "Funcionário atualizado." : "Funcionário habilitado para consumo interno.");
                     } catch (err) {
                       setError(err instanceof ConsumeError ? err.message : "Não deu para salvar.");
+                    } finally {
+                      setSaving(false);
                     }
                   }}
                 >
@@ -254,9 +260,12 @@ export default function ConsumoAdminPage() {
                           type="button"
                           variant={item.allowance.enabled ? "primary" : "ghost"}
                           className="min-h-12"
+                          disabled={saving}
                           onClick={async () => {
+                            if (saving) return;
                             setError("");
                             setOk("");
+                            setSaving(true);
                             try {
                               await saveAllowance({
                                 id: item.niche.id,
@@ -268,6 +277,8 @@ export default function ConsumoAdminPage() {
                               setOk(`${item.label} ${item.allowance.enabled ? "bloqueado" : "liberado"}.`);
                             } catch (err) {
                               setError(err instanceof ConsumeError ? err.message : "Não deu para salvar.");
+                            } finally {
+                              setSaving(false);
                             }
                           }}
                         >
@@ -291,9 +302,12 @@ export default function ConsumoAdminPage() {
                           type="button"
                           variant="soft"
                           className="min-h-12"
+                          disabled={saving}
                           onClick={async () => {
+                            if (saving) return;
                             setError("");
                             setOk("");
+                            setSaving(true);
                             try {
                               await saveAllowance({
                                 id: item.niche.id,
@@ -305,6 +319,8 @@ export default function ConsumoAdminPage() {
                               setOk("Limites do dia salvos.");
                             } catch (err) {
                               setError(err instanceof ConsumeError ? err.message : "Não deu para salvar.");
+                            } finally {
+                              setSaving(false);
                             }
                           }}
                         >
@@ -413,9 +429,12 @@ export default function ConsumoAdminPage() {
                   {groupForm.enabled ? "Cota ligada" : "Cota desligada"}
                 </Button>
                 <Button
+                  disabled={saving}
                   onClick={async () => {
+                    if (saving) return;
                     setError("");
                     setOk("");
+                    setSaving(true);
                     try {
                       await saveConsumeGroup({
                         id: groupForm.id || undefined,
@@ -428,6 +447,8 @@ export default function ConsumoAdminPage() {
                       setOk(groupForm.id ? "Cota de grupo atualizada." : "Cota de grupo salva.");
                     } catch (err) {
                       setError(err instanceof ConsumeError ? err.message : "Não deu para salvar a cota.");
+                    } finally {
+                      setSaving(false);
                     }
                   }}
                 >

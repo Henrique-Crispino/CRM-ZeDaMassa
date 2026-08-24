@@ -109,21 +109,6 @@ export async function openCashSession(input: {
     throw new CashError("Esse funcionário não abre o caixa desta loja.");
   }
 
-  const open = await currentCashSession(input.locationId);
-  if (open) {
-    throw new CashError(
-      `Já tem um caixa aberto (${cashPeriodLabel(open.period)} · ${open.employeeName}). Feche antes de abrir outro.`,
-    );
-  }
-
-  const today = todayDate();
-  const samePeriod = (await db.cashSessions.where("locationId").equals(input.locationId).toArray()).find(
-    (row) => row.period === input.period && localDay(row.openedAt) === today,
-  );
-  if (samePeriod) {
-    throw new CashError(`O período da ${cashPeriodLabel(input.period).toLowerCase()} desta loja já foi usado hoje.`);
-  }
-
   const session: CashSession = {
     id: newId(),
     locationId: input.locationId,
@@ -133,7 +118,25 @@ export async function openCashSession(input: {
     openedAt: new Date().toISOString(),
     openingAmount: money2(Math.max(0, input.openingAmount)),
   };
-  await db.cashSessions.add(session);
+
+  await db.transaction("rw", [db.cashSessions, db.employees], async () => {
+    const open = await currentCashSession(input.locationId);
+    if (open) {
+      throw new CashError(
+        `Já tem um caixa aberto (${cashPeriodLabel(open.period)} · ${open.employeeName}). Feche antes de abrir outro.`,
+      );
+    }
+
+    const today = todayDate();
+    const samePeriod = (await db.cashSessions.where("locationId").equals(input.locationId).toArray()).find(
+      (row) => row.period === input.period && localDay(row.openedAt) === today,
+    );
+    if (samePeriod) {
+      throw new CashError(`O período da ${cashPeriodLabel(input.period).toLowerCase()} desta loja já foi usado hoje.`);
+    }
+
+    await db.cashSessions.add(session);
+  });
   return session;
 }
 
@@ -145,9 +148,6 @@ export async function registerCashMovement(input: {
   destination?: CashDestination;
 }) {
   const db = getDb();
-  const session = await db.cashSessions.get(input.sessionId);
-  if (!session || session.closedAt) throw new CashError("Esse caixa já foi fechado.");
-
   const amount = money2(input.amount);
   if (amount <= 0) throw new CashError("Informe um valor maior que zero.");
 
@@ -162,22 +162,30 @@ export async function registerCashMovement(input: {
     throw new CashError("A sangria precisa ir para o cofre ou para o depósito. Não existe sangria sem destino.");
   }
 
-  const ledger = await sessionLedger(session.id);
-  if (input.type === "sangria" && amount > ledger.expectedCash + 0.001) {
-    throw new CashError("A sangria não pode ser maior que o saldo esperado em espécie na gaveta.");
-  }
-
   const row: CashMovement = {
     id: newId(),
-    sessionId: session.id,
-    locationId: session.locationId,
+    sessionId: input.sessionId,
+    locationId: "",
     type: input.type,
     amount,
     reason,
     at: new Date().toISOString(),
     destination: input.type === "sangria" ? input.destination : undefined,
   };
-  await db.cashMovements.add(row);
+
+  await db.transaction("rw", [db.cashSessions, db.cashMovements, db.sales, db.saleItems], async () => {
+    const session = await db.cashSessions.get(input.sessionId);
+    if (!session || session.closedAt) throw new CashError("Esse caixa já foi fechado.");
+
+    const ledger = await sessionLedger(session.id);
+    if (input.type === "sangria" && amount > ledger.expectedCash + 0.001) {
+      throw new CashError("A sangria não pode ser maior que o saldo esperado em espécie na gaveta.");
+    }
+
+    row.sessionId = session.id;
+    row.locationId = session.locationId;
+    await db.cashMovements.add(row);
+  });
   return row;
 }
 

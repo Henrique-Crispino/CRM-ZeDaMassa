@@ -377,8 +377,15 @@ export async function ensureAppDefaults() {
     for (const row of rows) {
       if (row.enabled && (row.personLimit == null || row.personLimit <= 0)) {
         await db.internalAllowances.update(row.id, {
-          personLimit: Math.min(1, Math.max(0, row.dailyLimit)),
+          personLimit: Math.max(0, row.dailyLimit),
         });
+      } else if (row.enabled && row.personLimit === 1 && row.dailyLimit > 1) {
+        const seed = DEFAULT_ALLOWANCES.find((item) => item.id === row.id || item.nicheId === row.nicheId);
+        if (!seed || seed.personLimit !== 1) {
+          await db.internalAllowances.update(row.id, {
+            personLimit: row.dailyLimit,
+          });
+        }
       }
     }
   }

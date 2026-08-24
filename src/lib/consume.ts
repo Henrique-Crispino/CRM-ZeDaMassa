@@ -151,7 +151,7 @@ export function personDailyCap(allowance: Pick<InternalAllowance, "dailyLimit" |
   const person =
     allowance.personLimit != null && allowance.personLimit > 0
       ? Math.floor(allowance.personLimit)
-      : Math.min(1, store);
+      : store;
   return store > 0 ? Math.min(person, store) : person;
 }
 
@@ -253,11 +253,6 @@ export async function registerInternalConsume(input: {
     throw new ConsumeError("A fábrica não tem consumo interno. Retire na loja.");
   }
 
-  const session = await currentCashSession(input.locationId);
-  if (!session) {
-    throw new ConsumeError("Abra o caixa desta loja antes do consumo interno.");
-  }
-
   const user = await authenticateConsumeUser({
     locationId: input.locationId,
     login: input.login,
@@ -288,16 +283,6 @@ export async function registerInternalConsume(input: {
   const refId = newId();
   const at = new Date().toISOString();
 
-  if (isFactoryConsumeStaff(user.locationId)) {
-    const already = await userConsumptionOnDay(user.id, dayKey);
-    if (already.length > 0) {
-      const where = consumePlaceName(already[0].locationId);
-      throw new ConsumeError(
-        `Funcionário da fábrica já retirou a consumação de hoje (${where}). Só vale 1 vez por dia, em qualquer loja.`,
-      );
-    }
-  }
-
   await db.transaction(
     "rw",
     [
@@ -310,8 +295,23 @@ export async function registerInternalConsume(input: {
       db.niches,
       db.employees,
       db.consumeUsers,
+      db.cashSessions,
     ],
     async () => {
+      const session = await currentCashSession(input.locationId);
+      if (!session) {
+        throw new ConsumeError("Abra o caixa desta loja antes do consumo interno.");
+      }
+
+      if (isFactoryConsumeStaff(user.locationId)) {
+        const already = await userConsumptionOnDay(user.id, dayKey);
+        if (already.length > 0) {
+          const where = consumePlaceName(already[0].locationId);
+          throw new ConsumeError(
+            `Funcionário da fábrica já retirou a consumação de hoje (${where}). Só vale 1 vez por dia, em qualquer loja.`,
+          );
+        }
+      }
       for (const item of items) {
         const allowance = await db.internalAllowances.get(item.nicheId);
         if (!allowance?.enabled) {

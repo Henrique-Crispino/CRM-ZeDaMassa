@@ -53,7 +53,7 @@ export default function ReceberPage() {
   const hasGap = review.some((row) => row.delta !== 0);
 
   async function save() {
-    if (!selected || !panel) return;
+    if (!selected || !panel || panel.type !== "store") return;
     setSaving(true);
     setError("");
     setOk("");
@@ -94,8 +94,8 @@ export default function ReceberPage() {
         </Card>
       ) : (
         <Card className="mb-5 bg-orange-50 ring-orange-200">
-          <p className="font-extrabold text-stone-900">Todos os envios em trânsito</p>
-          <p className="text-stone-600">Fábrica e admin veem o caminho. A loja é quem deveria conferir no dia a dia.</p>
+          <p className="font-extrabold text-stone-900">Trânsito e histórico</p>
+          <p className="text-stone-600">Fábrica e admin veem o caminho. Quem conta o que chegou é a loja, no painel dela. Daqui não entra estoque.</p>
         </Card>
       )}
 
@@ -128,16 +128,20 @@ export default function ReceberPage() {
                       ))}
                     </ul>
                   </div>
-                  <Button
-                    onClick={() => {
-                      setPicked(row.id);
-                      setDraft(Object.fromEntries(row.items.map((item) => [item.id, item.qty])));
-                      setOk("");
-                      setError("");
-                    }}
-                  >
-                    Conferir
-                  </Button>
+                  {storeLocked ? (
+                    <Button
+                      onClick={() => {
+                        setPicked(row.id);
+                        setDraft(Object.fromEntries(row.items.map((item) => [item.id, item.qty])));
+                        setOk("");
+                        setError("");
+                      }}
+                    >
+                      Conferir
+                    </Button>
+                  ) : (
+                    <p className="font-semibold text-stone-600">A loja confere no painel dela.</p>
+                  )}
                 </div>
               </Card>
             ))}
@@ -152,7 +156,7 @@ export default function ReceberPage() {
         </div>
       ) : null}
 
-      {selected ? (
+      {storeLocked && selected ? (
         <div className="mb-8">
           <Card className="mb-4">
             <p className="text-xl font-extrabold text-stone-900">{selected.storeName}</p>
@@ -234,7 +238,7 @@ export default function ReceberPage() {
       ) : null}
 
       <ConfirmDialog
-        open={confirm}
+        open={confirm && storeLocked}
         title={hasGap ? "Conferir com divergência?" : `Entrar ${selected?.sentQty ?? 0} un. no estoque?`}
         hint={
           hasGap

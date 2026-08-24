@@ -291,81 +291,101 @@ export async function fulfillRequest(
   sentBy?: string,
 ) {
   const db = getDb();
-  const request = await db.requests.get(requestId);
-  if (!request || !isOpenRequest(request.status)) {
-    throw new RequestError("Esse pedido já foi resolvido.");
-  }
-
-  const views = await listRequests();
-  const view = views.find((row) => row.id === requestId);
-  if (!view) throw new RequestError("Esse pedido já foi resolvido.");
-
-  const items = await db.requestItems.where("requestId").equals(requestId).toArray();
-  const payload = items
-    .map((item) => {
-      const line = view.items.find((row) => row.nicheId === item.nicheId);
-      const remaining = Math.max(0, item.qty - (item.sentQty ?? 0));
-      const available = line?.availableQty ?? 0;
-      const asked = qtyByNiche?.[item.nicheId] ?? available;
-      const qty = Math.max(0, Math.floor(asked));
-      return { item, line, remaining, available, qty };
-    })
-    .filter((row) => row.qty > 0);
-
-  if (payload.length === 0) {
-    throw new RequestError("Informe o que vai mandar.");
-  }
-
-  for (const row of payload) {
-    if (row.qty > row.available) {
-      throw new RequestError(
-        `Não tem ${row.qty} livres neste pedido de ${row.line?.label ?? "produto"}. A câmara reserva ${row.available}; o resto já está na fila.`,
-      );
-    }
-    if (row.qty > row.remaining) {
-      throw new RequestError("Não dá para mandar mais do que o pedido.");
-    }
-  }
-
   let transferId = "";
+
   try {
-    transferId = await sendToStore({
-      toLocationId: request.fromLocationId,
-      items: payload.map((row) => ({ nicheId: row.item.nicheId, qty: row.qty })),
-      sentBy: sentBy?.trim() || "Fábrica",
-      respectWell: false,
-    });
+    await db.transaction(
+      "rw",
+      [
+        db.stock,
+        db.lots,
+        db.movements,
+        db.transfers,
+        db.transferItems,
+        db.requests,
+        db.requestItems,
+        db.notifications,
+        db.niches,
+        db.products,
+        db.factoryOrders,
+        db.factoryOrderItems,
+        db.customers,
+      ],
+      async () => {
+        const request = await db.requests.get(requestId);
+        if (!request || !isOpenRequest(request.status)) {
+          throw new RequestError("Esse pedido já foi resolvido.");
+        }
+
+        const views = await listRequests();
+        const view = views.find((row) => row.id === requestId);
+        if (!view) throw new RequestError("Esse pedido já foi resolvido.");
+
+        const items = await db.requestItems.where("requestId").equals(requestId).toArray();
+        const payload = items
+          .map((item) => {
+            const line = view.items.find((row) => row.nicheId === item.nicheId);
+            const remaining = Math.max(0, item.qty - (item.sentQty ?? 0));
+            const available = line?.availableQty ?? 0;
+            const asked = qtyByNiche?.[item.nicheId] ?? available;
+            const qty = Math.max(0, Math.floor(asked));
+            return { item, line, remaining, available, qty };
+          })
+          .filter((row) => row.qty > 0);
+
+        if (payload.length === 0) {
+          throw new RequestError("Informe o que vai mandar.");
+        }
+
+        for (const row of payload) {
+          if (row.qty > row.available) {
+            throw new RequestError(
+              `Não tem ${row.qty} livres neste pedido de ${row.line?.label ?? "produto"}. A câmara reserva ${row.available}; o resto já está na fila.`,
+            );
+          }
+          if (row.qty > row.remaining) {
+            throw new RequestError("Não dá para mandar mais do que o pedido.");
+          }
+        }
+
+        transferId = await sendToStore({
+          toLocationId: request.fromLocationId,
+          items: payload.map((row) => ({ nicheId: row.item.nicheId, qty: row.qty })),
+          sentBy: sentBy?.trim() || "Fábrica",
+          respectWell: false,
+        });
+
+        const at = new Date().toISOString();
+        const storeName = getLocation(request.fromLocationId)?.name ?? "loja";
+
+        for (const row of payload) {
+          const fresh = await db.requestItems.get(row.item.id);
+          await db.requestItems.update(row.item.id, {
+            sentQty: (fresh?.sentQty ?? 0) + row.qty,
+          });
+        }
+
+        const updated = await db.requestItems.where("requestId").equals(requestId).toArray();
+        const leftover = updated.some((item) => (item.sentQty ?? 0) < item.qty);
+        await db.requests.update(requestId, {
+          status: leftover ? "parcial" : "sent",
+          resolvedAt: leftover ? undefined : at,
+        });
+
+        await notify({
+          type: "request_sent",
+          title: leftover ? `Pedido da ${storeName} saiu em parte` : `Pedido da ${storeName} foi enviado`,
+          body: leftover
+            ? "Mandou o que deu. O que faltou continua no pedido — não finge que saiu tudo."
+            : "Saiu da fábrica. A loja ainda precisa conferir o que chegou.",
+          refId: requestId,
+        });
+      },
+    );
   } catch (error) {
     if (error instanceof StockError) throw error;
     throw error;
   }
-
-  const at = new Date().toISOString();
-  const storeName = getLocation(request.fromLocationId)?.name ?? "loja";
-
-  await db.transaction("rw", [db.requests, db.requestItems, db.notifications], async () => {
-    for (const row of payload) {
-      await db.requestItems.update(row.item.id, {
-        sentQty: (row.item.sentQty ?? 0) + row.qty,
-      });
-    }
-
-    const updated = await db.requestItems.where("requestId").equals(requestId).toArray();
-    const leftover = updated.some((item) => (item.sentQty ?? 0) < item.qty);
-    await db.requests.update(requestId, {
-      status: leftover ? "parcial" : "sent",
-      resolvedAt: leftover ? undefined : at,
-    });
-
-    await notify({
-      type: "request_sent",
-      title: leftover ? `Pedido da ${storeName} saiu em parte` : `Pedido da ${storeName} foi enviado`,
-      body: leftover
-        ? "Mandou o que deu. O que faltou continua no pedido — não finge que saiu tudo."
-        : "Saiu da fábrica. A loja ainda precisa conferir o que chegou.",
-      refId: requestId,
-    });
-  });
 
   return transferId;
 }
