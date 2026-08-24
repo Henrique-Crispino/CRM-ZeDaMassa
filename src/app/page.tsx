@@ -9,7 +9,7 @@ import { useReady } from "@/lib/use-ready";
 
 export default function HomePage() {
   const router = useRouter();
-  useReady();
+  const ready = useReady();
   const { panels } = useLocationCatalog();
   const admin = panels.filter((panel) => panel.type === "admin");
   const factory = panels.filter((panel) => panel.type === "factory");
@@ -27,6 +27,7 @@ export default function HomePage() {
         <p className="mt-3 max-w-xl text-lg leading-relaxed text-stone-600">
           Cada botão abre um lugar. Os dados deste computador ficam neste navegador. Não é senha — é só para não misturar fábrica e loja.
         </p>
+        {!ready ? <p className="mt-4 text-lg font-bold text-stone-500">Carregando...</p> : null}
 
         <div className="mt-8 space-y-3">
           {[...admin, ...factory].map((panel) => {
@@ -34,6 +35,7 @@ export default function HomePage() {
             return (
               <Button
                 key={panel.id}
+                disabled={!ready}
                 className="h-auto min-h-20 w-full flex-col items-start justify-center px-6 py-5 text-left"
                 variant={panel.type === "admin" ? "secondary" : "primary"}
                 onClick={() => {
@@ -58,6 +60,7 @@ export default function HomePage() {
               {stores.map((panel) => (
                 <Button
                   key={panel.id}
+                  disabled={!ready}
                   className="h-auto min-h-20 w-full flex-col items-start justify-center px-6 py-5 text-left"
                   variant="ghost"
                   onClick={() => {
