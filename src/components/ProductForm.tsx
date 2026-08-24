@@ -169,9 +169,9 @@ export function ProductForm({
         <div>
           <p className="mb-2 text-base font-bold text-stone-800">O que é?</p>
           <p className="mb-3 text-sm font-semibold text-stone-500">
-            Salgado é produção. O resto entra em Compras. Insumo (farinha, óleo) e pacote (copo, marmita)
-            não aparecem no caixa da loja. Pacote fecha por pacote em Abrir pacote. Bebida pode ter
-            validade — ligue o vencimento se o rótulo tiver data.
+            Salgado é produção. O resto entra em Compras. No caixa da loja só entram salgado e bebida.
+            Insumo, limpeza e pacote (copo, marmita) não aparecem no Vender. Pacote fecha por pacote em
+            Abrir pacote. Bebida pode ter validade — ligue o vencimento se o rótulo tiver data.
           </p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {CATEGORIES.map((item) => (

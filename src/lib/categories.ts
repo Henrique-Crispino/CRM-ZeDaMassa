@@ -18,8 +18,12 @@ export function isClosedPackage(category: Category) {
   return category === "embalagem" || category === "descartavel";
 }
 
+export function isCleaning(category: Category) {
+  return category === "limpeza";
+}
+
 export function isSoldAtRegister(category: Category) {
-  return !isInsumo(category) && !isClosedPackage(category);
+  return category === "salgado" || category === "bebida";
 }
 
 export function notForSaleMessage(name: string, category: Category) {
@@ -29,11 +33,18 @@ export function notForSaleMessage(name: string, category: Category) {
   if (isInsumo(category)) {
     return `${name} é insumo da fábrica. Não vende no caixa.`;
   }
+  if (isCleaning(category)) {
+    return `${name} é de uso da loja. Não vende no caixa.`;
+  }
   return `${name} não vende no caixa.`;
 }
 
 export function saleCategories() {
   return CATEGORIES.filter((item) => isSoldAtRegister(item.id));
+}
+
+export function saleKindOptions(): { id: "todos" | Category; label: string }[] {
+  return [{ id: "todos", label: "Tudo" }, ...saleCategories()];
 }
 
 export function categoryLabel(id: string) {

@@ -1,5 +1,5 @@
 import { currentCashSession } from "./cash";
-import { isClosedPackage, isSoldAtRegister } from "./categories";
+import { isCleaning, isClosedPackage, isSoldAtRegister } from "./categories";
 import { getDb } from "./db";
 import { catalogItems } from "./queries";
 import { FACTORY_LOCATION, getLocation, isStore, storeLocations } from "./locations";
@@ -278,7 +278,9 @@ export async function registerInternalConsume(input: {
       throw new ConsumeError(
         isClosedPackage(product.category)
           ? `${product.name} é pacote. Abra na tela Abrir pacote, não no consumo interno.`
-          : `${product.name} é insumo da fábrica. Não entra no consumo interno.`,
+          : isCleaning(product.category)
+            ? `${product.name} é de uso da loja. Não entra no consumo interno.`
+            : `${product.name} é insumo da fábrica. Não entra no consumo interno.`,
       );
     }
   }

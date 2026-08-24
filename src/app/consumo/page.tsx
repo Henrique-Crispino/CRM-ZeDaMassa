@@ -377,7 +377,7 @@ export default function ConsumoAdminPage() {
               </Field>
               <div>
                 <p className="mb-2 font-bold">Quais produtos entram nesta cota</p>
-                <p className="mb-2 text-sm text-stone-500">Marque pelo menos dois. Coca e limpeza ficam de fora se você não marcar.</p>
+                <p className="mb-2 text-sm text-stone-500">Marque pelo menos dois. Coca fica de fora se você não marcar.</p>
                 <div className="flex flex-wrap gap-2">
                   {(items ?? [])
                     .filter((item) => isSoldAtRegister(item.product.category))

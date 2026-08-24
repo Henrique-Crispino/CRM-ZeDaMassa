@@ -19,7 +19,7 @@ import {
   SuccessBox,
   cn,
 } from "@/components/ui";
-import { isSoldAtRegister, saleCategories } from "@/lib/categories";
+import { isSoldAtRegister, saleKindOptions, categoryLabel } from "@/lib/categories";
 import { currentCashSession } from "@/lib/cash";
 import { cashPeriodLabel } from "@/lib/cash";
 import { getPanel } from "@/lib/locations";
@@ -70,16 +70,20 @@ export default function VenderPage() {
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
 
+  const sellable = useMemo(() => {
+    return (stock ?? []).filter(
+      (item) => productIsLive(item.product) && item.niche.active && isSoldAtRegister(item.product.category),
+    );
+  }, [stock]);
+
   const catalog = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (stock ?? []).filter((item) => {
-      if (!productIsLive(item.product) || !item.niche.active) return false;
-      if (!isSoldAtRegister(item.product.category)) return false;
+    return sellable.filter((item) => {
       if (kind !== "todos" && item.product.category !== kind) return false;
       if (q && !item.label.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [stock, search, kind]);
+  }, [sellable, search, kind]);
 
   const cartItems = useMemo(
     () =>
@@ -157,7 +161,10 @@ export default function VenderPage() {
 
   return (
     <AppShell>
-      <PageTitle title="Vender" hint="Toque no produto, escolha a quantidade e feche a venda." />
+      <PageTitle
+        title="Vender"
+        hint="Só salgado e bebida. Embalagem, limpeza e insumo não vendem aqui. Sem estoque ou só vencido fica na lista, apagado."
+      />
 
       <DiscardExpiredBanner
         items={expiredHere}
@@ -188,12 +195,12 @@ export default function VenderPage() {
         <SearchField
           value={search}
           onChange={setSearch}
-          placeholder="Procurar produto..."
+          placeholder="Coxinha, coca..."
         />
         <FilterChips
           value={kind}
           onChange={setKind}
-          options={[{ id: "todos", label: "Tudo" }, ...saleCategories()]}
+          options={saleKindOptions()}
         />
       </div>
 
@@ -201,21 +208,54 @@ export default function VenderPage() {
         <div className="grid gap-3 sm:grid-cols-2">
           {catalog.length === 0 ? (
             <div className="sm:col-span-2">
-              <Empty
-                title="Nenhum produto para vender"
-                hint="A fábrica precisa mandar estoque para esta loja."
-              />
+              {search.trim() ? (
+                <Empty
+                  title={`Nada com “${search.trim()}”`}
+                  hint={
+                    kind === "todos"
+                      ? "Limpe a busca ou tente outro nome: coxinha, coca."
+                      : `Nada em ${categoryLabel(kind)} com essa busca. Limpe a busca ou volte em Tudo.`
+                  }
+                  action={
+                    <Button type="button" variant="ghost" onClick={() => setSearch("")}>
+                      Limpar busca
+                    </Button>
+                  }
+                />
+              ) : kind !== "todos" ? (
+                <Empty
+                  title={`Nada em ${categoryLabel(kind)}`}
+                  hint={
+                    sellable.length
+                      ? "Nesta loja não tem desse tipo para vender. Volte em Tudo para ver o que tem."
+                      : "A fábrica precisa mandar estoque para esta loja."
+                  }
+                  action={
+                    sellable.length ? (
+                      <Button type="button" variant="ghost" onClick={() => setKind("todos")}>
+                        Ver tudo
+                      </Button>
+                    ) : undefined
+                  }
+                />
+              ) : (
+                <Empty
+                  title="Nenhum produto para vender"
+                  hint="A fábrica precisa mandar estoque para esta loja. Embalagem, limpeza e insumo não aparecem aqui."
+                />
+              )}
             </div>
           ) : (
             catalog.map((item) => {
               const available = locationId ? sellableQty(item, locationId) : 0;
               const expired = locationId ? (item.expiredQty[locationId] ?? 0) : 0;
               const selected = cart[item.niche.id] ?? 0;
+              const blocked = available <= 0;
               return (
                 <button
                   key={item.niche.id}
                   type="button"
-                  disabled={available <= 0}
+                  disabled={blocked}
                   onClick={() =>
                     setCart((current) => ({
                       ...current,
@@ -223,7 +263,8 @@ export default function VenderPage() {
                     }))
                   }
                   className={cn(
-                    "rounded-3xl bg-white p-4 text-left shadow-sm ring-1 ring-stone-200 disabled:opacity-50",
+                    "rounded-3xl p-4 text-left shadow-sm ring-1 ring-stone-200",
+                    blocked ? "bg-stone-50" : "bg-white",
                     selected > 0 && "ring-2 ring-orange-500",
                   )}
                 >
@@ -239,8 +280,8 @@ export default function VenderPage() {
                   ) : promoStatus(item.niche) === "scheduled" ? (
                     <p className="text-sm font-semibold text-stone-500">Promoção ainda não começou</p>
                   ) : null}
-                  <p className="mt-1 text-sm font-semibold text-stone-500">
-                    {available > 0 ? `${available} para vender` : expired > 0 ? "Só lote vencido" : "Sem estoque"}
+                  <p className={cn("mt-1 text-sm font-semibold", blocked ? "text-stone-700" : "text-stone-500")}>
+                    {available > 0 ? `${available} para vender` : expired > 0 ? "Só lote vencido — não vende" : "Sem estoque nesta loja"}
                     {expired > 0 && available > 0 ? ` · ${expired} vencidas` : ""}
                     {selected > 0 ? ` · ${selected} no pedido` : ""}
                   </p>

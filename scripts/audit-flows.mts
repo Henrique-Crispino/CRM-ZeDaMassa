@@ -67,6 +67,7 @@ async function main() {
   const { registerInternalConsume } = await import("../src/lib/consume.ts");
   const { reportDayPack, reportWindow } = await import("../src/lib/reports.ts");
   const { catalogItems, inventorySheet, setProductActive } = await import("../src/lib/queries.ts");
+  const { saleCategories } = await import("../src/lib/categories.ts");
   const db = getDb();
   const today = todayDate();
 
@@ -287,6 +288,45 @@ async function main() {
         items: [{ nicheId: "copo-100", qty: 1 }],
       }),
     "pacote",
+  );
+
+  await db.products.add({
+    id: "prod-detergente",
+    name: "Detergente neutro",
+    category: "limpeza",
+    perishable: false,
+    shelfLifeDays: 0,
+    createdAt: `${today}T10:00:00.000Z`,
+  });
+  await db.niches.add({
+    id: "det-5l",
+    productId: "prod-detergente",
+    name: "Galão 5L",
+    sellPrice: 18,
+    costPrice: 9,
+    minStock: 2,
+    minStockFactory: 8,
+    minStockStore: 2,
+    active: true,
+    promoAllowed: false,
+    promoPrice: 0,
+  });
+  const saleChips = saleCategories().map((item) => item.id);
+  record(
+    "Chips da venda são só salgado e bebida",
+    saleChips.join(",") === "salgado,bebida",
+    saleChips.join(","),
+  );
+  await expectFail(
+    "Venda de detergente no caixa é recusada",
+    () =>
+      checkout({
+        locationId: "store_1",
+        channel: "caixa",
+        payment: "dinheiro",
+        items: [{ nicheId: "det-5l", qty: 1 }],
+      }),
+    "uso da loja",
   );
 
   const transferId = (await expectOk("Mandar 40 coxinhas para a Loja 1", () =>
