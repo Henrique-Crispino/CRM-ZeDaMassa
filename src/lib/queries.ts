@@ -2,13 +2,16 @@ import { getDb } from "./db";
 import { LOCATIONS, storeLocations, getLocation, type Location } from "./locations";
 import { daysUntil, formatDate, periodRange, todayDate, type Period } from "./money";
 import { factoryMin, isLowAt, storeMin } from "./stock-min";
-import type { MovementType, Niche, Product, Sale, SaleItem, TransferStatus, Waste } from "./types";
+import type { MovementType, Niche, Product, ReturnReason, Sale, SaleItem, TransferKind, TransferStatus, Waste } from "./types";
 import {
   adjustmentReasonLabel,
   isLiveSale,
   movementLabel,
   receivedQtyOf,
+  returnReasonLabel,
   saleVoidReasonLabel,
+  transferKind,
+  transferKindLabel,
   transferStatus,
   transferStatusLabel,
 } from "./types";
@@ -279,6 +282,7 @@ export async function loadDashboard(period: Period, scope?: string): Promise<Das
       expiredRevenue += money.revenue;
       continue;
     }
+    if (row.reason === "devolucao") continue;
     wasteQty += row.qty;
     wasteCost += money.cost;
     wasteRevenue += money.revenue;
@@ -315,7 +319,7 @@ export async function loadDashboard(period: Period, scope?: string): Promise<Das
   }
 
   for (const waste of scopedWaste) {
-    if (waste.reason === "vencido") continue;
+    if (waste.reason === "vencido" || waste.reason === "devolucao") continue;
     const row = byId.get(waste.locationId);
     if (!row) continue;
     const money = wasteMoney(waste, nicheById.get(waste.nicheId)?.niche);
@@ -692,6 +696,18 @@ export async function loadKardex(input: {
         note = `Recebeu da ${getLocation(transfer?.fromLocationId ?? "factory")?.name ?? "fábrica"}`;
         if (transfer && transferStatus(transfer) === "divergente") note += " · conferência com divergência";
       }
+    } else if (movement.type === "return") {
+      const transfer = transferById.get(movement.refId);
+      const storeName =
+        getLocation(transfer?.fromLocationId ?? "")?.name ?? transfer?.fromLocationId ?? "loja";
+      if (movement.qty < 0) {
+        who = locationName;
+        note = `${returnReasonLabel(transfer?.reason)} · voltando para a fábrica`;
+        if (transfer && transferStatus(transfer) === "em_transito") note += " · ainda em trânsito";
+      } else {
+        who = transfer?.receivedBy ?? "Fábrica";
+        note = `Voltou da ${storeName}`;
+      }
     } else if (movement.type === "sale" || movement.type === "sale_void") {
       const sale = saleById.get(movement.refId);
       const session = sale?.cashSessionId ? sessionById.get(sale.cashSessionId) : undefined;
@@ -721,7 +737,12 @@ export async function loadKardex(input: {
           localDay(row.at) === localDay(movement.at),
       );
       who = locationName;
-      note = waste?.reason === "vencido" ? "Descarte de vencido" : "Sobra do dia";
+      note =
+        waste?.reason === "vencido"
+          ? "Descarte de vencido"
+          : waste?.reason === "devolucao"
+            ? "Devolução sem condição"
+            : "Sobra do dia";
     } else if (movement.type === "ajuste") {
       const count = countById.get(movement.refId);
       const line = lines.find((row) => row.countId === movement.refId && row.nicheId === movement.nicheId);
@@ -764,24 +785,36 @@ export type TransferLineView = {
   lotHint: string;
   qty: number;
   receivedQty?: number;
+  discardedQty?: number;
 };
 
 export type TransferView = {
   id: string;
   fromLocationId: string;
   toLocationId: string;
+  fromName: string;
+  toName: string;
   storeName: string;
   at: string;
   receivedAt?: string;
   receivedBy?: string;
+  kind: TransferKind;
+  kindLabel: string;
+  reason?: ReturnReason;
+  reasonLabel?: string;
   status: TransferStatus;
   statusLabel: string;
   sentQty: number;
   arrivedQty: number;
+  discardedQty: number;
   items: TransferLineView[];
 };
 
-export async function listTransfers(toLocationId?: string): Promise<TransferView[]> {
+export async function listTransfers(filter?: {
+  toLocationId?: string;
+  fromLocationId?: string;
+  kind?: TransferKind;
+}): Promise<TransferView[]> {
   const db = getDb();
   const [transfers, items, catalog, lots] = await Promise.all([
     db.transfers.toArray(),
@@ -792,10 +825,16 @@ export async function listTransfers(toLocationId?: string): Promise<TransferView
   const lotById = new Map(lots.map((lot) => [lot.id, lot]));
 
   return transfers
-    .filter((row) => !toLocationId || row.toLocationId === toLocationId)
+    .filter((row) => {
+      if (filter?.toLocationId && row.toLocationId !== filter.toLocationId) return false;
+      if (filter?.fromLocationId && row.fromLocationId !== filter.fromLocationId) return false;
+      if (filter?.kind && transferKind(row) !== filter.kind) return false;
+      return true;
+    })
     .sort((a, b) => b.at.localeCompare(a.at))
     .map((row) => {
       const status = transferStatus(row);
+      const kind = transferKind(row);
       const lines = items
         .filter((item) => item.transferId === row.id)
         .map((item) => {
@@ -813,20 +852,30 @@ export async function listTransfers(toLocationId?: string): Promise<TransferView
                 : "Sem lote",
             qty: item.qty,
             receivedQty: receivedQtyOf(item, status),
+            discardedQty: item.discardedQty,
           };
         });
+      const fromName = getLocation(row.fromLocationId)?.name ?? row.fromLocationId;
+      const toName = getLocation(row.toLocationId)?.name ?? row.toLocationId;
       return {
         id: row.id,
         fromLocationId: row.fromLocationId,
         toLocationId: row.toLocationId,
-        storeName: getLocation(row.toLocationId)?.name ?? row.toLocationId,
+        fromName,
+        toName,
+        storeName: kind === "devolucao" ? fromName : toName,
         at: row.at,
         receivedAt: row.receivedAt,
         receivedBy: row.receivedBy,
+        kind,
+        kindLabel: transferKindLabel(kind),
+        reason: row.reason,
+        reasonLabel: row.reason ? returnReasonLabel(row.reason) : undefined,
         status,
         statusLabel: transferStatusLabel(status),
         sentQty: lines.reduce((sum, line) => sum + line.qty, 0),
         arrivedQty: lines.reduce((sum, line) => sum + (line.receivedQty ?? 0), 0),
+        discardedQty: lines.reduce((sum, line) => sum + (line.discardedQty ?? 0), 0),
         items: lines,
       };
     });

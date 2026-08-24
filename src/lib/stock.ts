@@ -4,8 +4,15 @@ import { getDb } from "./db";
 import { isStore } from "./locations";
 import { addDays, newId, todayDate } from "./money";
 import { changeStock, oldestLots, StockError, stockQty } from "./stock-core";
-import type { AdjustmentReason, InventoryLine, PaymentMethod, SaleChannel, SaleVoidReason } from "./types";
-import { ADJUSTMENT_REASONS, SALE_VOID_REASONS, lotCost, transferStatus } from "./types";
+import type { AdjustmentReason, InventoryLine, PaymentMethod, ReturnReason, SaleChannel, SaleVoidReason } from "./types";
+import {
+  ADJUSTMENT_REASONS,
+  RETURN_REASONS,
+  SALE_VOID_REASONS,
+  lotCost,
+  transferKind,
+  transferStatus,
+} from "./types";
 
 export { StockError, stockQty } from "./stock-core";
 
@@ -140,6 +147,7 @@ export async function sendToStore(input: {
         toLocationId: input.toLocationId,
         at,
         status: "em_transito",
+        kind: "envio",
       });
 
       for (const item of items) {
@@ -182,6 +190,9 @@ export async function receiveTransfer(input: {
   const db = getDb();
   const transfer = await db.transfers.get(input.transferId);
   if (!transfer) throw new StockError("Envio não encontrado.");
+  if (transferKind(transfer) === "devolucao") {
+    throw new StockError("Esta é uma devolução. Confira em Devolver.");
+  }
   if (transferStatus(transfer) !== "em_transito") {
     throw new StockError("Este envio já foi conferido.");
   }
@@ -231,6 +242,176 @@ export async function receiveTransfer(input: {
 
       await db.transfers.update(transfer.id, {
         status: divergente ? "divergente" : "conferido",
+        receivedAt: at,
+        receivedBy,
+      });
+    },
+  );
+}
+
+export async function returnToFactory(input: {
+  fromLocationId: string;
+  reason: ReturnReason;
+  items: { nicheId: string; qty: number }[];
+}) {
+  if (!isStore(input.fromLocationId)) {
+    throw new StockError("A devolução sai da loja para a fábrica.");
+  }
+  if (!RETURN_REASONS.some((item) => item.id === input.reason)) {
+    throw new StockError("Escolha o motivo: lote errado, excedente ou qualidade.");
+  }
+
+  const items = input.items.filter((item) => item.qty > 0);
+  if (items.length === 0) {
+    throw new StockError("Escolha o que vai devolver.");
+  }
+
+  const db = getDb();
+  const transferId = newId();
+  const at = new Date().toISOString();
+  const skipExpired = input.reason !== "qualidade";
+
+  await db.transaction(
+    "rw",
+    [db.stock, db.lots, db.movements, db.transfers, db.transferItems],
+    async () => {
+      await db.transfers.add({
+        id: transferId,
+        fromLocationId: input.fromLocationId,
+        toLocationId: "factory",
+        at,
+        status: "em_transito",
+        kind: "devolucao",
+        reason: input.reason,
+      });
+
+      for (const item of items) {
+        const chunks = await oldestLots(input.fromLocationId, item.nicheId, item.qty, {
+          skipExpired,
+          expiredMessage:
+            "Lote vencido não volta como excedente. Descarte no estoque ou devolva por qualidade.",
+        });
+        for (const chunk of chunks) {
+          await changeStock(input.fromLocationId, item.nicheId, chunk.lotId, -chunk.qty);
+          await db.transferItems.add({
+            id: newId(),
+            transferId,
+            nicheId: item.nicheId,
+            lotId: chunk.lotId,
+            qty: chunk.qty,
+          });
+          await db.movements.add({
+            id: newId(),
+            locationId: input.fromLocationId,
+            nicheId: item.nicheId,
+            lotId: chunk.lotId,
+            qty: -chunk.qty,
+            type: "return",
+            refId: transferId,
+            at,
+          });
+        }
+      }
+    },
+  );
+
+  return transferId;
+}
+
+export async function receiveReturn(input: {
+  transferId: string;
+  receivedBy: string;
+  items: { id: string; acceptedQty: number }[];
+}) {
+  const receivedBy = input.receivedBy.trim();
+  if (!receivedBy) throw new StockError("Falta quem conferiu a devolução.");
+
+  const db = getDb();
+  const transfer = await db.transfers.get(input.transferId);
+  if (!transfer) throw new StockError("Devolução não encontrada.");
+  if (transferKind(transfer) !== "devolucao") {
+    throw new StockError("Este é um envio. Confira em Receber.");
+  }
+  if (transferStatus(transfer) !== "em_transito") {
+    throw new StockError("Esta devolução já foi conferida.");
+  }
+
+  const parts = await db.transferItems.where("transferId").equals(transfer.id).toArray();
+  if (parts.length === 0) throw new StockError("Esta devolução não tem itens.");
+
+  const qtyById = new Map(
+    input.items.map((item) => [item.id, Math.max(0, Math.floor(item.acceptedQty))]),
+  );
+  for (const part of parts) {
+    if (!qtyById.has(part.id)) {
+      throw new StockError("Confera todos os itens desta devolução.");
+    }
+    if ((qtyById.get(part.id) ?? 0) > part.qty) {
+      throw new StockError("Não dá para aceitar mais do que a loja devolveu.");
+    }
+  }
+
+  const at = new Date().toISOString();
+
+  await db.transaction(
+    "rw",
+    [db.stock, db.lots, db.movements, db.transfers, db.transferItems, db.wastes, db.niches],
+    async () => {
+      const current = await db.transfers.get(transfer.id);
+      if (!current || transferStatus(current) !== "em_transito") {
+        throw new StockError("Esta devolução já foi conferida.");
+      }
+
+      let discardedAny = false;
+      for (const part of parts) {
+        const acceptedQty = Math.min(part.qty, qtyById.get(part.id) ?? 0);
+        const discardedQty = part.qty - acceptedQty;
+        if (discardedQty > 0) discardedAny = true;
+
+        await changeStock("factory", part.nicheId, part.lotId, part.qty);
+        await db.movements.add({
+          id: newId(),
+          locationId: "factory",
+          nicheId: part.nicheId,
+          lotId: part.lotId,
+          qty: part.qty,
+          type: "return",
+          refId: transfer.id,
+          at,
+        });
+
+        if (discardedQty > 0) {
+          const niche = await db.niches.get(part.nicheId);
+          const lot = await db.lots.get(part.lotId);
+          await changeStock("factory", part.nicheId, part.lotId, -discardedQty);
+          await db.wastes.add({
+            id: newId(),
+            locationId: "factory",
+            nicheId: part.nicheId,
+            lotId: part.lotId,
+            qty: discardedQty,
+            reason: "devolucao",
+            at,
+            unitCost: lotCost(lot, niche?.costPrice ?? 0),
+            unitPrice: niche?.sellPrice ?? 0,
+          });
+          await db.movements.add({
+            id: newId(),
+            locationId: "factory",
+            nicheId: part.nicheId,
+            lotId: part.lotId,
+            qty: -discardedQty,
+            type: "waste",
+            refId: transfer.id,
+            at,
+          });
+        }
+
+        await db.transferItems.update(part.id, { receivedQty: acceptedQty, discardedQty });
+      }
+
+      await db.transfers.update(transfer.id, {
+        status: discardedAny ? "divergente" : "conferido",
         receivedAt: at,
         receivedBy,
       });

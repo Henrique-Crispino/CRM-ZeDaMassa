@@ -1,5 +1,5 @@
 export type Category = "salgado" | "bebida" | "limpeza" | "descartavel" | "embalagem";
-export type MovementType = "production" | "send" | "sale" | "sale_void" | "waste" | "internal" | "ajuste" | "purchase";
+export type MovementType = "production" | "send" | "sale" | "sale_void" | "waste" | "internal" | "ajuste" | "purchase" | "return";
 export type AdjustmentReason = "quebra" | "furto" | "erro" | "contagem";
 
 export const ADJUSTMENT_REASONS: { id: AdjustmentReason; label: string }[] = [
@@ -17,6 +17,7 @@ export const MOVEMENT_LABELS: Record<MovementType, string> = {
   production: "Produção",
   purchase: "Compra",
   send: "Envio",
+  return: "Devolução",
   sale: "Venda",
   sale_void: "Estorno",
   waste: "Perda",
@@ -121,6 +122,27 @@ export function receivedQtyOf(item: Pick<TransferItem, "qty" | "receivedQty">, s
   return status === "em_transito" ? undefined : item.qty;
 }
 
+export type TransferKind = "envio" | "devolucao";
+export type ReturnReason = "lote_errado" | "excedente" | "qualidade";
+
+export const RETURN_REASONS: { id: ReturnReason; label: string }[] = [
+  { id: "lote_errado", label: "Lote errado" },
+  { id: "excedente", label: "Excedente" },
+  { id: "qualidade", label: "Qualidade" },
+];
+
+export function transferKind(transfer?: Pick<Transfer, "kind"> | null): TransferKind {
+  return transfer?.kind ?? "envio";
+}
+
+export function transferKindLabel(kind?: TransferKind) {
+  return kind === "devolucao" ? "Devolução" : "Envio";
+}
+
+export function returnReasonLabel(reason?: ReturnReason) {
+  return RETURN_REASONS.find((item) => item.id === reason)?.label ?? "Devolução";
+}
+
 export type Transfer = {
   id: string;
   fromLocationId: string;
@@ -129,6 +151,8 @@ export type Transfer = {
   status?: TransferStatus;
   receivedAt?: string;
   receivedBy?: string;
+  kind?: TransferKind;
+  reason?: ReturnReason;
 };
 
 export type TransferItem = {
@@ -138,6 +162,7 @@ export type TransferItem = {
   lotId: string;
   qty: number;
   receivedQty?: number;
+  discardedQty?: number;
 };
 
 export type Sale = {
@@ -215,7 +240,7 @@ export type Waste = {
   nicheId: string;
   lotId: string;
   qty: number;
-  reason: "sobra_frito" | "vencido" | "outro";
+  reason: "sobra_frito" | "vencido" | "outro" | "devolucao";
   at: string;
   unitCost?: number;
   unitPrice?: number;

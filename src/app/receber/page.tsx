@@ -18,7 +18,10 @@ export default function ReceberPage() {
   const panel = panelId ? getPanel(panelId) : undefined;
   const storeLocked = panel?.type === "store";
   const scope = storeLocked ? panelId ?? undefined : undefined;
-  const transfers = useLiveQuery(() => (ready ? listTransfers(scope) : []), [ready, scope]);
+  const transfers = useLiveQuery(
+    () => (ready ? listTransfers({ toLocationId: scope, kind: "envio" }) : []),
+    [ready, scope],
+  );
 
   const [picked, setPicked] = useState("");
   const [draft, setDraft] = useState<Record<string, number>>({});

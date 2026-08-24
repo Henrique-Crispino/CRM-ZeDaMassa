@@ -31,7 +31,10 @@ export default function EnviarPage() {
   const { stores } = useLocationCatalog();
   const stock = useLiveQuery(() => (ready ? stockByLocation() : []), [ready]);
   const pending = useLiveQuery(
-    () => (ready ? listTransfers().then((rows) => rows.filter((row) => row.status === "em_transito")) : []),
+    () =>
+      ready
+        ? listTransfers({ kind: "envio" }).then((rows) => rows.filter((row) => row.status === "em_transito"))
+        : [],
     [ready],
   );
   const [storeId, setStoreId] = useState("");

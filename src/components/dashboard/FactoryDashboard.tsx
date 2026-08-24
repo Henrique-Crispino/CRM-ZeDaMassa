@@ -37,6 +37,7 @@ export function FactoryDashboard({
           { href: "/produzir", label: "Registrar o que foi feito" },
           { href: "/enviar", label: "Mandar para a loja" },
           { href: "/receber", label: "Ver o que está em trânsito" },
+          { href: "/devolver", label: "Conferir devoluções" },
           { href: "/producao", label: "Ver registro de produção" },
         ]}
       />

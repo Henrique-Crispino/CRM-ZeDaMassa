@@ -39,6 +39,7 @@ export function StoreDashboard({
           { href: "/caixa", label: "Abrir ou fechar o caixa" },
           { href: "/pedir", label: "Pedir para a fábrica" },
           { href: "/receber", label: "Conferir o que chegou" },
+          { href: "/devolver", label: "Devolver para a fábrica" },
           { href: "/sobras", label: "Lançar sobra do dia", className: "bg-stone-900 hover:bg-stone-800" },
         ]}
       />

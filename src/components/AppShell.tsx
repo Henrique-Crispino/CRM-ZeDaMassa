@@ -23,6 +23,7 @@ import {
   ShoppingBag,
   ScrollText,
   PackageCheck,
+  Undo2,
 } from "lucide-react";
 import { useLocationCatalog } from "@/lib/locations";
 import { clearLocationId, getLocationId } from "@/lib/session";
@@ -38,6 +39,7 @@ const factoryLinks = [
   { href: "/compras", label: "Compras", icon: ShoppingBag },
   { href: "/enviar", label: "Mandar p/ loja", icon: Truck },
   { href: "/receber", label: "Receber", icon: PackageCheck },
+  { href: "/devolver", label: "Devolver", icon: Undo2 },
   { href: "/produtos", label: "Produtos", icon: Package },
   { href: "/estoque", label: "Estoque", icon: Warehouse },
   { href: "/inventario", label: "Inventário", icon: ClipboardPen },
@@ -50,6 +52,7 @@ const storeLinks = [
   { href: "/vender", label: "Vender", icon: ShoppingCart },
   { href: "/pedir", label: "Pedir mais", icon: ClipboardList },
   { href: "/receber", label: "Receber", icon: PackageCheck },
+  { href: "/devolver", label: "Devolver", icon: Undo2 },
   { href: "/sobras", label: "Sobra do dia", icon: Trash2 },
   { href: "/consumo-interno", label: "Consumo interno", icon: Coffee },
   { href: "/estoque", label: "Estoque", icon: Warehouse },
@@ -66,6 +69,7 @@ const adminLinks = [
   { href: "/producao", label: "Produção", icon: ClipboardCheck },
   { href: "/compras", label: "Compras", icon: ShoppingBag },
   { href: "/receber", label: "Receber", icon: PackageCheck },
+  { href: "/devolver", label: "Devolver", icon: Undo2 },
   { href: "/estoque", label: "Estoque", icon: Warehouse },
   { href: "/inventario", label: "Inventário", icon: ClipboardPen },
   { href: "/kardex", label: "Kardex", icon: ScrollText },

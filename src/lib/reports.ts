@@ -158,6 +158,7 @@ export async function reportClosing(window: ReportWindow, scope: StoreScope): Pr
       expiredRevenue += moneyLost.revenue;
       continue;
     }
+    if (row.reason === "devolucao") continue;
     leftoverQty += row.qty;
     leftoverCost += moneyLost.cost;
     leftoverRevenue += moneyLost.revenue;
@@ -189,7 +190,9 @@ export async function reportClosing(window: ReportWindow, scope: StoreScope): Pr
       const rec = items.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
       const cst = items.reduce((sum, item) => sum + item.unitCost * item.qty, 0);
       const qtySold = items.reduce((sum, item) => sum + item.qty, 0);
-      const leftover = storeWaste.filter((row) => row.reason !== "vencido").reduce((sum, row) => sum + row.qty, 0);
+      const leftover = storeWaste
+        .filter((row) => row.reason !== "vencido" && row.reason !== "devolucao")
+        .reduce((sum, row) => sum + row.qty, 0);
       const expired = storeWaste.filter((row) => row.reason === "vencido").reduce((sum, row) => sum + row.qty, 0);
       const wrev = storeWaste.reduce((sum, row) => {
         const lost = wasteMoney(row.qty, nicheById.get(row.nicheId)?.niche, row.unitCost, row.unitPrice);
@@ -350,7 +353,7 @@ export async function reportWaste(window: ReportWindow, scope: StoreScope): Prom
   for (const row of wastes) {
     const found = catalog.find((item) => item.niche.id === row.nicheId);
     const lost = wasteMoney(row.qty, found?.niche, row.unitCost, row.unitPrice);
-    const reason = row.reason === "vencido" ? "Vencido" : "Sobra";
+    const reason = row.reason === "vencido" ? "Vencido" : row.reason === "devolucao" ? "Devolução" : "Sobra";
     const key = `${row.locationId}:${row.nicheId}:${reason}`;
     const current = byKey.get(key) ?? {
       loja: getLocation(row.locationId)?.name ?? row.locationId,
