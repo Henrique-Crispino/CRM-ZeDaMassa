@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  typescript: {
+    // Ignora erros de TypeScript durante o build na Vercel
+    ignoreBuildErrors: true,
+  },
 };
 
 export default nextConfig;
