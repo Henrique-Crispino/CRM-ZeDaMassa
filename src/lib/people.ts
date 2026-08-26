@@ -1,5 +1,5 @@
 import { getDb } from "./db";
-import { isStore } from "./locations";
+import { ADMIN_PANEL, FACTORY_LOCATION, isStore, storeLocations } from "./locations";
 import { newId } from "./money";
 import type { ConsumeUser, Employee, InternalConsumption } from "./types";
 
@@ -17,10 +17,33 @@ export function personLocation(person: Pick<Employee, "locationId" | "storeId">)
   return person.locationId || person.storeId;
 }
 
+export function isAdminWorkplace(locationId: string) {
+  return locationId === "admin";
+}
+
+export function isPeopleDesk(locationId: string) {
+  return locationId === "factory" || isAdminWorkplace(locationId);
+}
+
+export function peopleWorkplaces() {
+  return [
+    { id: ADMIN_PANEL.id, name: ADMIN_PANEL.name },
+    { id: FACTORY_LOCATION.id, name: FACTORY_LOCATION.name },
+    ...storeLocations().map((place) => ({ id: place.id, name: place.name })),
+  ];
+}
+
 export function personCanCash(person: Employee) {
-  const place = personLocation(person);
   if (person.podeCaixa === false) return false;
-  return isStore(place);
+  const place = personLocation(person);
+  if (isStore(place)) return true;
+  return isAdminWorkplace(place) && person.podeCaixa === true;
+}
+
+export function personCoversStore(person: Employee, storeId: string) {
+  if (!person.active || !personCanCash(person) || !isStore(storeId)) return false;
+  const place = personLocation(person);
+  return place === storeId || isAdminWorkplace(place);
 }
 
 export function personCanConsume(person: Employee) {
@@ -41,6 +64,9 @@ export function asConsumeUser(person: Employee): ConsumeUser {
 }
 
 export function personRoleHint(person: Employee) {
+  const place = personLocation(person);
+  if (isAdminWorkplace(place) && !personCanCash(person)) return "dono · vê o Início";
+  if (isAdminWorkplace(place) && personCanCash(person)) return "gerente · admin e caixa da rede";
   const roles = [
     personCanCash(person) ? "caixa" : "",
     personCanConsume(person) ? "consumo" : "",
@@ -62,7 +88,7 @@ export function mergeEmployeeRows(employees: Employee[], consumeUsers: ConsumeUs
     const record: Employee = {
       ...employee,
       locationId,
-      storeId: locationId === "factory" ? "" : locationId || employee.storeId,
+      storeId: isPeopleDesk(locationId) ? "" : locationId || employee.storeId,
       podeCaixa: personCanCash({ ...employee, locationId }),
       podeConsumo: personCanConsume(employee),
     };
@@ -90,7 +116,7 @@ export function mergeEmployeeRows(employees: Employee[], consumeUsers: ConsumeUs
       id: user.id,
       name: user.name,
       locationId,
-      storeId: locationId === "factory" ? "" : locationId,
+      storeId: isPeopleDesk(locationId) ? "" : locationId,
       podeCaixa: locationId !== "factory" && user.active,
       podeConsumo: user.active,
       login: user.login,
@@ -126,13 +152,13 @@ export async function savePerson(input: {
 }) {
   const name = input.name.trim();
   if (!name) throw new PeopleError("Escreva o nome da pessoa.");
-  if (input.locationId !== "factory" && !isStore(input.locationId)) {
-    throw new PeopleError("Escolha a loja ou a fábrica desta pessoa.");
+  if (input.locationId !== "factory" && !isAdminWorkplace(input.locationId) && !isStore(input.locationId)) {
+    throw new PeopleError("Escolha a loja, a fábrica ou a administração desta pessoa.");
   }
   if (input.locationId === "factory" && input.podeCaixa) {
     throw new PeopleError("Caixa é da loja. Quem é da fábrica não abre gaveta.");
   }
-  if (!input.podeCaixa && !input.podeConsumo) {
+  if (!isAdminWorkplace(input.locationId) && !input.podeCaixa && !input.podeConsumo) {
     throw new PeopleError("Marque pelo menos um papel: caixa ou consumo interno.");
   }
 
@@ -162,7 +188,7 @@ export async function savePerson(input: {
     id: input.id ?? current?.id ?? newId(),
     name,
     locationId: input.locationId,
-    storeId: input.locationId === "factory" ? "" : input.locationId,
+    storeId: isPeopleDesk(input.locationId) ? "" : input.locationId,
     podeCaixa: input.podeCaixa,
     podeConsumo: input.podeConsumo,
     login: input.podeConsumo ? login : current?.login,

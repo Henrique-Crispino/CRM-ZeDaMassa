@@ -244,13 +244,53 @@ const PLAN: Record<string, { produce: number; store1: number; store2: number }> 
   "oleo-18l": { produce: 4, store1: 0, store2: 0 },
 };
 
-export const DEFAULT_EMPLOYEES: Employee[] = [
-  { id: "emp-ana", name: "Ana Souza", storeId: "store_1", locationId: "store_1", podeCaixa: true, podeConsumo: true, login: "ana.souza", password: "1234", active: true },
-  { id: "emp-bruno", name: "Bruno Lima", storeId: "store_1", locationId: "store_1", podeCaixa: true, podeConsumo: true, login: "bruno.lima", password: "1234", active: true },
-  { id: "emp-carla", name: "Carla Mendes", storeId: "store_2", locationId: "store_2", podeCaixa: true, podeConsumo: true, login: "carla.mendes", password: "1234", active: true },
-  { id: "emp-diego", name: "Diego Alves", storeId: "store_2", locationId: "store_2", podeCaixa: true, podeConsumo: true, login: "diego.alves", password: "1234", active: true },
-  { id: "emp-rita", name: "Rita Gomes", storeId: "", locationId: "factory", podeCaixa: false, podeConsumo: true, login: "rita.gomes", password: "1234", active: true },
-];
+export const PERSON_MATHEUS: Employee = {
+  id: "emp-matheus",
+  name: "Matheus",
+  storeId: "",
+  locationId: "admin",
+  podeCaixa: false,
+  podeConsumo: false,
+  active: true,
+};
+
+export const PERSON_YOKOTA: Employee = {
+  id: "emp-yokota",
+  name: "Yokota",
+  storeId: "",
+  locationId: "admin",
+  podeCaixa: true,
+  podeConsumo: true,
+  login: "yokota",
+  password: "1234",
+  active: true,
+};
+
+export const PERSON_TELMA: Employee = {
+  id: "emp-telma",
+  name: "Telma",
+  storeId: "store_1",
+  locationId: "store_1",
+  podeCaixa: true,
+  podeConsumo: true,
+  login: "telma",
+  password: "1234",
+  active: true,
+};
+
+export const PERSON_BRENDAO: Employee = {
+  id: "emp-brendao",
+  name: "Brendão",
+  storeId: "",
+  locationId: "factory",
+  podeCaixa: false,
+  podeConsumo: true,
+  login: "brendao",
+  password: "1234",
+  active: true,
+};
+
+export const DEFAULT_EMPLOYEES: Employee[] = [PERSON_MATHEUS, PERSON_YOKOTA, PERSON_TELMA, PERSON_BRENDAO];
 
 export const DEFAULT_CONSUME_USERS: ConsumeUser[] = DEFAULT_EMPLOYEES.filter(personCanConsume).map(asConsumeUser);
 
@@ -288,6 +328,7 @@ export const DEFAULT_COMBO_ITEMS: ComboItem[] = [
 
 const VOLUME_DEMO_SETTING = "volume-demo";
 const PARTY_DEMO_SETTING = "party-open-demo";
+export const DEMO_AS_OF_SETTING = "demo-as-of";
 
 export const DEFAULT_CUSTOMERS: Customer[] = [
   {
@@ -336,7 +377,7 @@ export const DEFAULT_CUSTOMERS: Customer[] = [
     id: "cust-cantina-escola",
     name: "Cantina da Escola",
     phone: "(11) 94444-5050",
-    note: "Sexta, recreio. Pedido aberto na fila para a Rita separar.",
+    note: "Sexta, recreio. Pedido aberto na fila para o Brendão separar.",
     address: "Rua do Colégio, 8",
     kind: "volume",
     usualWeekdays: [5],
@@ -521,7 +562,7 @@ async function ensureVolumeStory() {
   await seedVolumeOrder({
     id: "fo-vol-cantina",
     customerId: "cust-cantina-escola",
-    note: "Recreio da tarde. A Rita ainda separa — Cliente levou.",
+    note: "Recreio da tarde. O Brendão ainda separa — Cliente levou.",
     at: dayAt(0, 8, 40).toISOString(),
     items: [
       { nicheId: "cox-festa", qty: 30 },
@@ -582,9 +623,9 @@ function periodOf(hour: number) {
   return hour < 14 ? "manha" : "tarde";
 }
 
-function employeeFor(storeId: string, period: "manha" | "tarde") {
-  if (storeId === "store_1") return period === "manha" ? DEFAULT_EMPLOYEES[0] : DEFAULT_EMPLOYEES[1];
-  return period === "manha" ? DEFAULT_EMPLOYEES[2] : DEFAULT_EMPLOYEES[3];
+function employeeFor(storeId: string, _period: "manha" | "tarde") {
+  if (storeId === "store_1") return PERSON_TELMA;
+  return PERSON_YOKOTA;
 }
 
 export async function hasOperationalData() {
@@ -599,12 +640,38 @@ export async function hasOperationalData() {
   return products + sales + lots + stock + movements > 0;
 }
 
+function refreshDemoWindows() {
+  const from = startOfDayIso();
+  const to = endOfDayIso(addDays(todayDate(), 14));
+  for (const item of CATALOG) {
+    for (const row of item.niches) {
+      if (!row.promoAllowed) continue;
+      row.promoFrom = from;
+      row.promoTo = to;
+    }
+  }
+  for (const combo of DEFAULT_COMBOS) {
+    combo.promoFrom = from;
+    combo.promoTo = to;
+  }
+  const createdAt = `${todayDate()}T10:00:00.000Z`;
+  for (const customer of DEFAULT_CUSTOMERS) {
+    customer.createdAt = createdAt;
+  }
+}
+
 export async function ensureDemoData() {
-  if (await hasOperationalData()) {
+  const today = todayDate();
+  if (!(await hasOperationalData())) {
+    await loadDemoData();
+    return true;
+  }
+  const asOf = (await getDb().settings.get(DEMO_AS_OF_SETTING))?.value;
+  if (asOf === today) {
     await ensureAppDefaults();
     return false;
   }
-  await loadDemoData();
+  await loadDemoData({ force: true });
   return true;
 }
 
@@ -745,10 +812,12 @@ export async function ensureAppDefaults() {
   await ensureOpenPartyStory();
 }
 
-export async function loadDemoData() {
-  if (await hasOperationalData()) {
+export async function loadDemoData(opts?: { force?: boolean }) {
+  if (!opts?.force && (await hasOperationalData())) {
     throw new Error("Este computador já tem dados. O exemplo só entra numa base vazia.");
   }
+
+  refreshDemoWindows();
 
   const db = getDb();
   const rng: Rng = { n: 42 };
@@ -868,8 +937,8 @@ export async function loadDemoData() {
         id,
         locationId: storeId,
         period,
-        employeeId: employee?.id ?? "emp-ana",
-        employeeName: employee?.name ?? "Ana Souza",
+        employeeId: employee?.id ?? PERSON_TELMA.id,
+        employeeName: employee?.name ?? PERSON_TELMA.name,
         openedAt: dayAt(daysAgo, openHour, 0).toISOString(),
         closedAt: today ? undefined : dayAt(daysAgo, period === "manha" ? 13 : 21, 40).toISOString(),
         openingAmount: period === "manha" ? 150 : 80,
@@ -932,7 +1001,7 @@ export async function loadDemoData() {
         status: "conferido",
         receivedAt: sentAt,
         receivedBy: storeName(toLocationId),
-        sentBy: "Rita Gomes",
+        sentBy: PERSON_BRENDAO.name,
       });
 
       for (const nicheId of NICHE_IDS) {
@@ -1074,7 +1143,7 @@ export async function loadDemoData() {
         const consumeAt = dayAt(daysAgo, 11, 20).toISOString();
         const qty = Math.min(1, available(storeId, "pas-local", madeAt));
         for (const chunk of take(storeId, "pas-local", qty, madeAt)) {
-          const consumer = storeId === "store_1" ? DEFAULT_EMPLOYEES[0] : DEFAULT_EMPLOYEES[2];
+          const consumer = storeId === "store_1" ? PERSON_TELMA : PERSON_YOKOTA;
           consumptions.push({
             id: newId(),
             locationId: storeId,
@@ -1163,7 +1232,7 @@ export async function loadDemoData() {
       toLocationId: "store_2",
       at: dayAt(0, 10, 40).toISOString(),
       status: "em_transito",
-      sentBy: "Rita Gomes",
+      sentBy: PERSON_BRENDAO.name,
     });
     for (const chunk of lateChunks) {
       transferItems.push({
@@ -1313,6 +1382,7 @@ export async function loadDemoData() {
       await db.consumptions.bulkAdd(consumptions);
       if (cashMovements.length) await db.cashMovements.bulkAdd(cashMovements);
       await db.settings.put({ id: CASH_REOPEN_SETTING, value: CASH_REOPEN_CODE });
+      await db.settings.put({ id: DEMO_AS_OF_SETTING, value: todayDate() });
     },
   );
 

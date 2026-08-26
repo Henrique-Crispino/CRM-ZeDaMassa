@@ -2,7 +2,14 @@ import { getDb } from "./db";
 import { isStore } from "./locations";
 import { newId, todayDate } from "./money";
 import { catalogItems } from "./queries";
-import { deactivatePerson, PeopleError, personCanCash, personCanConsume, personLocation, savePerson } from "./people";
+import {
+  deactivatePerson,
+  PeopleError,
+  personCanCash,
+  personCanConsume,
+  personCoversStore,
+  savePerson,
+} from "./people";
 import type { CashDestination, CashMovement, CashMovementKind, CashPeriod, CashSession, Employee, PaymentMethod, Sale } from "./types";
 import { CASH_DESTINATIONS, isLiveSale, isRevenueSale, salePayments } from "./types";
 
@@ -57,7 +64,7 @@ export type CashLedger = {
 export async function listEmployees(storeId?: string) {
   const rows = await getDb().employees.toArray();
   return rows
-    .filter((item) => item.active && personCanCash(item) && (!storeId || personLocation(item) === storeId))
+    .filter((item) => item.active && personCanCash(item) && (!storeId || personCoversStore(item, storeId)))
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
@@ -96,7 +103,7 @@ export async function openCashSession(input: {
   const db = getDb();
   const employee = await db.employees.get(input.employeeId);
   if (!employee || !employee.active) throw new CashError("Escolha o funcionário responsável.");
-  if (!personCanCash(employee) || personLocation(employee) !== input.locationId) {
+  if (!personCoversStore(employee, input.locationId)) {
     throw new CashError("Esse funcionário não abre o caixa desta loja.");
   }
 

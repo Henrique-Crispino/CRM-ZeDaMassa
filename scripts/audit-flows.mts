@@ -44,7 +44,7 @@ async function expectFail(name: string, fn: () => Promise<unknown>, match?: stri
 async function main() {
   const { getDb } = await import("../src/lib/db.ts");
   const { refreshLocations, DEFAULT_STORES } = await import("../src/lib/locations.ts");
-  const { DEFAULT_EMPLOYEES } = await import("../src/lib/seed.ts");
+  const { DEFAULT_EMPLOYEES, DEMO_AS_OF_SETTING, ensureDemoData, loadDemoData } = await import("../src/lib/seed.ts");
   const { todayDate, addDays, startOfDayIso, endOfDayIso, parseMoney, formatBRL } = await import("../src/lib/money.ts");
   const { stockQty, changeStock } = await import("../src/lib/stock-core.ts");
   const {
@@ -269,12 +269,17 @@ async function main() {
   );
 
   const session = (await expectOk("Abrir caixa da Loja 1", () =>
-    openCashSession({ locationId: "store_1", period: "manha", employeeId: "emp-ana", openingAmount: 150 }),
+    openCashSession({ locationId: "store_1", period: "manha", employeeId: "emp-telma", openingAmount: 150 }),
   )) as { id: string } | null;
 
   await expectFail(
-    "Bruno não abre o caixa da Loja 2",
-    () => openCashSession({ locationId: "store_2", period: "manha", employeeId: "emp-bruno", openingAmount: 80 }),
+    "Telma não abre o caixa da Loja 2",
+    () => openCashSession({ locationId: "store_2", period: "manha", employeeId: "emp-telma", openingAmount: 80 }),
+    "não abre",
+  );
+  await expectFail(
+    "Matheus não abre o caixa da loja",
+    () => openCashSession({ locationId: "store_2", period: "manha", employeeId: "emp-matheus", openingAmount: 80 }),
     "não abre",
   );
 
@@ -642,7 +647,7 @@ async function main() {
     () =>
       registerInternalConsume({
         locationId: "factory",
-        login: "rita.gomes",
+        login: "brendao",
         password: "1234",
         items: [{ nicheId: "cox-mini", qty: 1 }],
       }),
@@ -654,7 +659,7 @@ async function main() {
     () =>
       registerInternalConsume({
         locationId: "store_2",
-        login: "carla.mendes",
+        login: "yokota",
         password: "1234",
         items: [{ nicheId: "cox-mini", qty: 1 }],
       }),
@@ -662,15 +667,15 @@ async function main() {
   );
 
   await expectOk("Abrir caixa da Loja 2", () =>
-    openCashSession({ locationId: "store_2", period: "manha", employeeId: "emp-carla", openingAmount: 80 }),
+    openCashSession({ locationId: "store_2", period: "manha", employeeId: "emp-yokota", openingAmount: 80 }),
   );
 
   await expectFail(
-    "Ana da Loja 1 não consome na Loja 2",
+    "Telma da Loja 1 não consome na Loja 2",
     () =>
       registerInternalConsume({
         locationId: "store_2",
-        login: "ana.souza",
+        login: "telma",
         password: "1234",
         items: [{ nicheId: "cox-mini", qty: 1 }],
       }),
@@ -679,27 +684,27 @@ async function main() {
 
   const storeStock = await stockQty("store_1", "cox-mini");
   if (storeStock > 0) {
-    await expectOk("Rita (fábrica) consome 1 na Loja 1", () =>
+    await expectOk("Brendão (fábrica) consome 1 na Loja 1", () =>
       registerInternalConsume({
         locationId: "store_1",
-        login: "rita.gomes",
+        login: "brendao",
         password: "1234",
         items: [{ nicheId: "cox-mini", qty: 1 }],
       }),
     );
     await expectFail(
-      "Rita não consome 2× no mesmo dia",
+      "Brendão não consome 2× no mesmo dia",
       () =>
         registerInternalConsume({
           locationId: "store_1",
-          login: "rita.gomes",
+          login: "brendao",
           password: "1234",
           items: [{ nicheId: "cox-mini", qty: 1 }],
         }),
       "1 vez",
     );
   } else {
-    record("Rita (fábrica) consome 1 na Loja 1", false, "loja sem saldo para consumo");
+    record("Brendão (fábrica) consome 1 na Loja 1", false, "loja sem saldo para consumo");
   }
 
   await db.products.add({
@@ -751,7 +756,7 @@ async function main() {
     () =>
       registerInternalConsume({
         locationId: "store_1",
-        login: "ana.souza",
+        login: "telma",
         password: "1234",
         items: [
           { nicheId: "pas-local", qty: 2 },
@@ -760,10 +765,10 @@ async function main() {
       }),
     "cota",
   );
-  await expectOk("Ana leva 2 pastéis + 1 coxinha na cota", () =>
+  await expectOk("Telma leva 2 pastéis + 1 coxinha na cota", () =>
     registerInternalConsume({
       locationId: "store_1",
-      login: "ana.souza",
+      login: "telma",
       password: "1234",
       items: [
         { nicheId: "pas-local", qty: 2 },
@@ -772,11 +777,11 @@ async function main() {
     }),
   );
   await expectFail(
-    "Quarto salgado da Ana é recusado pela cota",
+    "Quarto salgado da Telma é recusado pela cota",
     () =>
       registerInternalConsume({
         locationId: "store_1",
-        login: "ana.souza",
+        login: "telma",
         password: "1234",
         items: [{ nicheId: "pas-local", qty: 1 }],
       }),
@@ -1004,7 +1009,7 @@ async function main() {
       const ledger = await sessionLedger(open.id);
       await closeCashSession({ sessionId: open.id, closingAmount: ledger.expectedCash });
     }
-    await openCashSession({ locationId: "store_1", period: "manha", employeeId: "emp-ana", openingAmount: 100 });
+    await openCashSession({ locationId: "store_1", period: "manha", employeeId: "emp-telma", openingAmount: 100 });
   }, "já foi usado");
 
   await expectFail(
@@ -1398,7 +1403,7 @@ async function main() {
 
   const cashBeforeSignal = await currentCashSession("store_1");
   if (!cashBeforeSignal) {
-    await openCashSession({ locationId: "store_1", period: "tarde", employeeId: "emp-ana", openingAmount: 150 });
+    await openCashSession({ locationId: "store_1", period: "tarde", employeeId: "emp-telma", openingAmount: 150 });
   }
   const sessionForParty = await currentCashSession("store_1");
   const ledgerBeforeSignal = sessionForParty ? await sessionLedger(sessionForParty.id) : null;
@@ -1568,7 +1573,7 @@ async function main() {
   const storeBeforeWithdraw = await stockQty("store_1", "cox-mini");
   let liveWithdraw = await currentCashSession("store_1");
   if (!liveWithdraw) {
-    await openCashSession({ locationId: "store_1", period: "tarde", employeeId: "emp-ana", openingAmount: 150 });
+    await openCashSession({ locationId: "store_1", period: "tarde", employeeId: "emp-telma", openingAmount: 150 });
     liveWithdraw = await currentCashSession("store_1");
   }
   let ledgerBeforeWithdraw = liveWithdraw ? await sessionLedger(liveWithdraw.id) : null;
@@ -1648,6 +1653,26 @@ async function main() {
     "Fechamento fatura pelo total do cupom",
     String(totalRow?.[3]) === formatBRL(fromCupom) && Math.abs(fromCupom - fromItems) > 0.004,
     `faturamento ${String(totalRow?.[3])} · cupom ${formatBRL(fromCupom)} · itens ${formatBRL(fromItems)}`,
+  );
+
+  await loadDemoData({ force: true });
+  const demoDay = (await db.settings.get(DEMO_AS_OF_SETTING))?.value;
+  record("Exemplo grava o dia de hoje", demoDay === today, `asOf=${demoDay}`);
+  const expiredDemo = await db.stock.get("store_1:cox-mini:lot-expired-cox");
+  record("Vencido de propósito são 8, não milhares", expiredDemo?.qty === 8, `qty=${expiredDemo?.qty}`);
+  const demoExpiredLots = (await db.lots.toArray()).filter((lot) => lot.expiresAt && lot.expiresAt < today);
+  const expiredQty = (await db.stock.toArray())
+    .filter((row) => demoExpiredLots.some((lot) => lot.id === row.lotId))
+    .reduce((sum, row) => sum + row.qty, 0);
+  record("Estoque vencido do exemplo cabe na faixa", expiredQty > 0 && expiredQty < 80, `un=${expiredQty}`);
+  await db.settings.put({ id: DEMO_AS_OF_SETTING, value: addDays(today, -1) });
+  await ensureDemoData();
+  const afterRoll = (await db.settings.get(DEMO_AS_OF_SETTING))?.value;
+  const expiredAfter = await db.stock.get("store_1:cox-mini:lot-expired-cox");
+  record(
+    "Virar o dia regrava o exemplo",
+    afterRoll === today && expiredAfter?.qty === 8,
+    `asOf=${afterRoll} qty=${expiredAfter?.qty}`,
   );
 
   const passed = rows.filter((row) => row.pass).length;

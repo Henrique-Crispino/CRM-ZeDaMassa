@@ -6,7 +6,7 @@ import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
 import { Button, Card, Empty, ErrorBox, Field, Input, PageTitle, SuccessBox } from "@/components/ui";
 import { Pager, usePager } from "@/components/pager";
-import { consumeWorkplaceLabel, consumeWorkplaces } from "@/lib/consume";
+import { consumeWorkplaceLabel } from "@/lib/consume";
 import {
   deactivatePerson,
   listPeople,
@@ -15,6 +15,7 @@ import {
   personCanConsume,
   personLocation,
   personRoleHint,
+  peopleWorkplaces,
   savePerson,
 } from "@/lib/people";
 import { useReady } from "@/lib/use-ready";
@@ -30,7 +31,7 @@ const emptyForm = {
 
 export default function FuncionariosPage() {
   const ready = useReady();
-  const places = consumeWorkplaces();
+  const places = peopleWorkplaces();
   const people = useLiveQuery(() => (ready ? listPeople() : []), [ready]);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -40,7 +41,10 @@ export default function FuncionariosPage() {
 
   useEffect(() => {
     if (!form.locationId && places[0]) {
-      setForm((current) => ({ ...current, locationId: places.find((place) => place.id !== "factory")?.id ?? places[0].id }));
+      setForm((current) => ({
+        ...current,
+        locationId: places.find((place) => place.id !== "factory" && place.id !== "admin")?.id ?? places[0].id,
+      }));
     }
   }, [form.locationId, places]);
 
@@ -51,7 +55,7 @@ export default function FuncionariosPage() {
     setEditingId(null);
     setForm({
       ...emptyForm,
-      locationId: places.find((place) => place.id !== "factory")?.id ?? places[0]?.id ?? "",
+      locationId: places.find((place) => place.id !== "factory" && place.id !== "admin")?.id ?? places[0]?.id ?? "",
     });
   }
 
@@ -64,7 +68,7 @@ export default function FuncionariosPage() {
       <AppShell>
         <PageTitle
           title="Equipe"
-          hint="Uma pessoa, um cadastro. Caixa e consumo interno leem esta lista. Editar Ana aqui atualiza os dois lados."
+          hint="Uma pessoa, um cadastro. Caixa e consumo interno leem esta lista. Editar a Telma aqui atualiza os dois lados."
         />
 
         <Card className="mb-6 space-y-4">
@@ -72,13 +76,14 @@ export default function FuncionariosPage() {
             <Input
               value={form.name}
               onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-              placeholder="Ex.: Ana Souza"
+              placeholder="Ex.: Telma"
             />
           </Field>
           <div>
             <p className="mb-2 font-bold">Onde esta pessoa trabalha</p>
             <p className="mb-2 text-sm text-stone-500">
-              Loja: pode abrir o caixa e retirar consumo no ponto. Fábrica: retira 1× ao dia em qualquer loja, sem caixa.
+              Loja: caixa no ponto. Fábrica: retira 1× ao dia em qualquer loja, sem caixa. Administração: o Matheus só
+              olha o Início; o Yokota (gerente) pode abrir o caixa de qualquer loja.
             </p>
             <div className="flex flex-wrap gap-2">
               {places.map((place) => (
@@ -126,7 +131,7 @@ export default function FuncionariosPage() {
                 <Input
                   value={form.login}
                   onChange={(event) => setForm((current) => ({ ...current, login: event.target.value }))}
-                  placeholder="Ex.: ana.souza"
+                  placeholder="Ex.: telma"
                   autoComplete="off"
                 />
               </Field>

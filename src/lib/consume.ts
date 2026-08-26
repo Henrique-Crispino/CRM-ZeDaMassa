@@ -2,12 +2,13 @@ import { currentCashSession } from "./cash";
 import { isCleaning, isClosedPackage, isSoldAtRegister } from "./categories";
 import { getDb } from "./db";
 import { catalogItems } from "./queries";
-import { FACTORY_LOCATION, getLocation, isStore, storeLocations } from "./locations";
+import { ADMIN_PANEL, FACTORY_LOCATION, getLocation, isStore, storeLocations } from "./locations";
 import { newId, todayDate } from "./money";
 import { oldestLots, changeStock } from "./stock-core";
 import {
   asConsumeUser,
   deactivatePerson,
+  isAdminWorkplace,
   normalizeLogin,
   PeopleError,
   personCanCash,
@@ -32,13 +33,19 @@ export function isFactoryConsumeStaff(locationId: string) {
   return locationId === "factory";
 }
 
+export function consumesAtAnyStore(locationId: string) {
+  return locationId === "factory" || isAdminWorkplace(locationId);
+}
+
 export function consumePlaceName(locationId: string) {
   if (locationId === "factory") return FACTORY_LOCATION.name;
+  if (isAdminWorkplace(locationId)) return ADMIN_PANEL.name;
   return getLocation(locationId)?.name ?? locationId;
 }
 
 export function consumeWorkplaceLabel(locationId: string) {
   if (locationId === "factory") return "Fábrica · retira 1× ao dia em qualquer loja";
+  if (isAdminWorkplace(locationId)) return "Administração";
   return consumePlaceName(locationId);
 }
 
@@ -50,7 +57,7 @@ export async function listConsumeUsers(locationId?: string) {
       const workplace = personLocation(item);
       if (!locationId) return true;
       if (workplace === locationId) return true;
-      return isStore(locationId) && isFactoryConsumeStaff(workplace);
+      return isStore(locationId) && consumesAtAnyStore(workplace);
     })
     .map(asConsumeUser)
     .sort((a, b) => {
@@ -118,7 +125,7 @@ export async function authenticateConsumeUser(input: { locationId: string; login
   if (!person) throw new ConsumeError("Identificação não encontrada.");
   const workplace = personLocation(person);
   const samePlace = workplace === input.locationId;
-  const factoryAtStore = isFactoryConsumeStaff(workplace) && isStore(input.locationId);
+  const factoryAtStore = consumesAtAnyStore(workplace) && isStore(input.locationId);
   if (!samePlace && !factoryAtStore) {
     throw new ConsumeError("Este funcionário não está habilitado neste local.");
   }
@@ -303,12 +310,12 @@ export async function registerInternalConsume(input: {
         throw new ConsumeError("Abra o caixa desta loja antes do consumo interno.");
       }
 
-      if (isFactoryConsumeStaff(user.locationId)) {
+      if (consumesAtAnyStore(user.locationId)) {
         const already = await userConsumptionOnDay(user.id, dayKey);
         if (already.length > 0) {
           const where = consumePlaceName(already[0].locationId);
           throw new ConsumeError(
-            `Funcionário da fábrica já retirou a consumação de hoje (${where}). Só vale 1 vez por dia, em qualquer loja.`,
+            `Já retirou a consumação de hoje (${where}). Só vale 1 vez por dia, em qualquer loja.`,
           );
         }
       }

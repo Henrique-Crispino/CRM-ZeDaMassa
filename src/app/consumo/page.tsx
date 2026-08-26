@@ -90,7 +90,7 @@ export default function ConsumoAdminPage() {
                 <Input
                   value={form.name}
                   onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                  placeholder="Ex.: Ana Souza"
+                  placeholder="Ex.: Telma"
                 />
               </Field>
               <div className="grid gap-4 sm:grid-cols-2">
@@ -98,7 +98,7 @@ export default function ConsumoAdminPage() {
                   <Input
                     value={form.login}
                     onChange={(event) => setForm((current) => ({ ...current, login: event.target.value }))}
-                    placeholder="Ex.: ana.souza"
+                    placeholder="Ex.: telma"
                     autoComplete="off"
                   />
                 </Field>
