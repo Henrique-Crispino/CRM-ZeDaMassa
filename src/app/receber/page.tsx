@@ -60,7 +60,6 @@ export default function ReceberPage() {
     try {
       await receiveTransfer({
         transferId: selected.id,
-        receivedBy: panel.name,
         items: review.map((row) => ({ id: row.item.id, receivedQty: row.arrived })),
       });
       setConfirm(false);

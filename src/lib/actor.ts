@@ -35,6 +35,34 @@ export async function stampActor(ErrorClass: new (message: string) => Error, exp
   return { actorId: person.id, actorName: person.name };
 }
 
+export async function peopleNameMap() {
+  const rows = await getDb().employees.toArray();
+  return new Map(rows.map((person) => [person.id, person.name]));
+}
+
+export function fichaName(
+  names: Map<string, string>,
+  id?: string | null,
+  copy?: string | null,
+) {
+  const key = id?.trim() ?? "";
+  if (key && names.has(key)) return names.get(key)!;
+  const text = copy?.trim() ?? "";
+  return text || "—";
+}
+
+export function uniqueFichaNames(
+  names: Map<string, string>,
+  rows: { id?: string | null; copy?: string | null }[],
+) {
+  const list: string[] = [];
+  for (const row of rows) {
+    const name = fichaName(names, row.id, row.copy);
+    if (name !== "—" && !list.includes(name)) list.push(name);
+  }
+  return list.length ? list.join(" · ") : "—";
+}
+
 export async function listWitnesses(operatorId?: string | null) {
   const skip = (operatorId ?? peekActorId())?.trim() ?? "";
   const rows = await getDb().employees.toArray();

@@ -410,7 +410,6 @@ export async function fulfillRequest(
         transferId = await sendToStore({
           toLocationId: request.fromLocationId,
           items: payload.map((row) => ({ nicheId: row.item.nicheId, qty: row.qty })),
-          sentBy: actor.actorName,
           respectWell: false,
           requestId,
         });

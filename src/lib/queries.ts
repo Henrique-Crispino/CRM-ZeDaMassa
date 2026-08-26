@@ -1,3 +1,4 @@
+import { fichaName } from "./actor";
 import { getDb } from "./db";
 import { LOCATIONS, storeLocations, getLocation, type Location } from "./locations";
 import { datePresets, dateRangeIso, daysUntil, eachDate, formatBRL, formatDate, todayDate, type Period } from "./money";
@@ -763,6 +764,7 @@ export async function loadKardex(input: {
   const factoryOrderById = new Map(factoryOrders.map((row) => [row.id, row]));
   const customerById = new Map(customers.map((row) => [row.id, row]));
   const personById = new Map(people.map((row) => [row.id, row]));
+  const names = new Map(people.map((row) => [row.id, row.name]));
 
   const scoped = movements
     .filter((row) => !input.locationId || row.locationId === input.locationId)
@@ -795,14 +797,17 @@ export async function loadKardex(input: {
       const transfer = transferById.get(movement.refId);
       const dest = getLocation(transfer?.toLocationId ?? "")?.name ?? transfer?.toLocationId ?? "loja";
       if (movement.qty < 0) {
-        who = operatorName ?? transfer?.sentBy ?? "Fábrica";
+        const sent = fichaName(names, transfer?.sentById, transfer?.sentBy);
+        who = operatorName ?? (sent === "—" ? "Fábrica" : sent);
         note = `Mandou para ${dest}`;
         if (transfer && transferStatus(transfer) === "em_transito") note += " · ainda em trânsito";
       } else if (movement.locationId === "factory") {
-        who = operatorName ?? transfer?.receivedBy ?? dest;
+        const received = fichaName(names, transfer?.receivedById, transfer?.receivedBy);
+        who = operatorName ?? (received === "—" ? dest : received);
         note = `Voltou da conferência · não chegou na ${dest}`;
       } else {
-        who = operatorName ?? transfer?.receivedBy ?? locationName;
+        const received = fichaName(names, transfer?.receivedById, transfer?.receivedBy);
+        who = operatorName ?? (received === "—" ? locationName : received);
         note = `Recebeu da ${getLocation(transfer?.fromLocationId ?? "factory")?.name ?? "fábrica"}`;
         if (transfer && transferStatus(transfer) === "divergente") note += " · conferência com divergência";
       }
@@ -815,7 +820,8 @@ export async function loadKardex(input: {
         note = `${returnReasonLabel(transfer?.reason)} · voltando para a fábrica`;
         if (transfer && transferStatus(transfer) === "em_transito") note += " · ainda em trânsito";
       } else {
-        who = operatorName ?? transfer?.receivedBy ?? "Fábrica";
+        const received = fichaName(names, transfer?.receivedById, transfer?.receivedBy);
+        who = operatorName ?? (received === "—" ? "Fábrica" : received);
         note = `Voltou da ${storeName}`;
       }
     } else if (movement.type === "sale" || movement.type === "sale_void") {
@@ -862,7 +868,8 @@ export async function loadKardex(input: {
     } else if (movement.type === "ajuste") {
       const count = countById.get(movement.refId);
       const line = lines.find((row) => row.countId === movement.refId && row.nicheId === movement.nicheId);
-      who = operatorName ?? count?.countedBy ?? locationName;
+      const counted = fichaName(names, count?.actorId, count?.countedBy);
+      who = operatorName ?? (counted === "—" ? locationName : counted);
       note = adjustmentReasonLabel(line?.reason);
     } else if (movement.type === "uso") {
       who = operatorName ?? locationName;
@@ -949,13 +956,15 @@ export async function listTransfers(filter?: {
   kind?: TransferKind;
 }): Promise<TransferView[]> {
   const db = getDb();
-  const [transfers, items, catalog, lots] = await Promise.all([
+  const [transfers, items, catalog, lots, people] = await Promise.all([
     db.transfers.toArray(),
     db.transferItems.toArray(),
     catalogItems(false),
     db.lots.toArray(),
+    db.employees.toArray(),
   ]);
   const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+  const names = new Map(people.map((person) => [person.id, person.name]));
 
   return transfers
     .filter((row) => {
@@ -999,7 +1008,10 @@ export async function listTransfers(filter?: {
         storeName: kind === "devolucao" ? fromName : toName,
         at: row.at,
         receivedAt: row.receivedAt,
-        receivedBy: row.receivedBy,
+        receivedBy: (() => {
+          const name = fichaName(names, row.receivedById, row.receivedBy);
+          return name === "—" ? undefined : name;
+        })(),
         kind,
         kindLabel: transferKindLabel(kind),
         reason: row.reason,

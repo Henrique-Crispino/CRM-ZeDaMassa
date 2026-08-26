@@ -127,7 +127,6 @@ export default function EnviarPage() {
       const transferId = await sendToStore({
         toLocationId: storeId,
         items: selected.map((row) => ({ nicheId: row.item.niche.id, qty: row.qty })),
-        sentBy: panel?.name ?? "Fábrica",
       });
       setQty({});
       setStoreId("");

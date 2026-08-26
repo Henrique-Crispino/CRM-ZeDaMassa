@@ -280,7 +280,6 @@ function FactoryReturn() {
     try {
       await receiveReturn({
         transferId: selected.id,
-        receivedBy: panel.name,
         items: review.map((row) => ({ id: row.item.id, acceptedQty: row.accepted })),
       });
       setConfirm(false);

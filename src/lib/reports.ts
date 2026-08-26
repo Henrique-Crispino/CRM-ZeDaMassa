@@ -1,3 +1,4 @@
+import { fichaName, peopleNameMap, uniqueFichaNames } from "./actor";
 import { getDb } from "./db";
 import { getLocation, storeLocations } from "./locations";
 import {
@@ -518,6 +519,12 @@ export async function reportRomaneio(transferId: string): Promise<ReportTable> {
   ]);
   const lotById = new Map(lots.map((lot) => [lot.id, lot]));
   const dest = getLocation(transfer.toLocationId)?.name ?? transfer.toLocationId;
+  const names = await peopleNameMap();
+  const sent = fichaName(names, transfer.sentById, transfer.sentBy);
+  const received =
+    transfer.receivedById || transfer.receivedBy
+      ? ` · Conferido por ${fichaName(names, transfer.receivedById, transfer.receivedBy)}`
+      : "";
   let totalQty = 0;
   const rows: (string | number)[][] = [];
 
@@ -535,7 +542,7 @@ export async function reportRomaneio(transferId: string): Promise<ReportTable> {
 
   return {
     title: `Romaneio — ${dest}`,
-    subtitle: `Saiu da câmara ${formatDate(transfer.at)} às ${formatTime(transfer.at)} · Expedido por ${transfer.sentBy?.trim() || "Fábrica"} · ${transferStatusLabel(transferStatus(transfer))}`,
+    subtitle: `Saiu da câmara ${formatDate(transfer.at)} às ${formatTime(transfer.at)} · Expedido por ${sent}${received} · ${transferStatusLabel(transferStatus(transfer))}`,
     headers: ["Produto", "Lote feito em", "Validade", "Quantidade"],
     rows: rows.length ? [...rows, ["TOTAL", "", "", totalQty]] : rows,
     notes: [
@@ -785,12 +792,13 @@ export async function reportCash(window: ReportWindow, scope: StoreScope): Promi
     .filter((session) => session.openedAt >= window.from && session.openedAt <= window.to)
     .sort((a, b) => a.openedAt.localeCompare(b.openedAt));
 
+  const names = await peopleNameMap();
   const ledgers = await Promise.all(sessions.map((session) => sessionLedger(session.id)));
   const rows = ledgers.map((ledger) => [
     getLocation(ledger.session.locationId)?.name ?? ledger.session.locationId,
     formatDate(ledger.session.openedAt.slice(0, 10)),
     cashPeriodLabel(ledger.session.period),
-    ledger.session.employeeName,
+    fichaName(names, ledger.session.employeeId, ledger.session.employeeName),
     ledger.session.closedAt
       ? ledger.session.reopenedAt
         ? "Encerrado (reabriu)"
@@ -808,8 +816,8 @@ export async function reportCash(window: ReportWindow, scope: StoreScope): Promi
     ledger.countedCash != null ? money(ledger.countedCash) : "—",
     ledger.difference != null ? money(ledger.difference) : "—",
     ledger.difference != null ? cashDifferenceLabel(ledger.difference) : "—",
-    ledger.session.recountedBy
-      ? `${ledger.session.recountedBy}${ledger.session.secondCount != null ? ` · 2ª ${money(ledger.session.secondCount)}` : ""}`
+    ledger.session.recountedById || ledger.session.recountedBy
+      ? `${fichaName(names, ledger.session.recountedById, ledger.session.recountedBy)}${ledger.session.secondCount != null ? ` · 2ª ${money(ledger.session.secondCount)}` : ""}`
       : ledger.difference != null && Math.abs(ledger.difference) >= 0.005
         ? "Sem 2ª contagem"
         : "—",
@@ -921,19 +929,23 @@ export async function reportInventory(window: ReportWindow, scope: StoreScope): 
     .filter((row) => scope === "all" || row.locationId === scope)
     .sort((a, b) => a.at.localeCompare(b.at));
   const lines = await db.inventoryLines.toArray();
+  const names = await peopleNameMap();
   const labelByNiche = new Map(catalog.map((item) => [item.niche.id, item.label]));
 
   const rows: (string | number)[][] = [];
   let system = 0;
   let counted = 0;
   for (const count of counts) {
+    const who = fichaName(names, count.actorId, count.countedBy);
+    const witness = fichaName(names, count.recountedById, count.recountedBy);
     const parts = lines.filter((line) => line.countId === count.id);
     if (parts.length === 0) {
       rows.push([
         formatDate(count.at.slice(0, 10)),
         formatTime(count.at),
         getLocation(count.locationId)?.name ?? count.locationId,
-        count.countedBy,
+        who,
+        witness,
         "—",
         0,
         0,
@@ -950,7 +962,8 @@ export async function reportInventory(window: ReportWindow, scope: StoreScope): 
         formatDate(count.at.slice(0, 10)),
         formatTime(count.at),
         getLocation(count.locationId)?.name ?? count.locationId,
-        count.countedBy,
+        who,
+        witness,
         labelByNiche.get(line.nicheId) ?? "Produto",
         line.systemQty,
         line.countedQty,
@@ -963,15 +976,15 @@ export async function reportInventory(window: ReportWindow, scope: StoreScope): 
   return {
     title: "Inventário e ajuste",
     subtitle: `${window.label} · ${scopeName(scope)}`,
-    headers: ["Data", "Hora", "Local", "Responsável", "Produto", "Sistema", "Físico", "Diferença", "Motivo"],
-    rows: rows.length ? [...rows, ["TOTAL", "", "", "", "", system, counted, counted - system, ""]] : rows,
+    headers: ["Data", "Hora", "Local", "Contou", "2ª / conferiu", "Produto", "Sistema", "Físico", "Diferença", "Motivo"],
+    rows: rows.length ? [...rows, ["TOTAL", "", "", "", "", "", system, counted, counted - system, ""]] : rows,
     notes: [
       rows.length === 0
         ? "Nenhum inventário neste recorte."
         : `${counts.length} contagem${counts.length === 1 ? "" : "s"} · diferença ${counted - system}.`,
       "Diferença negativa = faltou no físico. Positiva = apareceu a mais. Motivo fica no lançamento.",
       "Ajuste não é venda nem sobra. O saldo do estoque já foi corrigido na hora da contagem.",
-      "Diferença maior que 5 pede 2ª contagem e o nome de quem conferiu — o mesmo ritual do caixa.",
+      "Diferença maior que 5 pede 2ª contagem e outra ficha — o mesmo ritual do caixa.",
     ],
   };
 }
@@ -993,6 +1006,7 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
     db.lots.toArray(),
     catalogItems(false),
   ]);
+  const names = await peopleNameMap();
 
   const ledgers = await Promise.all(sessions.map((session) => sessionLedger(session.id)));
   const saleItems = (await Promise.all(sales.map((sale) => db.saleItems.where("saleId").equals(sale.id).toArray()))).flat();
@@ -1079,6 +1093,24 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
         "Quebra ou sobra",
         closed.length ? `${cashDifferenceLabel(difference)} · ${money(difference)}` : "—",
       ],
+      [
+        "Caixa",
+        "Quem abriu",
+        uniqueFichaNames(
+          names,
+          sessions.map((session) => ({ id: session.employeeId, copy: session.employeeName })),
+        ),
+      ],
+      [
+        "Caixa",
+        "Quem conferiu a 2ª",
+        uniqueFichaNames(
+          names,
+          sessions
+            .filter((session) => session.recountedById || session.recountedBy)
+            .map((session) => ({ id: session.recountedById, copy: session.recountedBy })),
+        ),
+      ],
     );
   }
 
@@ -1093,6 +1125,26 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
         "Envio",
         "Divergência",
         gap === 0 ? "Bateu" : gap > 0 ? `Faltou ${gap} un. · voltou à fábrica` : `Sobra ${Math.abs(gap)} un.`,
+      ],
+      [
+        "Envio",
+        "Quem mandou",
+        uniqueFichaNames(
+          names,
+          envios.map((transfer) => ({ id: transfer.sentById, copy: transfer.sentBy })),
+        ),
+      ],
+      [
+        "Envio",
+        "Quem conferiu",
+        envios.some((transfer) => transferStatus(transfer) !== "em_transito")
+          ? uniqueFichaNames(
+              names,
+              envios
+                .filter((transfer) => transferStatus(transfer) !== "em_transito")
+                .map((transfer) => ({ id: transfer.receivedById, copy: transfer.receivedBy })),
+            )
+          : "Ainda em trânsito",
       ],
     );
   }
@@ -1128,6 +1180,24 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
         "Diferença",
         `${physicalQty - systemQty} un. · ${physicalQty - systemQty === 0 ? "bateu" : physicalQty > systemQty ? "apareceu a mais" : "faltou no físico"}`,
       ],
+      [
+        "Inventário",
+        "Quem contou",
+        uniqueFichaNames(
+          names,
+          inventories.map((count) => ({ id: count.actorId, copy: count.countedBy })),
+        ),
+      ],
+      [
+        "Inventário",
+        "2ª / conferiu",
+        uniqueFichaNames(
+          names,
+          inventories
+            .filter((count) => count.recountedById || count.recountedBy)
+            .map((count) => ({ id: count.recountedById, copy: count.recountedBy })),
+        ),
+      ],
     );
   }
 
@@ -1140,6 +1210,7 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
       "Uma folha para o dono. Não substitui o detalhe de cada relatório.",
       "Espécie no caixa é só a parte em dinheiro. Pix e cartão não entram na gaveta.",
       "Mandou é o que saiu da câmara. Confirmou é o que a loja conferiu. O que faltou volta para a fábrica. Em trânsito ainda não é estoque da loja.",
+      "Quem mandou, quem conferiu e quem contou saem da ficha da Equipe, não do nome do painel.",
       "Sobra não é vencido. Inventário não é venda.",
       "Cliente da câmara só aparece na folha da fábrica ou da rede. A loja não conta essas unidades. O que pagou na fábrica não mistura no faturamento da loja.",
       "Sinal de festa da loja entra no caixa, não no 'vendeu' de produto, até a entrega.",

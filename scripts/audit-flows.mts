@@ -76,7 +76,7 @@ async function main() {
     await import("../src/lib/cash.ts");
   const { createStoreRequest, fulfillRequest, listRequests, cancelRequest, factoryFreeByNiche } = await import("../src/lib/requests.ts");
   const { registerInternalConsume } = await import("../src/lib/consume.ts");
-  const { reportDayPack, reportWindow, reportClosing, reportFactoryClients } = await import("../src/lib/reports.ts");
+  const { reportDayPack, reportRomaneio, reportWindow, reportClosing, reportFactoryClients } = await import("../src/lib/reports.ts");
   const { catalogItems, inventorySheet, setProductActive, loadKardex, loadDashboard, listProductionLogs } = await import("../src/lib/queries.ts");
   const { saleCategories } = await import("../src/lib/categories.ts");
   const { saveCombo } = await import("../src/lib/combos.ts");
@@ -443,6 +443,16 @@ async function main() {
         receivedBy: "Ana",
         items: parts.map((part) => ({ id: part.id, receivedQty: part.qty })),
       }),
+    );
+    const paper = await reportRomaneio(transferId);
+    record(
+      "Romaneio lê a ficha, não Rita nem Fábrica",
+      paper.subtitle.includes("Expedido por Yokota") &&
+        paper.subtitle.includes("Conferido por Yokota") &&
+        !paper.subtitle.includes("Rita") &&
+        !paper.subtitle.includes("Ana") &&
+        !paper.subtitle.includes("Expedido por Fábrica"),
+      paper.subtitle,
     );
   }
 
@@ -1156,6 +1166,10 @@ async function main() {
   await expectOk("Pacote do dia gera folha", async () => {
     const pack = await reportDayPack(reportWindow("today"), "store_1");
     if (!pack.rows.length) throw new Error("folha vazia");
+    const text = pack.rows.map((row) => row.join(" ")).join(" | ");
+    if (!text.includes("Yokota") || !text.includes("Telma")) {
+      throw new Error(`folha sem ficha: ${text}`);
+    }
     return `${pack.title} · ${pack.rows.length} linhas`;
   });
 
