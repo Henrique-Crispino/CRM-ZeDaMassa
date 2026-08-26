@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Contact,
@@ -31,7 +32,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useLocationCatalog } from "@/lib/locations";
-import { clearLocationId, getLocationId } from "@/lib/session";
+import { getDb } from "@/lib/db";
+import { leaveOperator, otherOperatorPanels, panelLabel, switchOperatorPanel } from "@/lib/operator";
+import { getActorId, getLocationId } from "@/lib/session";
 import { useReady } from "@/lib/use-ready";
 import { BackLink, backTarget } from "./BackLink";
 import { ConfirmDialog } from "./pick-flow";
@@ -124,17 +127,21 @@ function SidebarLinks({ links, pathname }: { links: NavItem[]; pathname: string 
 
 function MenuPanel({
   name,
+  who,
   turno,
   rest,
   pathname,
   onLeave,
+  onSwitch,
   onClose,
 }: {
   name: string;
+  who?: string;
   turno: NavItem[];
   rest: NavItem[];
   pathname: string;
   onLeave: () => void;
+  onSwitch?: () => void;
   onClose?: () => void;
 }) {
   return (
@@ -143,6 +150,7 @@ function MenuPanel({
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wide text-orange-700">Controle da fábrica</p>
           <p className="mt-1 text-lg font-extrabold leading-tight text-stone-900">{name}</p>
+          {who ? <p className="mt-1 text-sm font-semibold text-stone-500">{who}</p> : null}
         </div>
         {onClose ? (
           <Button type="button" variant="ghost" className="shrink-0 px-3" aria-label="Fechar menu" onClick={onClose}>
@@ -159,10 +167,15 @@ function MenuPanel({
           </>
         ) : null}
       </nav>
-      <div className="border-t border-orange-100 p-3">
+      <div className="space-y-2 border-t border-orange-100 p-3">
+        {onSwitch ? (
+          <Button variant="ghost" className="w-full justify-start" onClick={onSwitch}>
+            Ir para outro lugar
+          </Button>
+        ) : null}
         <Button variant="ghost" className="w-full justify-start" onClick={onLeave}>
           <LogOut className="size-5" />
-          Trocar de lugar
+          Sair
         </Button>
       </div>
     </>
@@ -175,12 +188,27 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { panels } = useLocationCatalog();
   const panelId = ready ? getLocationId() : null;
+  const actorId = ready ? getActorId() : null;
+  const person = useLiveQuery(() => (actorId ? getDb().employees.get(actorId) : undefined), [actorId]);
   const [leave, setLeave] = useState(false);
+  const [switchPlace, setSwitchPlace] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [, setPlaceTick] = useState(0);
 
   useEffect(() => {
-    if (ready && !getLocationId()) router.replace("/");
+    if (!ready) return;
+    if (!getLocationId() || !getActorId()) {
+      leaveOperator();
+      router.replace("/");
+    }
   }, [ready, router]);
+
+  useEffect(() => {
+    if (person && person.active === false) {
+      leaveOperator();
+      router.replace("/");
+    }
+  }, [person, router]);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -195,7 +223,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [menuOpen]);
 
-  if (!ready || !panelId) {
+  if (!ready || !panelId || !actorId) {
     return (
       <div className="grid min-h-screen place-items-center bg-orange-50 text-xl font-bold text-stone-600">
         Carregando...
@@ -209,22 +237,26 @@ export function AppShell({ children }: { children: ReactNode }) {
   const rest = role === "admin" ? [] : role === "factory" ? factoryRest : storeRest;
   const back = backTarget(pathname, role);
   const hasBottomNav = role !== "admin";
+  const who = person?.name;
   const here =
     role === "store"
       ? `Você está na ${panel?.name}`
       : role === "factory"
         ? "Você está na fábrica"
         : "Você está na administração";
+  const switchTargets = person ? otherOperatorPanels(person, panelId) : [];
 
   return (
     <div className={cn("flex min-h-screen bg-orange-50", hasBottomNav && "shell-turno")}>
       <aside className="sticky top-0 z-30 hidden h-screen w-60 shrink-0 flex-col border-r border-orange-100 bg-white md:flex print:hidden">
         <MenuPanel
           name={panel?.name ?? ""}
+          who={who}
           turno={turno}
           rest={rest}
           pathname={pathname}
           onLeave={() => setLeave(true)}
+          onSwitch={switchTargets.length ? () => setSwitchPlace(true) : undefined}
         />
       </aside>
 
@@ -239,6 +271,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <aside className="relative flex h-full w-[min(20rem,88vw)] flex-col bg-white shadow-xl">
             <MenuPanel
               name={panel?.name ?? ""}
+              who={who}
               turno={turno}
               rest={rest}
               pathname={pathname}
@@ -246,6 +279,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                 setMenuOpen(false);
                 setLeave(true);
               }}
+              onSwitch={
+                switchTargets.length
+                  ? () => {
+                      setMenuOpen(false);
+                      setSwitchPlace(true);
+                    }
+                  : undefined
+              }
               onClose={() => setMenuOpen(false)}
             />
           </aside>
@@ -269,6 +310,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="min-w-0">
                 {back ? <BackLink href={back.href} label={back.label} className="mb-2" /> : null}
                 <p className="truncate text-xl font-extrabold text-stone-900">{here}</p>
+                {who ? <p className="truncate text-sm font-semibold text-stone-500">{who}</p> : null}
               </div>
             </div>
             {role === "admin" || role === "factory" ? <NotificationBell audience={role} /> : null}
@@ -305,19 +347,50 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <ConfirmDialog
         open={leave}
-        title={`Sair ${role === "store" ? `da ${panel?.name}` : role === "factory" ? "da fábrica" : "da administração"}?`}
-        hint="Você vai escolher outro lugar. Isto não é senha. Os dados deste computador continuam aqui."
-        confirmLabel="Trocar de lugar"
+        title={who ? `Sair da ${who} neste computador?` : "Sair?"}
+        hint="Depois escolhe de novo quem opera. Isto não é senha da empresa. Os dados deste computador continuam aqui."
+        confirmLabel="Sair"
         confirmVariant="secondary"
         cancelLabel="Ficar aqui"
         onConfirm={() => {
-          clearLocationId();
+          leaveOperator();
           router.push("/");
         }}
         onCancel={() => setLeave(false)}
       >
-        <p className="font-semibold text-stone-700">Agora: {panel?.name}</p>
+        <p className="font-semibold text-stone-700">Agora: {who ? `${who} · ${panel?.name}` : panel?.name}</p>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={switchPlace}
+        title="Ir para outro lugar?"
+        hint="Só os sítios desta ficha. A Telma não vê a administração aqui."
+        confirmLabel="Fechar"
+        confirmVariant="secondary"
+        cancelLabel="Fechar"
+        onConfirm={() => setSwitchPlace(false)}
+        onCancel={() => setSwitchPlace(false)}
+      >
+        <div className="space-y-2">
+          {switchTargets.map((id) => (
+            <Button
+              key={id}
+              variant="ghost"
+              className="w-full justify-start"
+              onClick={() => {
+                if (!person) return;
+                switchOperatorPanel(person, id);
+                setSwitchPlace(false);
+                setPlaceTick((tick) => tick + 1);
+                router.push("/inicio");
+              }}
+            >
+              {panelLabel(id)}
+            </Button>
+          ))}
+        </div>
       </ConfirmDialog>
     </div>
   );
 }
+

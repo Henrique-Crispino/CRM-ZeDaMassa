@@ -1,4 +1,5 @@
 const KEY = "gp-location";
+const ACTOR_KEY = "gp-actor";
 
 export function getLocationId() {
   if (typeof window === "undefined") return null;
@@ -11,4 +12,22 @@ export function setLocationId(id: string) {
 
 export function clearLocationId() {
   localStorage.removeItem(KEY);
+}
+
+export function getActorId() {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(ACTOR_KEY);
+}
+
+export function setActorId(id: string) {
+  localStorage.setItem(ACTOR_KEY, id);
+}
+
+export function clearActorId() {
+  localStorage.removeItem(ACTOR_KEY);
+}
+
+export function clearOperatorSession() {
+  clearActorId();
+  clearLocationId();
 }

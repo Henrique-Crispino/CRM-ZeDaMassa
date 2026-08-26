@@ -1,82 +1,95 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Factory, Shield, Store } from "lucide-react";
-import { useLocationCatalog } from "@/lib/locations";
-import { setLocationId } from "@/lib/session";
-import { Button } from "@/components/ui";
+import { useLiveQuery } from "dexie-react-hooks";
+import { Button, ErrorBox, Field, Input } from "@/components/ui";
+import { enterOperator, verifyOperatorPin } from "@/lib/operator";
+import { listPeople, PeopleError, personDoorHint } from "@/lib/people";
 import { useReady } from "@/lib/use-ready";
 
 export default function HomePage() {
   const router = useRouter();
   const ready = useReady();
-  const { panels } = useLocationCatalog();
-  const admin = panels.filter((panel) => panel.type === "admin");
-  const factory = panels.filter((panel) => panel.type === "factory");
-  const stores = panels.filter((panel) => panel.type === "store");
+  const people = useLiveQuery(() => (ready ? listPeople() : []), [ready]);
+  const active = (people ?? []).filter((person) => person.active);
+  const [pickedId, setPickedId] = useState("");
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const picked = active.find((person) => person.id === pickedId);
+
+  async function enter() {
+    if (!picked) {
+      setError("Escolha quem está operando.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const person = await verifyOperatorPin(picked.id, pin);
+      enterOperator(person);
+      router.push("/inicio");
+    } catch (err) {
+      setError(err instanceof PeopleError ? err.message : "Não deu para entrar.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-orange-50 px-4 py-10">
       <main className="mx-auto flex min-h-[80vh] max-w-3xl flex-col justify-center">
-        <p className="text-sm font-bold uppercase tracking-wide text-orange-700">
-          Controle da fábrica
-        </p>
-        <h1 className="mt-2 text-4xl font-extrabold leading-tight text-stone-900">
-          Onde você trabalha agora?
-        </h1>
+        <p className="text-sm font-bold uppercase tracking-wide text-orange-700">Controle da fábrica</p>
+        <h1 className="mt-2 text-4xl font-extrabold leading-tight text-stone-900">Quem está operando?</h1>
         <p className="mt-3 max-w-xl text-lg leading-relaxed text-stone-600">
-          Cada botão abre um lugar. Os dados deste computador ficam neste navegador. Não é senha — é só para não misturar fábrica e loja.
+          Escolha o nome. Depois o PIN da ficha. A Telma não abre a administração. Isto não é senha da empresa — é para
+          não misturar o trabalho neste computador.
         </p>
         {!ready ? <p className="mt-4 text-lg font-bold text-stone-500">Carregando...</p> : null}
 
         <div className="mt-8 space-y-3">
-          {[...admin, ...factory].map((panel) => {
-            const Icon = panel.type === "admin" ? Shield : Factory;
-            return (
-              <Button
-                key={panel.id}
-                disabled={!ready}
-                className="h-auto min-h-20 w-full flex-col items-start justify-center px-6 py-5 text-left"
-                variant={panel.type === "admin" ? "secondary" : "primary"}
-                onClick={() => {
-                  setLocationId(panel.id);
-                  router.push("/inicio");
-                }}
-              >
-                <span className="flex items-center gap-3 text-2xl">
-                  <Icon className="size-7 shrink-0" />
-                  {panel.name}
-                </span>
-                <span className="mt-1 text-base font-semibold opacity-80">{panel.hint}</span>
-              </Button>
-            );
-          })}
+          {active.map((person) => (
+            <Button
+              key={person.id}
+              disabled={!ready}
+              className="h-auto min-h-20 w-full flex-col items-start justify-center px-6 py-5 text-left"
+              variant={pickedId === person.id ? "primary" : "ghost"}
+              onClick={() => {
+                setPickedId(person.id);
+                setPin("");
+                setError("");
+              }}
+            >
+              <span className="text-2xl">{person.name}</span>
+              <span className="mt-1 text-base font-semibold opacity-80">{personDoorHint(person)}</span>
+            </Button>
+          ))}
         </div>
 
-        {stores.length > 0 ? (
-          <section className="mt-8">
-            <h2 className="mb-3 text-lg font-extrabold text-stone-800">Lojas</h2>
-            <div className="grid gap-3">
-              {stores.map((panel) => (
-                <Button
-                  key={panel.id}
-                  disabled={!ready}
-                  className="h-auto min-h-20 w-full flex-col items-start justify-center px-6 py-5 text-left"
-                  variant="ghost"
-                  onClick={() => {
-                    setLocationId(panel.id);
-                    router.push("/inicio");
-                  }}
-                >
-                  <span className="flex items-center gap-3 text-2xl">
-                    <Store className="size-7 shrink-0" />
-                    {panel.name}
-                  </span>
-                  <span className="mt-1 text-base font-semibold text-stone-500">{panel.hint}</span>
-                </Button>
-              ))}
-            </div>
-          </section>
+        {picked ? (
+          <form
+            className="mt-8 space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void enter();
+            }}
+          >
+            <Field label={`PIN da ${picked.name}`} hint="O mesmo da ficha. No exemplo é 1234.">
+              <Input
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                value={pin}
+                onChange={(event) => setPin(event.target.value)}
+                placeholder="PIN"
+              />
+            </Field>
+            <ErrorBox message={error} />
+            <Button type="submit" className="w-full" disabled={saving || pin.trim().length < 4}>
+              {saving ? "Entrando..." : `Entrar como ${picked.name}`}
+            </Button>
+          </form>
         ) : null}
       </main>
     </div>

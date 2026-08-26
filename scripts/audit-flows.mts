@@ -2,13 +2,20 @@ import { indexedDB, IDBKeyRange } from "fake-indexeddb";
 
 Object.assign(globalThis, { indexedDB, IDBKeyRange });
 (globalThis as unknown as { window: typeof globalThis }).window = globalThis;
+const memory = new Map<string, string>();
 (globalThis as unknown as { localStorage: Storage }).localStorage = {
-  getItem: () => null,
-  setItem: () => undefined,
-  removeItem: () => undefined,
-  clear: () => undefined,
-  key: () => null,
-  length: 0,
+  getItem: (key: string) => memory.get(key) ?? null,
+  setItem: (key: string, value: string) => {
+    memory.set(key, String(value));
+  },
+  removeItem: (key: string) => {
+    memory.delete(key);
+  },
+  clear: () => memory.clear(),
+  key: (index: number) => [...memory.keys()][index] ?? null,
+  get length() {
+    return memory.size;
+  },
 } as Storage;
 
 type Result = { name: string; pass: boolean; detail: string };
@@ -45,6 +52,9 @@ async function main() {
   const { getDb } = await import("../src/lib/db.ts");
   const { refreshLocations, DEFAULT_STORES } = await import("../src/lib/locations.ts");
   const { DEFAULT_EMPLOYEES, DEMO_AS_OF_SETTING, ensureDemoData, loadDemoData } = await import("../src/lib/seed.ts");
+  const { personAllowedPanelIds, personCanUsePanel, personHomePanelId } = await import("../src/lib/people.ts");
+  const { enterOperator, switchOperatorPanel, verifyOperatorPin } = await import("../src/lib/operator.ts");
+  const { getActorId, getLocationId } = await import("../src/lib/session.ts");
   const { todayDate, addDays, startOfDayIso, endOfDayIso, parseMoney, formatBRL } = await import("../src/lib/money.ts");
   const { stockQty, changeStock } = await import("../src/lib/stock-core.ts");
   const {
@@ -92,6 +102,56 @@ async function main() {
     { id: "cox-mini", nicheId: "cox-mini", enabled: true, dailyLimit: 5, personLimit: 2 },
   ]);
   await refreshLocations();
+
+  const telma = DEFAULT_EMPLOYEES.find((person) => person.id === "emp-telma");
+  const yokota = DEFAULT_EMPLOYEES.find((person) => person.id === "emp-yokota");
+  const matheus = DEFAULT_EMPLOYEES.find((person) => person.id === "emp-matheus");
+  const brendao = DEFAULT_EMPLOYEES.find((person) => person.id === "emp-brendao");
+  record(
+    "Telma não entra na administração",
+    Boolean(telma && !personCanUsePanel(telma, "admin") && personHomePanelId(telma) === "store_1"),
+    telma ? personAllowedPanelIds(telma).join(",") : "sem ficha",
+  );
+  record(
+    "Yokota cobre admin e as lojas",
+    Boolean(
+      yokota &&
+        personCanUsePanel(yokota, "admin") &&
+        personCanUsePanel(yokota, "store_1") &&
+        personCanUsePanel(yokota, "store_2") &&
+        !personCanUsePanel(yokota, "factory"),
+    ),
+    yokota ? personAllowedPanelIds(yokota).join(",") : "sem ficha",
+  );
+  record(
+    "Matheus só a administração",
+    Boolean(matheus && personAllowedPanelIds(matheus).join(",") === "admin"),
+    matheus ? personAllowedPanelIds(matheus).join(",") : "sem ficha",
+  );
+  record(
+    "Brendão só a fábrica",
+    Boolean(brendao && personAllowedPanelIds(brendao).join(",") === "factory"),
+    brendao ? personAllowedPanelIds(brendao).join(",") : "sem ficha",
+  );
+  await expectFail("PIN errado da Telma é recusado", () => verifyOperatorPin("emp-telma", "0000"), "não confere");
+  const telmaOk = (await expectOk("PIN da Telma confere", () => verifyOperatorPin("emp-telma", "1234"))) as
+    | typeof telma
+    | null;
+  if (telmaOk) {
+    enterOperator(telmaOk, "admin");
+    record(
+      "Telma cai no Centro mesmo pedindo admin",
+      getActorId() === "emp-telma" && getLocationId() === "store_1",
+      `actor=${getActorId()} lugar=${getLocationId()}`,
+    );
+    await expectFail("Telma não troca para a fábrica", async () => switchOperatorPanel(telmaOk, "factory"), "não é da");
+  }
+  if (yokota) {
+    enterOperator(yokota);
+    record("Yokota entra na administração", getLocationId() === "admin", `lugar=${getLocationId()}`);
+    switchOperatorPanel(yokota, "store_2");
+    record("Yokota vai ao Jardim", getLocationId() === "store_2", `lugar=${getLocationId()}`);
+  }
 
   await expectFail("Produzir bebida é recusado", () => produceItems({ madeAt: today, items: [{ nicheId: "coca-350", qty: 10 }] }), "não se produz");
   await expectFail("Comprar salgado é recusado", () => receivePurchase({ receivedAt: today, items: [{ nicheId: "cox-mini", qty: 10, unitCost: 0.4 }] }), "fabricado");

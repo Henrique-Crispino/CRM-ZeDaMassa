@@ -74,6 +74,42 @@ export function personRoleHint(person: Employee) {
   return roles.length ? roles.join(" · ") : "sem papel";
 }
 
+export function personAllowedPanelIds(person: Employee) {
+  if (!person.active) return [];
+  const place = personLocation(person);
+  if (isAdminWorkplace(place)) {
+    if (personCanCash(person)) {
+      return ["admin", ...storeLocations().map((store) => store.id)];
+    }
+    return ["admin"];
+  }
+  if (place === "factory") return ["factory"];
+  if (isStore(place)) return [place];
+  return [];
+}
+
+export function personHomePanelId(person: Employee) {
+  const allowed = personAllowedPanelIds(person);
+  if (allowed.includes("admin")) return "admin";
+  if (allowed.includes("factory")) return "factory";
+  return allowed[0] ?? "";
+}
+
+export function personCanUsePanel(person: Employee, panelId: string) {
+  return personAllowedPanelIds(person).includes(panelId);
+}
+
+export function personDoorHint(person: Employee) {
+  const allowed = personAllowedPanelIds(person);
+  if (allowed.includes("admin") && allowed.some((id) => isStore(id))) {
+    return "Administração · pode ir às lojas";
+  }
+  if (allowed.includes("admin")) return "Administração";
+  if (allowed.includes("factory")) return "Fábrica";
+  const store = storeLocations().find((item) => item.id === allowed[0]);
+  return store?.name ?? "Sem lugar";
+}
+
 export async function listPeople() {
   const rows = await getDb().employees.toArray();
   return rows.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));

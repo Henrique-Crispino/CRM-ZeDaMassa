@@ -1,7 +1,7 @@
 import { CASH_REOPEN_CODE, CASH_REOPEN_SETTING } from "./cash";
 import { getDb } from "./db";
 import { deliverFactoryOrder } from "./factory-orders";
-import { asConsumeUser, mergePeopleIfNeeded, personCanConsume } from "./people";
+import { asConsumeUser, mergePeopleIfNeeded, personCanConsume, syncConsumeMirror } from "./people";
 import { DEFAULT_STORES, refreshLocations } from "./locations";
 import { addDays, endOfDayIso, newId, startOfDayIso, todayDate } from "./money";
 import { createStoreRequest } from "./requests";
@@ -251,6 +251,8 @@ export const PERSON_MATHEUS: Employee = {
   locationId: "admin",
   podeCaixa: false,
   podeConsumo: false,
+  login: "matheus",
+  password: "1234",
   active: true,
 };
 
@@ -692,8 +694,30 @@ export async function ensureAppDefaults() {
       }
     }
   }
-  if ((await db.employees.count()) === 0) {
-    await db.employees.bulkAdd(DEFAULT_EMPLOYEES);
+  for (const seed of DEFAULT_EMPLOYEES) {
+    const current = await db.employees.get(seed.id);
+    if (!current) {
+      await db.employees.add(seed);
+      continue;
+    }
+    await db.employees.update(seed.id, {
+      name: seed.name,
+      locationId: seed.locationId,
+      storeId: seed.storeId,
+      podeCaixa: seed.podeCaixa,
+      podeConsumo: seed.podeConsumo,
+      login: seed.login ?? current.login,
+      password: current.password || seed.password,
+      active: true,
+    });
+  }
+  for (const retiredId of ["emp-ana", "emp-bruno", "emp-carla", "emp-diego", "emp-rita"]) {
+    const retired = await db.employees.get(retiredId);
+    if (retired?.active) await db.employees.update(retiredId, { active: false });
+  }
+  for (const seed of DEFAULT_EMPLOYEES) {
+    const row = await db.employees.get(seed.id);
+    if (row) await syncConsumeMirror(row);
   }
   if ((await db.consumeUsers.count()) === 0) {
     const existing = await db.employees.toArray();
