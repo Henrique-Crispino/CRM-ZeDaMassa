@@ -74,7 +74,7 @@ async function main() {
   const { createFactoryOrder, listFactoryOrders, deliverFactoryOrder, lastFactoryOrder, cancelFactoryOrder } =
     await import("../src/lib/factory-orders.ts");
   const { customerKind, isRevenueSale } = await import("../src/lib/types.ts");
-  const { takeEncomendaSignal, deliverEncomenda } = await import("../src/lib/encomendas.ts");
+  const { takeEncomendaSignal, deliverEncomenda, listOpenParties } = await import("../src/lib/encomendas.ts");
   const db = getDb();
   const today = todayDate();
 
@@ -1422,9 +1422,30 @@ async function main() {
       Math.abs((ledgerAfterSignal?.salesTotal ?? 0) - (ledgerBeforeSignal?.salesTotal ?? 0)) < 0.01,
     `pix +${((ledgerAfterSignal?.byPayment.pix ?? 0) - (ledgerBeforeSignal?.byPayment.pix ?? 0)).toFixed(2)} fatura ${ledgerAfterSignal?.salesTotal}`,
   );
+  const openAfterSignal = partyId ? (await listOpenParties()).find((row) => row.id === partyId) : undefined;
+  record(
+    "Admin vê festa com sinal e o resto a receber",
+    openAfterSignal?.due === 200 && openAfterSignal.stock === "aguardando",
+    `due=${openAfterSignal?.due} stock=${openAfterSignal?.stock}`,
+  );
+  const storeParties = await listOpenParties("store_1");
+  const otherStoreParties = await listOpenParties("store_2");
+  record(
+    "Loja só vê a festa dela",
+    Boolean(partyId) &&
+      storeParties.some((row) => row.id === partyId) &&
+      !otherStoreParties.some((row) => row.id === partyId),
+    `centro=${storeParties.length} jardim=${otherStoreParties.length}`,
+  );
 
   if (partyId) {
     await expectOk("Fábrica manda a encomenda da festa", () => fulfillRequest(partyId, { "cox-mini": 40 }, "Rita"));
+    const openInTransit = (await listOpenParties()).find((row) => row.id === partyId);
+    record(
+      "Festa mandada continua na lista enquanto falta o resto",
+      openInTransit?.stock === "em_transito" && openInTransit.due === 200,
+      `stock=${openInTransit?.stock} due=${openInTransit?.due}`,
+    );
     await expectFail(
       "Entrega da festa recusa envio ainda em trânsito",
       () => deliverEncomenda({ requestId: partyId, payment: "pix" }),
@@ -1442,6 +1463,12 @@ async function main() {
         }),
       );
     }
+    const openAtStore = (await listOpenParties()).find((row) => row.id === partyId);
+    record(
+      "Festa conferida espera o resto na loja",
+      openAtStore?.stock === "na_loja" && openAtStore.due === 200,
+      `stock=${openAtStore?.stock} due=${openAtStore?.due}`,
+    );
     const storeBeforeDeliver = await stockQty("store_1", "cox-mini");
     const ledgerBeforeDeliver = sessionForParty ? await sessionLedger(sessionForParty.id) : null;
     await expectOk("Resto entra e a festa sai da prateleira da loja", () =>
@@ -1451,6 +1478,7 @@ async function main() {
     const delivered = await db.requests.get(partyId);
     const remainder = delivered?.remainderSaleId ? await db.sales.get(delivered.remainderSaleId) : undefined;
     const ledgerAfterDeliver = sessionForParty ? await sessionLedger(sessionForParty.id) : null;
+    const openAfterDeliver = (await listOpenParties()).some((row) => row.id === partyId);
     record(
       "Entrega da festa cobra o resto, baixa a loja e fatura o total combinado",
       Boolean(delivered?.deliveredAt) &&
@@ -1461,6 +1489,7 @@ async function main() {
         Math.abs((ledgerAfterDeliver?.salesTotal ?? 0) - (ledgerBeforeDeliver?.salesTotal ?? 0) - 400) < 0.01,
       `baixou ${storeBeforeDeliver - storeAfterDeliver} cupom ${remainder?.total} fatura ${ledgerAfterDeliver?.salesTotal}`,
     );
+    record("Festa entregue some da lista do admin", !openAfterDeliver, `aindaAberta=${openAfterDeliver}`);
   }
 
   const madePast = addDays(today, -3);

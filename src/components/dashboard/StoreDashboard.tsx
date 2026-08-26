@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
 import { DiscardExpiredBanner } from "@/components/DiscardExpiredBanner";
+import { OpenParties } from "@/components/OpenParties";
 import { Card, PageTitle } from "@/components/ui";
 import { currentCashSession, cashPeriodLabel } from "@/lib/cash";
 import { expiryAlertsFor } from "@/lib/queries";
@@ -60,6 +61,8 @@ export function StoreDashboard({
           </Link>
         </Card>
       )}
+
+      <OpenParties storeId={locationId} />
 
       <DiscardExpiredBanner
         items={expiredHere}

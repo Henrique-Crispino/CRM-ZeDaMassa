@@ -287,6 +287,7 @@ export const DEFAULT_COMBO_ITEMS: ComboItem[] = [
 ];
 
 const VOLUME_DEMO_SETTING = "volume-demo";
+const PARTY_DEMO_SETTING = "party-open-demo";
 
 export const DEFAULT_CUSTOMERS: Customer[] = [
   {
@@ -534,6 +535,43 @@ async function ensureVolumeStory() {
   if (ready) await db.settings.put({ id: VOLUME_DEMO_SETTING, value: "1" });
 }
 
+async function ensureOpenPartyStory() {
+  const db = getDb();
+  if ((await db.settings.get(PARTY_DEMO_SETTING))?.value === "1") return;
+  if (await db.requests.get("req-festa-aberta")) {
+    await db.settings.put({ id: PARTY_DEMO_SETTING, value: "1" });
+    return;
+  }
+  const nicheId = (await db.niches.get("cox-festa"))
+    ? "cox-festa"
+    : (await db.niches.get("cox-mini"))
+      ? "cox-mini"
+      : "";
+  if (!nicheId) return;
+
+  await db.requests.add({
+    id: "req-festa-aberta",
+    fromLocationId: "store_1",
+    status: "pending",
+    note: "Sinal já entrou. Falta o resto no dia.",
+    at: new Date().toISOString(),
+    kind: "encomenda",
+    neededBy: addDays(todayDate(), 3),
+    guestName: "Aniversário da Márcia",
+    estimatedTotal: 400,
+    signalAmount: 200,
+    signalSaleId: "sale-sinal-festa-aberta",
+  });
+  await db.requestItems.add({
+    id: "req-festa-aberta-cox",
+    requestId: "req-festa-aberta",
+    nicheId,
+    qty: 40,
+    sentQty: 0,
+  });
+  await db.settings.put({ id: PARTY_DEMO_SETTING, value: "1" });
+}
+
 function lotExpiry(nicheId: string, madeAt: string) {
   const product = PRODUCT_BY_NICHE.get(nicheId);
   if (!product?.perishable || product.shelfLifeDays <= 0) return undefined;
@@ -704,6 +742,7 @@ export async function ensureAppDefaults() {
 
   await refreshLocations();
   await ensureVolumeStory();
+  await ensureOpenPartyStory();
 }
 
 export async function loadDemoData() {
@@ -1293,4 +1332,5 @@ export async function loadDemoData() {
     items: [{ nicheId: "coca-350", qty: 18 }],
   });
   await ensureVolumeStory();
+  await ensureOpenPartyStory();
 }

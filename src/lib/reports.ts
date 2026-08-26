@@ -17,6 +17,7 @@ import { cashDifferenceLabel, cashPeriodLabel, sessionLedger } from "./cash";
 import { personLocation } from "./people";
 import { catalogItems, listProductionLogs, stockByLocation } from "./queries";
 import { factoryMin, storeMin } from "./stock-min";
+import { listOpenParties } from "./encomendas";
 import type { Niche } from "./types";
 import { adjustmentReasonLabel, cashDestinationLabel, isLiveSale, isRevenueSale, lotCost, lotPrice, movementCharge, paymentMethodLabel, receivedQtyOf, salePayments, transferKind, transferStatus, transferStatusLabel } from "./types";
 
@@ -1144,6 +1145,41 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
       "Sinal de festa da loja entra no caixa, não no 'vendeu' de produto, até a entrega.",
       closed.length < ledgers.length ? "Tem caixa ainda aberto neste recorte: o apurado fica em branco até encerrar." : "",
     ].filter(Boolean),
+  };
+}
+
+export async function reportOpenParties(scope: StoreScope): Promise<ReportTable> {
+  const all = await listOpenParties();
+  const rows =
+    scope === "factory" ? [] : scope === "all" ? all : all.filter((row) => row.storeId === scope);
+  const due = rows.reduce((sum, row) => sum + row.due, 0);
+  const signal = rows.reduce((sum, row) => sum + row.signalAmount, 0);
+  const table = rows.map((row) => [
+    row.storeName,
+    row.guestName || "—",
+    row.neededBy ? formatDate(row.neededBy) : "—",
+    money(row.signalAmount),
+    money(row.due),
+    row.stockLabel,
+    row.itemsLabel || "—",
+  ]);
+
+  return {
+    title: "Festas em aberto",
+    subtitle: scope === "factory" ? "Fábrica" : scopeName(scope),
+    headers: ["Loja", "Festa", "Dia", "Sinal", "Falta", "Envio", "Itens"],
+    rows: table.length
+      ? [...table, ["TOTAL", `${rows.length} festa(s)`, "", money(signal), money(due), "", ""]]
+      : table,
+    notes: [
+      scope === "factory"
+        ? "Festas são da loja. Troque o recorte para Rede ou uma loja."
+        : table.length === 0
+          ? "Nenhuma festa com sinal e resto em aberto agora."
+          : `${rows.length} festa(s). Já entrou ${money(signal)} de sinal. Falta receber ${money(due)} na loja.`,
+      "Foto agora — não segue De/Até.",
+      "O sinal já está no caixa da loja. O resto ainda não. Não entra no Vendeu até entregar.",
+    ],
   };
 }
 

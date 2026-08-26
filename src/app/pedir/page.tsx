@@ -28,7 +28,7 @@ import {
   SuccessBox,
 } from "@/components/ui";
 import { currentCashSession } from "@/lib/cash";
-import { deliverEncomenda, EncomendaError, estimateEncomendaTotal, takeEncomendaSignal } from "@/lib/encomendas";
+import { deliverEncomenda, EncomendaError, estimateEncomendaTotal, isOpenPartyRequest, takeEncomendaSignal } from "@/lib/encomendas";
 import { getPanel } from "@/lib/locations";
 import { formatBRL, formatDate, parseMoney, todayDate } from "@/lib/money";
 import { catalogItems, stockByLocation } from "@/lib/queries";
@@ -119,7 +119,11 @@ export default function PedirPage() {
     }
     return [...map.values()];
   }, [visible]);
-  const minePage = usePager(mine ?? [], 8);
+  const mineRows = mine ?? [];
+  const openMine = mineRows.filter(isOpenPartyRequest);
+  const otherMine = mineRows.filter((row) => !isOpenPartyRequest(row));
+  const openPage = usePager(openMine, 4, String(openMine.length));
+  const minePage = usePager(otherMine, 8, String(otherMine.length));
 
   if (panel && panel.type !== "store") {
     return (
@@ -210,6 +214,74 @@ export default function PedirPage() {
         estimatedTotal > 0 &&
         (signalMode === "depois" || (signalAmount > 0 && signalAmount < estimatedTotal && Boolean(session)))));
 
+  function requestCard(request: RequestView) {
+    const kindLabel = storeRequestKindLabel(storeRequestKind(request));
+    const canSignal =
+      storeRequestKind(request) === "encomenda" &&
+      !request.signalSaleId &&
+      !request.deliveredAt &&
+      Boolean(session);
+    const canDeliver =
+      storeRequestKind(request) === "encomenda" &&
+      Boolean(request.signalSaleId) &&
+      request.status === "sent" &&
+      !request.deliveredAt &&
+      Boolean(session);
+    return (
+      <Card key={request.id} className="p-4">
+        <p className="font-extrabold">
+          {kindLabel} · {request.statusLabel}
+          {request.neededBy ? ` · ${formatDate(request.neededBy)}` : ""}
+        </p>
+        {request.guestName ? <p className="text-stone-600">{request.guestName}</p> : null}
+        {request.signalAmount ? (
+          <p className="text-sm font-semibold text-emerald-800">
+            Sinal {formatBRL(request.signalAmount)}
+            {request.estimatedTotal ? ` · faltam ${formatBRL(request.estimatedTotal - request.signalAmount)}` : ""}
+          </p>
+        ) : null}
+        {request.deliveredAt ? <p className="text-sm font-semibold text-stone-500">Entregue</p> : null}
+        <ul className="mt-1 text-stone-700">
+          {request.items.map((item) => (
+            <li key={item.nicheId}>
+              {item.label} · pediu {item.qty}
+              {item.sentQty > 0 ? ` · mandou ${item.sentQty}` : ""}
+            </li>
+          ))}
+        </ul>
+        {canSignal || canDeliver ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {canSignal ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="min-h-11"
+                onClick={() => {
+                  setOk("");
+                  setPending({ action: "sinal", request });
+                }}
+              >
+                Receber sinal 50%
+              </Button>
+            ) : null}
+            {canDeliver ? (
+              <Button
+                type="button"
+                className="min-h-11"
+                onClick={() => {
+                  setOk("");
+                  setPending({ action: "entregar", request });
+                }}
+              >
+                Resto e entregar
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </Card>
+    );
+  }
+
   return (
     <AppShell>
       <div className="pb-44">
@@ -217,6 +289,25 @@ export default function PedirPage() {
           title="Pedir para a fábrica"
           hint="Peça o que esta loja precisa. A fábrica recebe o aviso. Se a câmara não aguentar, o pedido fica do lado dela."
         />
+
+        {openMine.length > 0 ? (
+          <section className="mb-6">
+            <h2 className="text-xl font-extrabold text-stone-900">Festas em aberto</h2>
+            <p className="mt-1 mb-3 text-stone-600">
+              Sinal já entrou. O resto se recebe aqui, no dia, com o caixa aberto.
+            </p>
+            <div ref={openPage.listRef} className="space-y-3">
+              {openPage.rows.map(requestCard)}
+            </div>
+            <Pager
+              page={openPage.page}
+              pages={openPage.pages}
+              total={openPage.total}
+              onPage={openPage.setPage}
+              word="festas"
+            />
+          </section>
+        ) : null}
 
         <div className="mb-4 space-y-3">
           <FilterChips
@@ -339,81 +430,13 @@ export default function PedirPage() {
           </CompactList>
         )}
 
-        {(mine ?? []).length > 0 ? (
+        {otherMine.length > 0 ? (
           <details className="mt-8 rounded-3xl bg-white p-4 ring-1 ring-stone-200">
             <summary className="cursor-pointer text-lg font-extrabold text-stone-900">
-              Pedidos já feitos ({mine?.length})
+              Pedidos já feitos ({otherMine.length})
             </summary>
             <div ref={minePage.listRef} className="mt-3 scroll-mt-36 space-y-3">
-              {minePage.rows.map((request) => {
-                const kindLabel = storeRequestKindLabel(storeRequestKind(request));
-                const canSignal =
-                  storeRequestKind(request) === "encomenda" &&
-                  !request.signalSaleId &&
-                  !request.deliveredAt &&
-                  Boolean(session);
-                const canDeliver =
-                  storeRequestKind(request) === "encomenda" &&
-                  Boolean(request.signalSaleId) &&
-                  request.status === "sent" &&
-                  !request.deliveredAt &&
-                  Boolean(session);
-                return (
-                  <Card key={request.id} className="p-4">
-                    <p className="font-extrabold">
-                      {kindLabel} · {request.statusLabel}
-                      {request.neededBy ? ` · ${formatDate(request.neededBy)}` : ""}
-                    </p>
-                    {request.guestName ? <p className="text-stone-600">{request.guestName}</p> : null}
-                    {request.signalAmount ? (
-                      <p className="text-sm font-semibold text-emerald-800">
-                        Sinal {formatBRL(request.signalAmount)}
-                        {request.estimatedTotal
-                          ? ` · faltam ${formatBRL(request.estimatedTotal - request.signalAmount)}`
-                          : ""}
-                      </p>
-                    ) : null}
-                    {request.deliveredAt ? <p className="text-sm font-semibold text-stone-500">Entregue</p> : null}
-                    <ul className="mt-1 text-stone-700">
-                      {request.items.map((item) => (
-                        <li key={item.nicheId}>
-                          {item.label} · pediu {item.qty}
-                          {item.sentQty > 0 ? ` · mandou ${item.sentQty}` : ""}
-                        </li>
-                      ))}
-                    </ul>
-                    {canSignal || canDeliver ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {canSignal ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="min-h-11"
-                            onClick={() => {
-                              setOk("");
-                              setPending({ action: "sinal", request });
-                            }}
-                          >
-                            Receber sinal 50%
-                          </Button>
-                        ) : null}
-                        {canDeliver ? (
-                          <Button
-                            type="button"
-                            className="min-h-11"
-                            onClick={() => {
-                              setOk("");
-                              setPending({ action: "entregar", request });
-                            }}
-                          >
-                            Resto e entregar
-                          </Button>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </Card>
-                );
-              })}
+              {minePage.rows.map(requestCard)}
               <Pager
                 page={minePage.page}
                 pages={minePage.pages}

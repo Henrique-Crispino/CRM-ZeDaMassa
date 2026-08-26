@@ -1,11 +1,11 @@
 import { currentCashSession, money2 } from "./cash";
 import { getDb } from "./db";
-import { isStore } from "./locations";
-import { newId } from "./money";
+import { getLocation, isStore } from "./locations";
+import { formatBRL, newId, todayDate } from "./money";
 import { checkout, StockError } from "./stock";
 import { catalogItems } from "./queries";
-import type { PaymentMethod, SalePayment } from "./types";
-import { PAYMENT_METHODS, storeRequestKind, transferStatus } from "./types";
+import type { PaymentMethod, SalePayment, StockRequest, StockRequestItem, Transfer } from "./types";
+import { isOpenRequest, PAYMENT_METHODS, storeRequestKind, transferStatus } from "./types";
 
 export class EncomendaError extends Error {}
 
@@ -165,4 +165,131 @@ export async function deliverEncomenda(input: {
     deliveredAt: new Date().toISOString(),
   });
   return saleId;
+}
+
+export type PartyStockState = "aguardando" | "parcial" | "sem_saldo" | "em_transito" | "na_loja";
+
+export type OpenParty = {
+  id: string;
+  storeId: string;
+  storeName: string;
+  neededBy: string;
+  guestName: string;
+  estimatedTotal: number;
+  signalAmount: number;
+  due: number;
+  stock: PartyStockState;
+  stockLabel: string;
+  itemsLabel: string;
+  at: string;
+};
+
+export function partyDue(estimatedTotal?: number, signalAmount?: number) {
+  return money2((estimatedTotal ?? 0) - (signalAmount ?? 0));
+}
+
+export function isOpenPartyRequest(row: {
+  kind?: StockRequest["kind"];
+  status?: StockRequest["status"];
+  deliveredAt?: string;
+  signalSaleId?: string;
+  signalAmount?: number;
+}) {
+  if (storeRequestKind(row) !== "encomenda") return false;
+  if (row.status === "cancelled") return false;
+  if (row.deliveredAt) return false;
+  if (!row.signalSaleId) return false;
+  return money2(row.signalAmount ?? 0) > 0;
+}
+
+export function partyMoneyPhrase(input: {
+  estimatedTotal?: number;
+  signalAmount?: number;
+  deliveredAt?: string;
+}) {
+  if (input.deliveredAt) return "Festa entregue";
+  const signal = money2(input.signalAmount ?? 0);
+  if (signal <= 0) return "";
+  const due = partyDue(input.estimatedTotal, signal);
+  return due > 0 ? `Sinal ${formatBRL(signal)} · faltam ${formatBRL(due)}` : `Sinal ${formatBRL(signal)}`;
+}
+
+export function partyStockLabel(stock: PartyStockState) {
+  return {
+    aguardando: "Aguardando a fábrica mandar",
+    parcial: "Mandou parte",
+    sem_saldo: "Fábrica sem saldo",
+    em_transito: "A caminho — a loja ainda confere",
+    na_loja: "Já na loja — falta o resto no dia",
+  }[stock];
+}
+
+function partyStockOf(request: StockRequest, items: StockRequestItem[], transfers: Transfer[]): PartyStockState {
+  const leftover = items.some((item) => (item.sentQty ?? 0) < item.qty);
+  if (request.status === "sem_saldo") return "sem_saldo";
+  if (leftover || isOpenRequest(request.status)) {
+    if (request.status === "parcial" || items.some((item) => (item.sentQty ?? 0) > 0)) return "parcial";
+    return "aguardando";
+  }
+  const mine = transfers.filter((row) => row.requestId === request.id);
+  if (mine.some((row) => transferStatus(row) === "em_transito")) return "em_transito";
+  return "na_loja";
+}
+
+export async function listOpenParties(storeId?: string): Promise<OpenParty[]> {
+  const db = getDb();
+  const [requests, requestItems, transfers, catalog] = await Promise.all([
+    db.requests.toArray(),
+    db.requestItems.toArray(),
+    db.transfers.toArray(),
+    catalogItems(false),
+  ]);
+  const itemsByRequest = new Map<string, StockRequestItem[]>();
+  for (const item of requestItems) {
+    const list = itemsByRequest.get(item.requestId) ?? [];
+    list.push(item);
+    itemsByRequest.set(item.requestId, list);
+  }
+
+  const parties: OpenParty[] = [];
+  for (const request of requests) {
+    if (storeId && request.fromLocationId !== storeId) continue;
+    if (!isOpenPartyRequest(request)) continue;
+    const signal = money2(request.signalAmount ?? 0);
+
+    const items = itemsByRequest.get(request.id) ?? [];
+    const stock = partyStockOf(request, items, transfers);
+    const labels = items
+      .map((item) => {
+        const found = catalog.find((row) => row.niche.id === item.nicheId);
+        return found ? `${item.qty} ${found.label}` : `${item.qty}`;
+      })
+      .slice(0, 4)
+      .join(", ");
+
+    parties.push({
+      id: request.id,
+      storeId: request.fromLocationId,
+      storeName: getLocation(request.fromLocationId)?.name ?? "Loja",
+      neededBy: request.neededBy ?? "",
+      guestName: request.guestName?.trim() ?? "",
+      estimatedTotal: money2(request.estimatedTotal ?? 0),
+      signalAmount: signal,
+      due: partyDue(request.estimatedTotal, signal),
+      stock,
+      stockLabel: partyStockLabel(stock),
+      itemsLabel: labels,
+      at: request.at,
+    });
+  }
+
+  return parties.sort((a, b) => {
+    const day = (a.neededBy || "9999").localeCompare(b.neededBy || "9999");
+    if (day !== 0) return day;
+    return a.at.localeCompare(b.at);
+  });
+}
+
+export function partyIsOverdue(neededBy: string, today = todayDate()) {
+  return Boolean(neededBy) && neededBy < today;
 }

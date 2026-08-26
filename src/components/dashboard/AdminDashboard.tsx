@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FileDown } from "lucide-react";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { PendingRequests } from "@/components/PendingRequests";
+import { OpenParties } from "@/components/OpenParties";
 import { Card, PageTitle } from "@/components/ui";
 import { formatBRL, rangePhrase } from "@/lib/money";
 import type { DashboardData } from "@/lib/queries";
@@ -101,6 +102,8 @@ export function AdminDashboard({
           </p>
         </Card>
       </div>
+
+      <OpenParties />
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <ChartCard title="Faturamento por loja" empty={data.byLocation.every((item) => item.revenue === 0)}>

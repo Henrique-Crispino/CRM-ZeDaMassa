@@ -8,6 +8,7 @@ import { ReportPreview } from "@/components/ReportPreview";
 import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { PageBoard, Pager, usePager } from "@/components/pager";
 import { cancelFactoryOrder, deliverFactoryOrder, FactoryOrderError, listFactoryOrders, quoteFactoryOrder } from "@/lib/factory-orders";
+import { partyMoneyPhrase } from "@/lib/encomendas";
 import { getPanel } from "@/lib/locations";
 import { reportRomaneio, type ReportTable } from "@/lib/reports";
 import { cancelRequest, fulfillRequest, listRequests, requestWhen, RequestError, type RequestItemView } from "@/lib/requests";
@@ -34,9 +35,17 @@ type QueueRow = {
   at: string;
   note: string;
   neededBy?: string;
+  guestName?: string;
   kindLabel?: string;
+  estimatedTotal?: number;
+  signalAmount?: number;
+  deliveredAt?: string;
   items: RequestItemView[];
 };
+
+function storePartyMoney(row: QueueRow) {
+  return row.source === "store" ? partyMoneyPhrase(row) : "";
+}
 
 export default function PedidosPage() {
   const ready = useReady();
@@ -62,7 +71,11 @@ export default function PedidosPage() {
       at: row.at,
       note: row.note,
       neededBy: row.neededBy,
+      guestName: row.guestName,
       kindLabel: storeRequestKindLabel(storeRequestKind(row)),
+      estimatedTotal: row.estimatedTotal,
+      signalAmount: row.signalAmount,
+      deliveredAt: row.deliveredAt,
       items: row.items,
     }));
     const customers = (orders ?? []).map((row) => ({
@@ -190,6 +203,10 @@ export default function PedidosPage() {
                   {request.neededBy ? (
                     <p className="mt-1 font-extrabold text-orange-900">Para {formatDate(request.neededBy)}</p>
                   ) : null}
+                  {request.guestName ? <p className="mt-1 font-semibold text-stone-700">{request.guestName}</p> : null}
+                  {storePartyMoney(request) ? (
+                    <p className="mt-1 font-semibold text-emerald-800">{storePartyMoney(request)}</p>
+                  ) : null}
                   {request.note ? <p className="mt-2 font-semibold text-stone-700">Recado: {request.note}</p> : null}
                   {request.status === "sem_saldo" ? (
                     <p className="mt-2 font-bold text-red-700">
@@ -284,7 +301,7 @@ export default function PedidosPage() {
       {others.length > 0 ? (
         <section className="mt-10">
           <h2 className="mb-3 text-2xl font-extrabold">Já resolvidos</h2>
-          <PageBoard ref={othersPage.listRef} size={othersPage.size} rowMin="6.5rem">
+          <PageBoard ref={othersPage.listRef} size={othersPage.size} rowMin="7.5rem">
             {othersPage.rows.map((request) => (
               <Card key={`${request.source}-${request.id}`}>
                 <p className="font-extrabold">
@@ -292,6 +309,10 @@ export default function PedidosPage() {
                   {request.name} · {request.statusLabel}
                   {request.neededBy ? ` · ${formatDate(request.neededBy)}` : ""}
                 </p>
+                {request.guestName ? <p className="text-stone-600">{request.guestName}</p> : null}
+                {storePartyMoney(request) ? (
+                  <p className="font-semibold text-emerald-800">{storePartyMoney(request)}</p>
+                ) : null}
                 <p className="text-stone-500">{requestWhen(request.at)}</p>
                 <ul className="mt-1 text-stone-700">
                   {request.items.map((item) => (

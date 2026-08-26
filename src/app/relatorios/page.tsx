@@ -19,6 +19,7 @@ import {
   reportInventory,
   reportProduction,
   reportFactoryClients,
+  reportOpenParties,
   reportSales,
   reportStock,
   reportTransfers,
@@ -95,7 +96,7 @@ export default function RelatoriosPage() {
         <div>
           <p className="mb-1 text-base font-bold text-stone-800">De quando até quando</p>
           <p className="mb-3 text-sm text-stone-500">
-            Vale para fechamento, vendas, perdas, envios, produção e consumo. Posição de estoque é foto agora — não usa essas datas.
+            Vale para fechamento, vendas, perdas, envios, produção e consumo. Posição de estoque e festas em aberto são foto agora — não usam essas datas.
           </p>
           <DateRangeFilter
             from={from}
@@ -243,6 +244,21 @@ export default function RelatoriosPage() {
           id="stock"
           onCsv={() => run("stock", "csv", () => reportStock(scope), "estoque")}
           onPrint={() => run("stock", "print", () => reportStock(scope), "estoque")}
+        />
+        <ReportCard
+          title="Festas em aberto"
+          hint="Sinal já entrou e o resto ainda falta. Foto agora. Não entra no Vendeu até a loja entregar."
+          uses={
+            scope === "factory"
+              ? "Foto agora · loja (troque o recorte)"
+              : scope === "all"
+                ? "Foto agora · todas as lojas"
+                : `Foto agora · ${storeLabel}`
+          }
+          busy={busy}
+          id="parties"
+          onCsv={() => run("parties", "csv", () => reportOpenParties(scope), "festas-em-aberto")}
+          onPrint={() => run("parties", "print", () => reportOpenParties(scope), "festas-em-aberto")}
         />
         <ReportCard
           title="Inventário e ajuste"
