@@ -54,7 +54,7 @@ async function main() {
   const { DEFAULT_EMPLOYEES, DEMO_AS_OF_SETTING, ensureDemoData, loadDemoData } = await import("../src/lib/seed.ts");
   const { personAllowedPanelIds, personCanUsePanel, personHomePanelId } = await import("../src/lib/people.ts");
   const { enterOperator, switchOperatorPanel, verifyOperatorPin } = await import("../src/lib/operator.ts");
-  const { getActorId, getLocationId } = await import("../src/lib/session.ts");
+  const { getActorId, getLocationId, clearOperatorSession } = await import("../src/lib/session.ts");
   const { todayDate, addDays, startOfDayIso, endOfDayIso, parseMoney, formatBRL } = await import("../src/lib/money.ts");
   const { stockQty, changeStock } = await import("../src/lib/stock-core.ts");
   const {
@@ -153,9 +153,25 @@ async function main() {
     record("Yokota vai ao Jardim", getLocationId() === "store_2", `lugar=${getLocationId()}`);
   }
 
+  await expectFail(
+    "Sem quem opera não produz",
+    async () => {
+      clearOperatorSession();
+      await produceItems({ madeAt: today, items: [{ nicheId: "cox-mini", qty: 1 }] });
+    },
+    "operando",
+  );
+  if (yokota) enterOperator(yokota);
+
   await expectFail("Produzir bebida é recusado", () => produceItems({ madeAt: today, items: [{ nicheId: "coca-350", qty: 10 }] }), "não se produz");
   await expectFail("Comprar salgado é recusado", () => receivePurchase({ receivedAt: today, items: [{ nicheId: "cox-mini", qty: 10, unitCost: 0.4 }] }), "fabricado");
   await expectOk("Produzir coxinha na fábrica", () => produceItems({ madeAt: today, items: [{ nicheId: "cox-mini", qty: 100 }] }));
+  const prodMove = (await db.movements.where("type").equals("production").toArray())[0];
+  record(
+    "Produção grava quem operou",
+    Boolean(prodMove?.actorId) && prodMove?.actorId === getActorId(),
+    `actor=${prodMove?.actorId}`,
+  );
   await expectOk("Comprar Coca na fábrica", () => receivePurchase({ receivedAt: today, items: [{ nicheId: "coca-350", qty: 40, unitCost: 3.1 }] }));
   const coxLot = (await db.lots.where("nicheId").equals("cox-mini").toArray())[0];
   const cocaLot = (await db.lots.where("nicheId").equals("coca-350").toArray())[0];
@@ -433,9 +449,13 @@ async function main() {
   const afterReceive = await stockQty("store_1", "cox-mini");
   record("Depois de conferir, a loja tem 40", afterReceive === 40, `qty=${afterReceive}`);
 
-  await expectOk("Venda em dinheiro", () =>
+  const saleId = (await expectOk("Venda em dinheiro", () =>
     checkout({ locationId: "store_1", channel: "caixa", payment: "dinheiro", items: [{ nicheId: "cox-mini", qty: 10 }] }),
-  );
+  )) as string | null;
+  if (saleId) {
+    const sale = await db.sales.get(saleId);
+    record("Venda grava quem operou", sale?.actorId === getActorId(), `actor=${sale?.actorId}`);
+  }
 
   await db.niches.add({
     id: "cox-festa",

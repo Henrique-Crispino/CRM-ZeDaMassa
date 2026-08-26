@@ -1,3 +1,4 @@
+import { stampActor } from "./actor";
 import { currentCashSession } from "./cash";
 import { isCleaning, isClosedPackage, isSoldAtRegister } from "./categories";
 import { getDb } from "./db";
@@ -260,6 +261,7 @@ export async function registerInternalConsume(input: {
     throw new ConsumeError("A fábrica não tem consumo interno. Retire na loja.");
   }
 
+  const actor = await stampActor(ConsumeError);
   const user = await authenticateConsumeUser({
     locationId: input.locationId,
     login: input.login,
@@ -369,6 +371,7 @@ export async function registerInternalConsume(input: {
             userId: user.id,
             userName: user.name,
             unitCost: lotCost(lot, niche?.costPrice ?? 0),
+            actorId: actor.actorId,
           });
           await db.movements.add({
             id: newId(),
@@ -379,6 +382,7 @@ export async function registerInternalConsume(input: {
             type: "internal",
             refId,
             at,
+            actorId: actor.actorId,
           });
         }
       }

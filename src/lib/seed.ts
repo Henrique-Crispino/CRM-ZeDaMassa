@@ -1,3 +1,4 @@
+import { runAsActor } from "./actor";
 import { CASH_REOPEN_CODE, CASH_REOPEN_SETTING } from "./cash";
 import { getDb } from "./db";
 import { deliverFactoryOrder } from "./factory-orders";
@@ -468,6 +469,7 @@ async function seedVolumeOrder(input: {
     status: "pending",
     note: input.note,
     at: input.at,
+    actorId: PERSON_BRENDAO.id,
   });
   for (const item of input.items) {
     await db.factoryOrderItems.add({
@@ -490,7 +492,7 @@ async function seedVolumeOrder(input: {
   await notifyVolumeDemo("factory_order", `${name} pediu na câmara`, labels, input.id, input.at);
   if (!input.deliver) return true;
   try {
-    await deliverFactoryOrder(input.id, undefined, { method: "pix" });
+    await runAsActor(PERSON_BRENDAO.id, () => deliverFactoryOrder(input.id, undefined, { method: "pix" }));
     await backdateVolumeOrder(input.id, input.at);
     return true;
   } catch {
@@ -604,6 +606,7 @@ async function ensureOpenPartyStory() {
     estimatedTotal: 400,
     signalAmount: 200,
     signalSaleId: "sale-sinal-festa-aberta",
+    actorId: PERSON_TELMA.id,
   });
   await db.requestItems.add({
     id: "req-festa-aberta-cox",
@@ -628,6 +631,12 @@ function periodOf(hour: number) {
 function employeeFor(storeId: string, _period: "manha" | "tarde") {
   if (storeId === "store_1") return PERSON_TELMA;
   return PERSON_YOKOTA;
+}
+
+function demoActorId(locationId: string) {
+  if (locationId === "factory") return PERSON_BRENDAO.id;
+  if (locationId === "store_1") return PERSON_TELMA.id;
+  return PERSON_YOKOTA.id;
 }
 
 export async function hasOperationalData() {
@@ -946,10 +955,6 @@ export async function loadDemoData(opts?: { force?: boolean }) {
     }
   }
 
-  function storeName(locationId: string) {
-    return DEFAULT_STORES.find((store) => store.id === locationId)?.name ?? locationId;
-  }
-
   function ensureSession(storeId: string, daysAgo: number, period: "manha" | "tarde") {
     const madeAt = dateKey(daysAgo);
     const id = `cash-${storeId}-${madeAt}-${period}`;
@@ -967,6 +972,7 @@ export async function loadDemoData(opts?: { force?: boolean }) {
         closedAt: today ? undefined : dayAt(daysAgo, period === "manha" ? 13 : 21, 40).toISOString(),
         openingAmount: period === "manha" ? 150 : 80,
         closingAmount: today ? undefined : between(rng, 180, 420),
+        actorId: employee?.id ?? PERSON_TELMA.id,
       });
     }
     return id;
@@ -1024,8 +1030,10 @@ export async function loadDemoData(opts?: { force?: boolean }) {
         at: sentAt,
         status: "conferido",
         receivedAt: sentAt,
-        receivedBy: storeName(toLocationId),
+        receivedBy: toLocationId === "store_1" ? PERSON_TELMA.name : PERSON_YOKOTA.name,
+        receivedById: toLocationId === "store_1" ? PERSON_TELMA.id : PERSON_YOKOTA.id,
         sentBy: PERSON_BRENDAO.name,
+        sentById: PERSON_BRENDAO.id,
       });
 
       for (const nicheId of NICHE_IDS) {
@@ -1257,6 +1265,7 @@ export async function loadDemoData(opts?: { force?: boolean }) {
       at: dayAt(0, 10, 40).toISOString(),
       status: "em_transito",
       sentBy: PERSON_BRENDAO.name,
+      sentById: PERSON_BRENDAO.id,
     });
     for (const chunk of lateChunks) {
       transferItems.push({
@@ -1299,6 +1308,7 @@ export async function loadDemoData(opts?: { force?: boolean }) {
         reason: "Recolhimento ao cofre",
         destination: "cofre",
         at: session.closedAt,
+        actorId: session.employeeId,
       });
     }
     const expected = Math.round((session.openingAmount + cashSales - sangria) * 100) / 100;
@@ -1314,6 +1324,19 @@ export async function loadDemoData(opts?: { force?: boolean }) {
     }
     if (difference < -1) session.note = "Quebra registrada na conferência.";
     if (difference > 1) session.note = "Sobra registrada na conferência.";
+  }
+
+  for (const row of movements) {
+    if (!row.actorId) row.actorId = demoActorId(row.locationId);
+  }
+  for (const row of wastes) {
+    if (!row.actorId) row.actorId = demoActorId(row.locationId);
+  }
+  for (const row of sales) {
+    if (!row.actorId) row.actorId = demoActorId(row.locationId);
+  }
+  for (const row of consumptions) {
+    if (!row.actorId) row.actorId = row.userId ?? demoActorId(row.locationId);
   }
 
   const products = CATALOG.map((item) => item.product);
@@ -1412,19 +1435,23 @@ export async function loadDemoData(opts?: { force?: boolean }) {
 
   await refreshLocations();
 
-  await createStoreRequest({
-    fromLocationId: "store_1",
-    note: "Cliente da festa de aniversário amanhã. Festa e pastel.",
-    items: [
-      { nicheId: "cox-festa", qty: 40 },
-      { nicheId: "pas-local", qty: 15 },
-    ],
-  });
-  await createStoreRequest({
-    fromLocationId: "store_2",
-    note: "Geladeira do Jardim no fim. Mandar lata.",
-    items: [{ nicheId: "coca-350", qty: 18 }],
-  });
+  await runAsActor(PERSON_TELMA.id, () =>
+    createStoreRequest({
+      fromLocationId: "store_1",
+      note: "Cliente da festa de aniversário amanhã. Festa e pastel.",
+      items: [
+        { nicheId: "cox-festa", qty: 40 },
+        { nicheId: "pas-local", qty: 15 },
+      ],
+    }),
+  );
+  await runAsActor(PERSON_YOKOTA.id, () =>
+    createStoreRequest({
+      fromLocationId: "store_2",
+      note: "Geladeira do Jardim no fim. Mandar lata.",
+      items: [{ nicheId: "coca-350", qty: 18 }],
+    }),
+  );
   await ensureVolumeStory();
   await ensureOpenPartyStory();
 }

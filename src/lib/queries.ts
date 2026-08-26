@@ -739,7 +739,7 @@ export async function loadKardex(input: {
   const found = catalog.find((item) => item.niche.id === input.nicheId);
   const label = found?.label ?? "Produto";
 
-  const [movements, lots, sales, sessions, consumptions, wastes, transfers, counts, lines, factoryOrders, customers] =
+  const [movements, lots, sales, sessions, consumptions, wastes, transfers, counts, lines, factoryOrders, customers, people] =
     await Promise.all([
       db.movements.where("nicheId").equals(input.nicheId).toArray(),
       db.lots.toArray(),
@@ -752,6 +752,7 @@ export async function loadKardex(input: {
       db.inventoryLines.toArray(),
       db.factoryOrders.toArray(),
       db.customers.toArray(),
+      db.employees.toArray(),
     ]);
 
   const lotById = new Map(lots.map((lot) => [lot.id, lot]));
@@ -761,6 +762,7 @@ export async function loadKardex(input: {
   const countById = new Map(counts.map((row) => [row.id, row]));
   const factoryOrderById = new Map(factoryOrders.map((row) => [row.id, row]));
   const customerById = new Map(customers.map((row) => [row.id, row]));
+  const personById = new Map(people.map((row) => [row.id, row]));
 
   const scoped = movements
     .filter((row) => !input.locationId || row.locationId === input.locationId)
@@ -778,28 +780,29 @@ export async function loadKardex(input: {
     if (movement.at < input.from || movement.at > input.to) continue;
     const lot = lotById.get(movement.lotId);
     const locationName = getLocation(movement.locationId)?.name ?? movement.locationId;
-    let who = locationName;
+    const operatorName = movement.actorId ? personById.get(movement.actorId)?.name : undefined;
+    let who = operatorName ?? locationName;
     let note = "";
     let typeLabel = movementLabel(movement.type);
 
     if (movement.type === "production") {
-      who = "Fábrica";
+      who = operatorName ?? "Fábrica";
       note = "Entrou da produção";
     } else if (movement.type === "purchase") {
-      who = "Fábrica";
+      who = operatorName ?? "Fábrica";
       note = "Entrada de mercadoria";
     } else if (movement.type === "send") {
       const transfer = transferById.get(movement.refId);
       const dest = getLocation(transfer?.toLocationId ?? "")?.name ?? transfer?.toLocationId ?? "loja";
       if (movement.qty < 0) {
-        who = "Fábrica";
+        who = operatorName ?? transfer?.sentBy ?? "Fábrica";
         note = `Mandou para ${dest}`;
         if (transfer && transferStatus(transfer) === "em_transito") note += " · ainda em trânsito";
       } else if (movement.locationId === "factory") {
-        who = transfer?.receivedBy ?? dest;
+        who = operatorName ?? transfer?.receivedBy ?? dest;
         note = `Voltou da conferência · não chegou na ${dest}`;
       } else {
-        who = transfer?.receivedBy ?? locationName;
+        who = operatorName ?? transfer?.receivedBy ?? locationName;
         note = `Recebeu da ${getLocation(transfer?.fromLocationId ?? "factory")?.name ?? "fábrica"}`;
         if (transfer && transferStatus(transfer) === "divergente") note += " · conferência com divergência";
       }
@@ -808,17 +811,23 @@ export async function loadKardex(input: {
       const storeName =
         getLocation(transfer?.fromLocationId ?? "")?.name ?? transfer?.fromLocationId ?? "loja";
       if (movement.qty < 0) {
-        who = locationName;
+        who = operatorName ?? locationName;
         note = `${returnReasonLabel(transfer?.reason)} · voltando para a fábrica`;
         if (transfer && transferStatus(transfer) === "em_transito") note += " · ainda em trânsito";
       } else {
-        who = transfer?.receivedBy ?? "Fábrica";
+        who = operatorName ?? transfer?.receivedBy ?? "Fábrica";
         note = `Voltou da ${storeName}`;
       }
     } else if (movement.type === "sale" || movement.type === "sale_void") {
       const sale = saleById.get(movement.refId);
       const session = sale?.cashSessionId ? sessionById.get(sale.cashSessionId) : undefined;
-      who = session?.employeeName ?? locationName;
+      const saleActor =
+        sale?.actorId && movement.type === "sale"
+          ? personById.get(sale.actorId)?.name
+          : sale?.voidedById && movement.type === "sale_void"
+            ? personById.get(sale.voidedById)?.name
+            : undefined;
+      who = operatorName ?? saleActor ?? session?.employeeName ?? locationName;
       note =
         movement.type === "sale_void"
           ? saleVoidReasonLabel(sale?.voidReason)
@@ -833,7 +842,7 @@ export async function loadKardex(input: {
           row.qty === Math.abs(movement.qty) &&
           localDay(row.at) === localDay(movement.at),
       );
-      who = consume?.userName ?? locationName;
+      who = consume?.userName ?? operatorName ?? locationName;
       note = "Consumo interno";
     } else if (movement.type === "waste") {
       const waste = wastes.find(
@@ -843,7 +852,7 @@ export async function loadKardex(input: {
           row.qty === Math.abs(movement.qty) &&
           localDay(row.at) === localDay(movement.at),
       );
-      who = locationName;
+      who = operatorName ?? locationName;
       note =
         waste?.reason === "vencido"
           ? "Descarte de vencido"
@@ -853,10 +862,10 @@ export async function loadKardex(input: {
     } else if (movement.type === "ajuste") {
       const count = countById.get(movement.refId);
       const line = lines.find((row) => row.countId === movement.refId && row.nicheId === movement.nicheId);
-      who = count?.countedBy ?? locationName;
+      who = operatorName ?? count?.countedBy ?? locationName;
       note = adjustmentReasonLabel(line?.reason);
     } else if (movement.type === "uso") {
-      who = locationName;
+      who = operatorName ?? locationName;
       note = "Abriu o pacote";
     } else if (movement.type === "cliente") {
       const order = factoryOrderById.get(movement.refId);
@@ -870,7 +879,7 @@ export async function loadKardex(input: {
       }
       if (customer?.name) typeLabel = `Cliente · ${customer.name}`;
     } else if (movement.type === "retirada") {
-      who = locationName;
+      who = operatorName ?? locationName;
       note = "Saiu da loja com o dinheiro · não é venda";
     }
 

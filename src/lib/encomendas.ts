@@ -1,3 +1,4 @@
+import { stampActor } from "./actor";
 import { currentCashSession, money2 } from "./cash";
 import { getDb } from "./db";
 import { getLocation, isStore } from "./locations";
@@ -75,6 +76,7 @@ export async function takeEncomendaSignal(input: {
   const session = await currentCashSession(request.fromLocationId);
   if (!session) throw new EncomendaError("Abra o caixa deste período antes de receber o sinal.");
 
+  const actor = await stampActor(EncomendaError);
   const payments = paymentsOf(amount, input);
   const saleId = newId();
   const at = new Date().toISOString();
@@ -98,6 +100,7 @@ export async function takeEncomendaSignal(input: {
         cashSessionId: live.id,
         kind: "sinal",
         requestId: request.id,
+        actorId: actor.actorId,
       });
       await db.requests.update(request.id, { signalAmount: amount, signalSaleId: saleId });
     });

@@ -1,3 +1,4 @@
+import { stampActor } from "./actor";
 import { isClosedPackage, isPurchased, isSoldAtRegister, notForSaleMessage } from "./categories";
 import { ComboError, loadComboForCheckout, splitComboPrice } from "./combos";
 import { currentCashSession, money2, sessionLedger } from "./cash";
@@ -48,6 +49,7 @@ export async function produceItems(input: {
     throw new StockError("Informe a quantidade que foi produzida.");
   }
 
+  const actor = await stampActor(StockError);
   await assertLiveNiches(items.map((item) => item.nicheId));
 
   const db = getDb();
@@ -87,6 +89,7 @@ export async function produceItems(input: {
         type: "production",
         refId,
         at,
+        actorId: actor.actorId,
       });
     }
   });
@@ -103,6 +106,7 @@ export async function receivePurchase(input: {
     throw new StockError("Informe o que chegou da compra.");
   }
 
+  const actor = await stampActor(StockError);
   await assertLiveNiches(items.map((item) => item.nicheId));
 
   const db = getDb();
@@ -148,6 +152,7 @@ export async function receivePurchase(input: {
         type: "purchase",
         refId,
         at,
+        actorId: actor.actorId,
       });
     }
   });
@@ -171,6 +176,7 @@ export async function sendToStore(input: {
     throw new StockError("Escolha pelo menos um produto para mandar.");
   }
 
+  const actor = await stampActor(StockError);
   await assertLiveNiches(items.map((item) => item.nicheId));
 
   const db = getDb();
@@ -205,7 +211,8 @@ export async function sendToStore(input: {
         at,
         status: "em_transito",
         kind: "envio",
-        sentBy: input.sentBy?.trim() || "Fábrica",
+        sentBy: actor.actorName,
+        sentById: actor.actorId,
         requestId: input.requestId,
       });
 
@@ -229,6 +236,7 @@ export async function sendToStore(input: {
             type: "send",
             refId: transferId,
             at,
+            actorId: actor.actorId,
           });
         }
       }
@@ -240,12 +248,10 @@ export async function sendToStore(input: {
 
 export async function receiveTransfer(input: {
   transferId: string;
-  receivedBy: string;
+  receivedBy?: string;
   items: { id: string; receivedQty: number }[];
 }) {
-  const receivedBy = input.receivedBy.trim();
-  if (!receivedBy) throw new StockError("Falta quem conferiu o que chegou.");
-
+  const actor = await stampActor(StockError);
   const db = getDb();
   const transfer = await db.transfers.get(input.transferId);
   if (!transfer) throw new StockError("Envio não encontrado.");
@@ -300,6 +306,7 @@ export async function receiveTransfer(input: {
             type: "send",
             refId: transfer.id,
             at,
+            actorId: actor.actorId,
           });
         }
         if (returnedQty > 0) {
@@ -313,6 +320,7 @@ export async function receiveTransfer(input: {
             type: "send",
             refId: transfer.id,
             at,
+            actorId: actor.actorId,
           });
         }
         await db.transferItems.update(part.id, { receivedQty });
@@ -321,7 +329,8 @@ export async function receiveTransfer(input: {
       await db.transfers.update(transfer.id, {
         status: divergente ? "divergente" : "conferido",
         receivedAt: at,
-        receivedBy,
+        receivedBy: actor.actorName,
+        receivedById: actor.actorId,
       });
     },
   );
@@ -344,6 +353,7 @@ export async function returnToFactory(input: {
     throw new StockError("Escolha o que vai devolver.");
   }
 
+  const actor = await stampActor(StockError);
   const db = getDb();
   const transferId = newId();
   const at = new Date().toISOString();
@@ -361,6 +371,8 @@ export async function returnToFactory(input: {
         status: "em_transito",
         kind: "devolucao",
         reason: input.reason,
+        sentBy: actor.actorName,
+        sentById: actor.actorId,
       });
 
       for (const item of items) {
@@ -387,6 +399,7 @@ export async function returnToFactory(input: {
             type: "return",
             refId: transferId,
             at,
+            actorId: actor.actorId,
           });
         }
       }
@@ -398,12 +411,10 @@ export async function returnToFactory(input: {
 
 export async function receiveReturn(input: {
   transferId: string;
-  receivedBy: string;
+  receivedBy?: string;
   items: { id: string; acceptedQty: number }[];
 }) {
-  const receivedBy = input.receivedBy.trim();
-  if (!receivedBy) throw new StockError("Falta quem conferiu a devolução.");
-
+  const actor = await stampActor(StockError);
   const db = getDb();
   const transfer = await db.transfers.get(input.transferId);
   if (!transfer) throw new StockError("Devolução não encontrada.");
@@ -456,6 +467,7 @@ export async function receiveReturn(input: {
           type: "return",
           refId: transfer.id,
           at,
+          actorId: actor.actorId,
         });
 
         if (discardedQty > 0) {
@@ -472,6 +484,7 @@ export async function receiveReturn(input: {
             at,
             unitCost: lotCost(lot, niche?.costPrice ?? 0),
             unitPrice: lotPrice(lot, niche?.sellPrice ?? 0),
+            actorId: actor.actorId,
           });
           await db.movements.add({
             id: newId(),
@@ -482,6 +495,7 @@ export async function receiveReturn(input: {
             type: "waste",
             refId: transfer.id,
             at,
+            actorId: actor.actorId,
           });
         }
 
@@ -491,7 +505,8 @@ export async function receiveReturn(input: {
       await db.transfers.update(transfer.id, {
         status: discardedAny ? "divergente" : "conferido",
         receivedAt: at,
-        receivedBy,
+        receivedBy: actor.actorName,
+        receivedById: actor.actorId,
       });
     },
   );
@@ -550,6 +565,7 @@ export async function checkout(input: {
 
   await assertLiveNiches(items.map((item) => item.nicheId));
 
+  const actor = await stampActor(StockError);
   const session = await currentCashSession(input.locationId);
   if (!session) {
     throw new StockError("Abra o caixa deste período antes de vender.");
@@ -631,6 +647,7 @@ export async function checkout(input: {
             type: "sale",
             refId: saleId,
             at,
+            actorId: actor.actorId,
           });
         }
         total += fifoSaleTotal(priced);
@@ -703,6 +720,7 @@ export async function checkout(input: {
               type: "sale",
               refId: saleId,
               at,
+              actorId: actor.actorId,
             });
           }
         }
@@ -732,6 +750,7 @@ export async function checkout(input: {
         cashSessionId: live.id,
         kind: input.kind === "sinal" ? "sinal" : "venda",
         requestId: input.requestId,
+        actorId: actor.actorId,
       });
     },
   );
@@ -744,6 +763,7 @@ export async function voidSale(input: { saleId: string; reason: SaleVoidReason }
     throw new StockError("Escolha o motivo do estorno: quantidade, produto errado ou desistência.");
   }
 
+  const actor = await stampActor(StockError);
   const db = getDb();
   const sale = await db.sales.get(input.saleId);
   if (!sale) throw new StockError("Venda não encontrada.");
@@ -786,12 +806,14 @@ export async function voidSale(input: { saleId: string; reason: SaleVoidReason }
           type: "sale_void",
           refId: sale.id,
           at,
+          actorId: actor.actorId,
         });
       }
 
       await db.sales.update(sale.id, {
         voidedAt: at,
         voidReason: input.reason,
+        voidedById: actor.actorId,
       });
       if (sale.kind === "sinal" && sale.requestId) {
         const request = await db.requests.get(sale.requestId);
@@ -825,6 +847,7 @@ export async function withdrawProductAndCash(input: {
   }
 
   await assertLiveNiches([input.nicheId]);
+  const actor = await stampActor(StockError);
   const session = await currentCashSession(input.locationId);
   if (!session) throw new StockError("Abra o caixa deste período antes de retirar.");
 
@@ -856,6 +879,7 @@ export async function withdrawProductAndCash(input: {
           type: "retirada",
           refId,
           at,
+          actorId: actor.actorId,
         });
       }
       await db.cashMovements.add({
@@ -867,6 +891,7 @@ export async function withdrawProductAndCash(input: {
         reason: `Retirada: ${reason}`,
         at,
         destination: input.destination,
+        actorId: actor.actorId,
       });
     },
   );
@@ -886,6 +911,7 @@ export async function registerWaste(input: {
     throw new StockError("Informe o que sobrou e não vendeu.");
   }
 
+  const actor = await stampActor(StockError);
   const db = getDb();
   const refId = newId();
   const at = new Date().toISOString();
@@ -911,6 +937,7 @@ export async function registerWaste(input: {
           at,
           unitCost: lotCost(lot, niche?.costPrice ?? 0),
           unitPrice: lotPrice(lot, niche?.sellPrice ?? 0),
+          actorId: actor.actorId,
         });
         await db.movements.add({
           id: newId(),
@@ -921,6 +948,7 @@ export async function registerWaste(input: {
           type: "waste",
           refId,
           at,
+          actorId: actor.actorId,
         });
       }
     }
@@ -944,6 +972,7 @@ export async function openPackages(input: {
 
   await assertLiveNiches(items.map((item) => item.nicheId));
 
+  const actor = await stampActor(StockError);
   const db = getDb();
   const niches = await db.niches.bulkGet(items.map((item) => item.nicheId));
   const products = await db.products.bulkGet(niches.map((niche) => niche?.productId ?? ""));
@@ -971,6 +1000,7 @@ export async function openPackages(input: {
           type: "uso",
           refId,
           at,
+          actorId: actor.actorId,
         });
       }
     }
@@ -987,6 +1017,7 @@ export async function discardExpiredLots(input: {
     throw new StockError("Escolha pelo menos um lote vencido para descartar.");
   }
 
+  const actor = await stampActor(StockError);
   const db = getDb();
   const today = todayDate();
   const refId = newId();
@@ -1013,6 +1044,7 @@ export async function discardExpiredLots(input: {
         at,
         unitCost: lotCost(lot, niche?.costPrice ?? 0),
         unitPrice: lotPrice(lot, niche?.sellPrice ?? 0),
+        actorId: actor.actorId,
       });
       await db.movements.add({
         id: newId(),
@@ -1023,6 +1055,7 @@ export async function discardExpiredLots(input: {
         type: "waste",
         refId,
         at,
+        actorId: actor.actorId,
       });
     }
   });
@@ -1042,7 +1075,7 @@ async function stockOnNiche(locationId: string, nicheId: string) {
 
 export async function applyInventory(input: {
   locationId: string;
-  countedBy: string;
+  countedBy?: string;
   lines: { nicheId: string; lotId?: string; countedQty: number; reason?: AdjustmentReason }[];
   secondCounts?: { nicheId: string; lotId?: string; countedQty: number }[];
   recountedBy?: string;
@@ -1051,8 +1084,8 @@ export async function applyInventory(input: {
     throw new StockError("Escolha a fábrica ou uma loja para contar.");
   }
 
-  const countedBy = input.countedBy.trim();
-  if (!countedBy) throw new StockError("Falta o responsável desta contagem.");
+  const actor = await stampActor(StockError);
+  const countedBy = actor.actorName;
 
   const db = getDb();
   const countId = newId();
@@ -1120,6 +1153,7 @@ export async function applyInventory(input: {
         at,
         countedBy,
         recountedBy,
+        actorId: actor.actorId,
       });
 
       const today = todayDate();
@@ -1141,6 +1175,7 @@ export async function applyInventory(input: {
               type: "ajuste",
               refId: countId,
               at,
+              actorId: actor.actorId,
             });
           }
           await db.inventoryLines.add(line);
@@ -1188,6 +1223,7 @@ export async function applyInventory(input: {
           type: "ajuste",
           refId: countId,
           at,
+          actorId: actor.actorId,
         });
         await db.inventoryLines.add({ ...line, lotId: line.lotId ?? lotId });
       }

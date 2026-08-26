@@ -336,6 +336,7 @@ export type Movement = {
   unitCost?: number;
   unitPrice?: number;
   payment?: PaymentMethod;
+  actorId?: string;
 };
 
 export type TransferStatus = "em_transito" | "conferido" | "divergente";
@@ -388,7 +389,9 @@ export type Transfer = {
   status?: TransferStatus;
   receivedAt?: string;
   receivedBy?: string;
+  receivedById?: string;
   sentBy?: string;
+  sentById?: string;
   kind?: TransferKind;
   reason?: ReturnReason;
   requestId?: string;
@@ -416,9 +419,11 @@ export type Sale = {
   at: string;
   cashSessionId?: string;
   voidedAt?: string;
+  voidedById?: string;
   voidReason?: SaleVoidReason;
   kind?: SaleKind;
   requestId?: string;
+  actorId?: string;
 };
 
 export type SaleItem = {
@@ -496,6 +501,8 @@ export type StockRequest = {
   signalSaleId?: string;
   remainderSaleId?: string;
   deliveredAt?: string;
+  actorId?: string;
+  cancelledById?: string;
 };
 
 export type StockRequestItem = {
@@ -513,6 +520,8 @@ export type FactoryOrder = {
   note: string;
   at: string;
   resolvedAt?: string;
+  actorId?: string;
+  cancelledById?: string;
 };
 
 export type FactoryOrderItem = {
@@ -544,6 +553,7 @@ export type Waste = {
   at: string;
   unitCost?: number;
   unitPrice?: number;
+  actorId?: string;
 };
 
 export type StoreRecord = {
@@ -589,6 +599,7 @@ export type CashMovement = {
   reason: string;
   at: string;
   destination?: CashDestination;
+  actorId?: string;
 };
 
 export type CashSession = {
@@ -614,6 +625,7 @@ export type CashSession = {
   reopenedAt?: string;
   reopenNote?: string;
   reopenCount?: number;
+  actorId?: string;
 };
 
 export type InternalAllowance = {
@@ -657,6 +669,7 @@ export type InternalConsumption = {
   userId?: string;
   userName?: string;
   unitCost?: number;
+  actorId?: string;
 };
 
 export type InventoryCount = {
@@ -665,6 +678,7 @@ export type InventoryCount = {
   at: string;
   countedBy: string;
   recountedBy?: string;
+  actorId?: string;
 };
 
 export type InventoryLine = {

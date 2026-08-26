@@ -1,3 +1,4 @@
+import { stampActor } from "./actor";
 import { getDb } from "./db";
 import { getLocation, isStore } from "./locations";
 import { formatDate, formatTime, newId, todayDate } from "./money";
@@ -82,6 +83,7 @@ export async function createStoreRequest(input: {
     if (neededBy < todayDate()) throw new RequestError("A data da encomenda não pode ser no passado.");
   }
 
+  const actor = await stampActor(RequestError);
   const db = getDb();
   const requestId = newId();
   const at = new Date().toISOString();
@@ -117,6 +119,7 @@ export async function createStoreRequest(input: {
       neededBy: kind === "encomenda" ? neededBy : undefined,
       guestName: guestName || undefined,
       estimatedTotal,
+      actorId: actor.actorId,
     });
     for (const item of items) {
       await db.requestItems.add({
@@ -342,8 +345,9 @@ export async function listRequests(status?: RequestStatus | "open"): Promise<Req
 export async function fulfillRequest(
   requestId: string,
   qtyByNiche?: Record<string, number>,
-  sentBy?: string,
+  _sentBy?: string,
 ) {
+  const actor = await stampActor(RequestError);
   const db = getDb();
   let transferId = "";
 
@@ -364,6 +368,7 @@ export async function fulfillRequest(
         db.factoryOrders,
         db.factoryOrderItems,
         db.customers,
+        db.employees,
       ],
       async () => {
         const request = await db.requests.get(requestId);
@@ -405,7 +410,7 @@ export async function fulfillRequest(
         transferId = await sendToStore({
           toLocationId: request.fromLocationId,
           items: payload.map((row) => ({ nicheId: row.item.nicheId, qty: row.qty })),
-          sentBy: sentBy?.trim() || "Fábrica",
+          sentBy: actor.actorName,
           respectWell: false,
           requestId,
         });
@@ -446,13 +451,18 @@ export async function fulfillRequest(
 }
 
 export async function cancelRequest(requestId: string) {
+  const actor = await stampActor(RequestError);
   const db = getDb();
   const request = await db.requests.get(requestId);
   if (!request || !isOpenRequest(request.status)) {
     throw new RequestError("Esse pedido já foi resolvido.");
   }
   const storeName = getLocation(request.fromLocationId)?.name ?? "loja";
-  await db.requests.update(requestId, { status: "cancelled", resolvedAt: new Date().toISOString() });
+  await db.requests.update(requestId, {
+    status: "cancelled",
+    resolvedAt: new Date().toISOString(),
+    cancelledById: actor.actorId,
+  });
   await notify({
     type: "request_cancelled",
     title: `Pedido da ${storeName} foi dispensado`,

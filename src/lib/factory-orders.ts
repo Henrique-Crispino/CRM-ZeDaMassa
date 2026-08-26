@@ -1,3 +1,4 @@
+import { stampActor } from "./actor";
 import { isSoldAtFactory } from "./categories";
 import { getCustomer } from "./customers";
 import { getDb } from "./db";
@@ -151,6 +152,7 @@ export async function createFactoryOrder(input: {
     }
   }
 
+  const actor = await stampActor(FactoryOrderError);
   const db = getDb();
   const orderId = newId();
   const at = new Date().toISOString();
@@ -169,6 +171,7 @@ export async function createFactoryOrder(input: {
       status: "pending",
       note: input.note?.trim() ?? "",
       at,
+      actorId: actor.actorId,
     });
     for (const item of items) {
       await db.factoryOrderItems.add({
@@ -269,13 +272,18 @@ export async function quoteFactoryOrder(
 }
 
 export async function cancelFactoryOrder(orderId: string) {
+  const actor = await stampActor(FactoryOrderError);
   const db = getDb();
   const order = await db.factoryOrders.get(orderId);
   if (!order || !isOpenRequest(order.status)) {
     throw new FactoryOrderError("Esse pedido já foi resolvido.");
   }
   const customer = await getCustomer(order.customerId);
-  await db.factoryOrders.update(orderId, { status: "cancelled", resolvedAt: new Date().toISOString() });
+  await db.factoryOrders.update(orderId, {
+    status: "cancelled",
+    resolvedAt: new Date().toISOString(),
+    cancelledById: actor.actorId,
+  });
   await notify({
     type: "factory_order_cancelled",
     title: `Pedido de ${customer?.name ?? "cliente"} foi dispensado`,
@@ -290,6 +298,7 @@ export async function deliverFactoryOrder(
   payment?: { method: PaymentMethod },
 ) {
   const method = requirePayment(payment);
+  const actor = await stampActor(FactoryOrderError);
   const db = getDb();
 
   try {
@@ -351,6 +360,7 @@ export async function deliverFactoryOrder(
               unitCost,
               unitPrice,
               payment: method,
+              actorId: actor.actorId,
             });
           }
           const fresh = await db.factoryOrderItems.get(row.item.id);

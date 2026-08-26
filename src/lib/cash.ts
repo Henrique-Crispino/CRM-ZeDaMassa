@@ -1,3 +1,4 @@
+import { stampActor } from "./actor";
 import { getDb } from "./db";
 import { isStore } from "./locations";
 import { newId, todayDate } from "./money";
@@ -100,6 +101,7 @@ export async function openCashSession(input: {
   openingAmount: number;
 }) {
   if (!isStore(input.locationId)) throw new CashError("O caixa é aberto na loja.");
+  const actor = await stampActor(CashError);
   const db = getDb();
   const employee = await db.employees.get(input.employeeId);
   if (!employee || !employee.active) throw new CashError("Escolha o funcionário responsável.");
@@ -115,6 +117,7 @@ export async function openCashSession(input: {
     employeeName: employee.name,
     openedAt: new Date().toISOString(),
     openingAmount: money2(Math.max(0, input.openingAmount)),
+    actorId: actor.actorId,
   };
 
   await db.transaction("rw", [db.cashSessions, db.employees], async () => {
@@ -145,6 +148,7 @@ export async function registerCashMovement(input: {
   reason: string;
   destination?: CashDestination;
 }) {
+  const actor = await stampActor(CashError);
   const db = getDb();
   const amount = money2(input.amount);
   if (amount <= 0) throw new CashError("Informe um valor maior que zero.");
@@ -169,6 +173,7 @@ export async function registerCashMovement(input: {
     reason,
     at: new Date().toISOString(),
     destination: input.type === "sangria" ? input.destination : undefined,
+    actorId: actor.actorId,
   };
 
   await db.transaction("rw", [db.cashSessions, db.cashMovements, db.sales, db.saleItems], async () => {
