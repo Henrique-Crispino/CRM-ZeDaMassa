@@ -10,7 +10,8 @@ export type MovementType =
   | "purchase"
   | "return"
   | "uso"
-  | "cliente";
+  | "cliente"
+  | "retirada";
 export type AdjustmentReason = "quebra" | "furto" | "erro" | "contagem";
 
 export const ADJUSTMENT_REASONS: { id: AdjustmentReason; label: string }[] = [
@@ -36,6 +37,7 @@ export const MOVEMENT_LABELS: Record<MovementType, string> = {
   ajuste: "Ajuste",
   uso: "Abriu o pacote",
   cliente: "Cliente",
+  retirada: "Retirada",
 };
 
 export function movementLabel(type: MovementType) {
@@ -90,6 +92,10 @@ export const SALE_VOID_REASONS: { id: SaleVoidReason; label: string }[] = [
 
 export function isLiveSale(sale: Pick<Sale, "voidedAt">) {
   return !sale.voidedAt;
+}
+
+export function isRevenueSale(sale: Pick<Sale, "voidedAt" | "kind">) {
+  return isLiveSale(sale) && sale.kind !== "sinal";
 }
 
 export function saleVoidReasonLabel(reason?: SaleVoidReason) {
@@ -196,9 +202,24 @@ export type Customer = {
   note: string;
   address: string;
   kind?: CustomerKind;
+  usualWeekdays?: number[];
   active: boolean;
   createdAt: string;
 };
+
+export const WEEKDAYS: { id: number; short: string; label: string }[] = [
+  { id: 1, short: "Seg", label: "segunda" },
+  { id: 2, short: "Ter", label: "terça" },
+  { id: 3, short: "Qua", label: "quarta" },
+  { id: 4, short: "Qui", label: "quinta" },
+  { id: 5, short: "Sex", label: "sexta" },
+  { id: 6, short: "Sáb", label: "sábado" },
+  { id: 0, short: "Dom", label: "domingo" },
+];
+
+export function weekdayLabel(id: number) {
+  return WEEKDAYS.find((item) => item.id === id)?.label ?? "";
+}
 
 export function customerKind(row?: Pick<Customer, "kind"> | null): CustomerKind {
   return row?.kind === "volume" ? "volume" : "festa";
@@ -301,6 +322,7 @@ export type Movement = {
   type: MovementType;
   refId: string;
   at: string;
+  unitCost?: number;
 };
 
 export type TransferStatus = "em_transito" | "conferido" | "divergente";
@@ -356,6 +378,7 @@ export type Transfer = {
   sentBy?: string;
   kind?: TransferKind;
   reason?: ReturnReason;
+  requestId?: string;
 };
 
 export type TransferItem = {
@@ -368,6 +391,8 @@ export type TransferItem = {
   discardedQty?: number;
 };
 
+export type SaleKind = "venda" | "sinal";
+
 export type Sale = {
   id: string;
   locationId: string;
@@ -379,6 +404,8 @@ export type Sale = {
   cashSessionId?: string;
   voidedAt?: string;
   voidReason?: SaleVoidReason;
+  kind?: SaleKind;
+  requestId?: string;
 };
 
 export type SaleItem = {
@@ -428,7 +455,18 @@ export type NotificationType =
   | "request_cancelled"
   | "factory_order"
   | "factory_order_cancelled"
-  | "factory_order_delivered";
+  | "factory_order_delivered"
+  | "portfolio_reminder";
+
+export type StoreRequestKind = "reposicao" | "encomenda";
+
+export function storeRequestKind(row?: Pick<StockRequest, "kind"> | null): StoreRequestKind {
+  return row?.kind === "encomenda" ? "encomenda" : "reposicao";
+}
+
+export function storeRequestKindLabel(kind?: StoreRequestKind | null) {
+  return kind === "encomenda" ? "Encomenda" : "Reposição";
+}
 
 export type StockRequest = {
   id: string;
@@ -437,6 +475,14 @@ export type StockRequest = {
   note: string;
   at: string;
   resolvedAt?: string;
+  kind?: StoreRequestKind;
+  neededBy?: string;
+  guestName?: string;
+  estimatedTotal?: number;
+  signalAmount?: number;
+  signalSaleId?: string;
+  remainderSaleId?: string;
+  deliveredAt?: string;
 };
 
 export type StockRequestItem = {

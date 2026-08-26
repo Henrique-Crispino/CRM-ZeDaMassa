@@ -3,17 +3,8 @@ import { isStore } from "./locations";
 import { newId, todayDate } from "./money";
 import { catalogItems } from "./queries";
 import { deactivatePerson, PeopleError, personCanCash, personCanConsume, personLocation, savePerson } from "./people";
-import type {
-  CashDestination,
-  CashMovement,
-  CashMovementKind,
-  CashPeriod,
-  CashSession,
-  Employee,
-  PaymentMethod,
-  Sale,
-} from "./types";
-import { CASH_DESTINATIONS, isLiveSale, salePayments } from "./types";
+import type { CashDestination, CashMovement, CashMovementKind, CashPeriod, CashSession, Employee, PaymentMethod, Sale } from "./types";
+import { CASH_DESTINATIONS, isLiveSale, isRevenueSale, salePayments } from "./types";
 
 function localDay(iso: string) {
   const date = new Date(iso);
@@ -387,6 +378,7 @@ export async function sessionLedger(sessionId: string): Promise<CashLedger> {
   if (!session) throw new CashError("Caixa não encontrado.");
 
   const sales = (await db.sales.where("cashSessionId").equals(sessionId).toArray()).filter(isLiveSale);
+  const merchandise = sales.filter(isRevenueSale);
   const movements = (
     (await db.cashMovements?.where("sessionId").equals(sessionId).toArray().catch(() => [])) ?? []
   ).sort((a, b) => a.at.localeCompare(b.at));
@@ -416,8 +408,8 @@ export async function sessionLedger(sessionId: string): Promise<CashLedger> {
 
   return {
     session,
-    salesCount: sales.length,
-    salesTotal: money2(sales.reduce((sum, sale) => sum + sale.total, 0)),
+    salesCount: merchandise.length,
+    salesTotal: money2(merchandise.reduce((sum, sale) => sum + sale.total, 0)),
     byPayment: {
       dinheiro: money2(byPayment.dinheiro),
       pix: money2(byPayment.pix),

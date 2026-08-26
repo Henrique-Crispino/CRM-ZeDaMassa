@@ -1,8 +1,9 @@
 "use client";
 
+import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { PendingRequests } from "@/components/PendingRequests";
 import { Card, PageTitle } from "@/components/ui";
-import { formatBRL, periodLabel, type Period } from "@/lib/money";
+import { formatBRL, rangePhrase } from "@/lib/money";
 import type { DashboardData } from "@/lib/queries";
 import {
   ActionGrid,
@@ -10,21 +11,23 @@ import {
   ChartCard,
   ExpiryList,
   MetricCard,
+  MetricGrid,
   MoneyBars,
-  PeriodTabs,
   SimpleBars,
 } from "./shared";
 
 export function FactoryDashboard({
   data,
-  period,
-  onPeriod,
+  from,
+  to,
+  onRange,
 }: {
   data: DashboardData;
-  period: Period;
-  onPeriod: (value: Period) => void;
+  from: string;
+  to: string;
+  onRange: (from: string, to: string) => void;
 }) {
-  const label = periodLabel(period);
+  const label = rangePhrase(from, to);
 
   return (
     <div>
@@ -63,11 +66,24 @@ export function FactoryDashboard({
         </div>
       </section>
 
-      <PeriodTabs value={period} onChange={onPeriod} />
+      <Card className="mb-6">
+        <DateRangeFilter
+          from={from}
+          to={to}
+          onChange={onRange}
+          fromHint="Produção, envio e o que o cliente levou da câmara."
+          toHint="Inclui este dia."
+        />
+      </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <MetricGrid>
         <MetricCard label={`Feitos ${label}`} value={`${data.producedQty} un.`} />
-        <MetricCard label={`Mandados ${label}`} value={`${data.sentQty} un.`} hint="Já saíram da fábrica" />
+        <MetricCard label={`Para as lojas ${label}`} value={`${data.sentQty} un.`} hint="Envio da câmara" />
+        <MetricCard
+          label="Cliente levou"
+          value={`${data.clienteQty} un.`}
+          hint={`${formatBRL(data.clienteCost)} de custo do lote · não passou no caixa`}
+        />
         <MetricCard
           label="Lojas venderam"
           value={formatBRL(data.revenue)}
@@ -79,17 +95,17 @@ export function FactoryDashboard({
           hint={`${formatBRL(data.wasteRevenue)} deixou de vender · custo ${formatBRL(data.wasteCost)}`}
           alert={data.wasteQty > 0}
         />
-      </div>
-      {data.expiredQty > 0 ? (
-        <div className="mt-4">
-          <MetricCard
-            label="Descarte por validade"
-            value={`${data.expiredQty} un.`}
-            hint={`${formatBRL(data.expiredCost)} de custo · ${formatBRL(data.expiredRevenue)} deixou de vender`}
-            alert
-          />
-        </div>
-      ) : null}
+        <MetricCard
+          label="Descarte por validade"
+          value={`${data.expiredQty} un.`}
+          hint={
+            data.expiredQty > 0
+              ? `${formatBRL(data.expiredCost)} de custo · ${formatBRL(data.expiredRevenue)} deixou de vender`
+              : "Nada descartado neste recorte."
+          }
+          alert={data.expiredQty > 0}
+        />
+      </MetricGrid>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <ChartCard title="O que cada loja vendeu" empty={data.byLocation.every((item) => item.revenue === 0)}>

@@ -1,12 +1,14 @@
 import { getDb } from "./db";
 import { LOCATIONS, storeLocations, getLocation, type Location } from "./locations";
-import { daysUntil, formatDate, periodRange, todayDate, type Period } from "./money";
+import { datePresets, dateRangeIso, daysUntil, eachDate, formatDate, todayDate, type Period } from "./money";
 import { fifoLotOrder } from "./stock-core";
 import { factoryMin, isLowAt, storeMin } from "./stock-min";
 import type { MovementType, Niche, Product, ReturnReason, Sale, SaleItem, TransferKind, TransferStatus, Waste } from "./types";
 import {
   adjustmentReasonLabel,
   isLiveSale,
+  isRevenueSale,
+  lotCost,
   lotPrice,
   movementLabel,
   productIsLive,
@@ -113,6 +115,8 @@ export type DashboardData = {
   expiredRevenue: number;
   producedQty: number;
   sentQty: number;
+  clienteQty: number;
+  clienteCost: number;
   salesCount: number;
   promoRevenue: number;
   internalQty: number;
@@ -300,16 +304,24 @@ function wasteMoney(row: Waste, niche?: Niche) {
   return { cost: row.qty * cost, revenue: row.qty * price };
 }
 
-export async function loadDashboard(period: Period, scope?: string): Promise<DashboardData> {
+function dashboardWindow(range: Period | { from: string; to: string }) {
+  if (typeof range !== "string") return dateRangeIso(range.from, range.to);
+  const today = todayDate();
+  const preset = datePresets(today).find((item) => item.id === range) ?? datePresets(today)[0];
+  return dateRangeIso(preset.from, preset.to);
+}
+
+export async function loadDashboard(range: Period | { from: string; to: string }, scope?: string): Promise<DashboardData> {
   const db = getDb();
-  const { from, to, days } = periodRange(period);
+  const { from, to, fromDate, toDate } = dashboardWindow(range);
   const catalog = await catalogItems(false);
   const nicheById = new Map(catalog.map((item) => [item.niche.id, item]));
 
-  const [sales, wastes, movements] = await Promise.all([
-    db.sales.where("at").between(from, to, true, true).toArray().then((rows) => rows.filter(isLiveSale)),
+  const [sales, wastes, movements, lots] = await Promise.all([
+    db.sales.where("at").between(from, to, true, true).toArray().then((rows) => rows.filter(isRevenueSale)),
     db.wastes.where("at").between(from, to, true, true).toArray(),
     db.movements.where("at").between(from, to, true, true).toArray(),
+    db.lots.toArray(),
   ]);
 
   const scopedSales =
@@ -414,7 +426,7 @@ export async function loadDashboard(period: Period, scope?: string): Promise<Das
     channelsMap.set(sale.channel, (channelsMap.get(sale.channel) ?? 0) + sale.total);
   }
 
-  const daily = buildDaily(days, scopedSales, itemsBySale, scopedWaste, nicheById);
+  const daily = buildDaily(fromDate, toDate, scopedSales, itemsBySale, scopedWaste, nicheById);
 
   const producedQty = movements
     .filter((item) => item.type === "production" && item.qty > 0)
@@ -422,6 +434,14 @@ export async function loadDashboard(period: Period, scope?: string): Promise<Das
   const sentQty = movements
     .filter((item) => item.type === "send" && item.locationId === "factory" && item.qty < 0)
     .reduce((sum, item) => sum + Math.abs(item.qty), 0);
+  const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+  const clienteMoves = movements.filter((item) => item.type === "cliente" && item.qty < 0);
+  const clienteQty = clienteMoves.reduce((sum, item) => sum + Math.abs(item.qty), 0);
+  const clienteCost = clienteMoves.reduce((sum, item) => {
+    const niche = nicheById.get(item.nicheId)?.niche;
+    const unit = item.unitCost ?? lotCost(lotById.get(item.lotId), niche?.costPrice ?? 0);
+    return sum + Math.abs(item.qty) * unit;
+  }, 0);
 
   const alerts = await stockAlerts(scope === "admin" || !scope ? "all" : scope === "factory" ? "factory" : scope);
   const expiryAlerts = await expiryAlertsFor(scope);
@@ -445,6 +465,8 @@ export async function loadDashboard(period: Period, scope?: string): Promise<Das
     expiredRevenue,
     producedQty,
     sentQty,
+    clienteQty,
+    clienteCost,
     salesCount: scopedSales.length,
     promoRevenue,
     internalQty,
@@ -500,7 +522,11 @@ export async function expiryAlertsFor(scope?: string): Promise<ExpiryAlert[]> {
   return alerts.sort((a, b) => a.daysLeft - b.daysLeft || a.label.localeCompare(b.label, "pt-BR"));
 }
 
-export async function listProductionLogs(limit = 40, madeOn?: string): Promise<ProductionLog[]> {
+export async function listProductionLogs(
+  limit = 40,
+  fromMade?: string,
+  toMade?: string,
+): Promise<ProductionLog[]> {
   const db = getDb();
   const [movements, lots, catalog] = await Promise.all([
     db.movements.toArray(),
@@ -530,10 +556,16 @@ export async function listProductionLogs(limit = 40, madeOn?: string): Promise<P
     groups.set(movement.refId, current);
   }
 
+  const from = fromMade || "";
+  const to = toMade || fromMade || "";
   return [...groups.values()]
-    .filter((log) => !madeOn || log.madeAt === madeOn)
+    .filter((log) => {
+      if (!from) return true;
+      if (!to || to === from) return log.madeAt === from;
+      return log.madeAt >= from && log.madeAt <= to;
+    })
     .sort((a, b) => b.at.localeCompare(a.at))
-    .slice(0, madeOn ? 200 : limit);
+    .slice(0, from ? 400 : limit);
 }
 
 export async function listPurchaseLogs(limit = 40): Promise<ProductionLog[]> {
@@ -569,29 +601,25 @@ export async function listPurchaseLogs(limit = 40): Promise<ProductionLog[]> {
   return [...groups.values()].sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
 }
 
+function dayTick(value: string) {
+  const date = value.length === 10 ? `${value}T12:00:00` : value;
+  return new Date(date).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
 function buildDaily(
-  days: number,
+  fromDate: string,
+  toDate: string,
   sales: Sale[],
   itemsBySale: Map<string, SaleItem[]>,
   wastes: Waste[],
   nicheById: Map<string, CatalogItem>,
 ) {
-  const keys: string[] = [];
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - (days - 1));
-
-  for (let i = 0; i < days; i += 1) {
-    const day = new Date(start);
-    day.setDate(start.getDate() + i);
-    keys.push(day.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }));
-  }
-
+  const keys = eachDate(fromDate, toDate).map((day) => dayTick(day));
   const rows = keys.map((day) => ({ day, receita: 0, perda: 0 }));
   const index = new Map(keys.map((day, i) => [day, rows[i]]));
 
   for (const sale of sales) {
-    const key = new Date(sale.at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+    const key = dayTick(sale.at);
     const row = index.get(key);
     if (!row) continue;
     for (const item of itemsBySale.get(sale.id) ?? []) {
@@ -600,13 +628,13 @@ function buildDaily(
   }
 
   for (const waste of wastes) {
-    const key = new Date(waste.at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+    const key = dayTick(waste.at);
     const row = index.get(key);
     if (!row) continue;
     row.perda += wasteMoney(waste, nicheById.get(waste.nicheId)?.niche).revenue;
   }
 
-  return days > 7 ? rows.filter((_, i) => i % Math.ceil(days / 10) === 0 || i === rows.length - 1) : rows;
+  return keys.length > 7 ? rows.filter((_, i) => i % Math.ceil(keys.length / 10) === 0 || i === rows.length - 1) : rows;
 }
 
 export type InventorySheetRow = {
@@ -828,8 +856,11 @@ export async function loadKardex(input: {
       const order = factoryOrderById.get(movement.refId);
       const customer = order ? customerById.get(order.customerId) : undefined;
       who = customer?.name ?? "Fábrica";
-      note = "Saiu da câmara";
+      note = "Saiu da câmara · não passou no caixa";
       if (customer?.name) typeLabel = `Cliente · ${customer.name}`;
+    } else if (movement.type === "retirada") {
+      who = locationName;
+      note = "Saiu da loja com o dinheiro · não é venda";
     }
 
     if (opening != null) running += movement.qty;

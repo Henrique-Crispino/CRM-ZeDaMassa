@@ -6,11 +6,17 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import { Card, Empty, PageTitle } from "@/components/ui";
 import { PageBoard, Pager, usePager } from "@/components/pager";
+import { ensurePortfolioAlerts } from "@/lib/customers";
 import { getPanel } from "@/lib/locations";
 import { allNotifications, markNotificationsRead, requestWhen } from "@/lib/requests";
 import { getLocationId } from "@/lib/session";
 import type { NotificationAudience } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
+
+function portfolioCustomerId(refId?: string) {
+  if (!refId) return "";
+  return refId.split(":")[0];
+}
 
 export default function NotificacoesPage() {
   const ready = useReady();
@@ -21,6 +27,11 @@ export default function NotificacoesPage() {
     [ready, audience],
   );
   const list = usePager(items ?? [], 8);
+
+  useEffect(() => {
+    if (!ready || !audience) return;
+    void ensurePortfolioAlerts();
+  }, [ready, audience]);
 
   useEffect(() => {
     if (audience) void markNotificationsRead(audience);
@@ -38,7 +49,7 @@ export default function NotificacoesPage() {
     <AppShell>
       <PageTitle
         title="Avisos"
-        hint="Pedido novo da loja, envio e pedido dispensado. Os não lidos entram no sino vermelho."
+        hint="Pedido da loja, envio, cliente da câmara e aviso de quem costuma pedir. Os não lidos entram no sino vermelho."
       />
 
       {!items?.length ? (
@@ -54,6 +65,14 @@ export default function NotificacoesPage() {
                 {item.type === "store_request" ? (
                   <Link href="/pedidos" className="mt-3 inline-block text-base font-bold text-orange-700">
                     Ver pedido →
+                  </Link>
+                ) : null}
+                {item.type === "portfolio_reminder" && portfolioCustomerId(item.refId) ? (
+                  <Link
+                    href={`/clientes/${portfolioCustomerId(item.refId)}/pedido`}
+                    className="mt-3 inline-block text-base font-bold text-orange-700"
+                  >
+                    Separar pedido →
                   </Link>
                 ) : null}
               </Card>

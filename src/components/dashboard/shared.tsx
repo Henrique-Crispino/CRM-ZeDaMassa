@@ -7,6 +7,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Legend,
   Line,
   LineChart,
@@ -16,42 +17,12 @@ import {
   YAxis,
 } from "recharts";
 import { PageBoard, Pager, usePager } from "@/components/pager";
-import { Button, Card, cn } from "@/components/ui";
+import { Card, cn } from "@/components/ui";
 import { LotExpiryBoard } from "@/components/LotExpiryBoard";
 import type { AlertItem, DashboardData, ExpiryAlert } from "@/lib/queries";
-import { formatBRL, type Period } from "@/lib/money";
+import { formatBRL } from "@/lib/money";
 
 const COLORS = ["#ea580c", "#1c1917", "#d97706", "#b91c1c", "#047857", "#7c2d12"];
-
-export function PeriodTabs({
-  value,
-  onChange,
-}: {
-  value: Period;
-  onChange: (value: Period) => void;
-}) {
-  return (
-    <div className="mb-6 flex flex-wrap gap-2">
-      {(
-        [
-          ["today", "Hoje"],
-          ["week", "Últimos 7 dias"],
-          ["month", "Últimos 30 dias"],
-        ] as const
-      ).map(([id, label]) => (
-        <Button
-          key={id}
-          type="button"
-          variant={value === id ? "primary" : "ghost"}
-          className="min-h-12"
-          onClick={() => onChange(id)}
-        >
-          {label}
-        </Button>
-      ))}
-    </div>
-  );
-}
 
 export function MetricCard({
   label,
@@ -65,14 +36,18 @@ export function MetricCard({
   alert?: boolean;
 }) {
   return (
-    <Card className={alert ? "ring-red-200" : undefined}>
+    <Card className={cn("flex h-full flex-col", alert ? "ring-red-200" : undefined)}>
       <p className="text-base font-bold text-stone-500">{label}</p>
       <p className={`mt-2 text-3xl font-extrabold ${alert ? "text-red-600" : "text-stone-900"}`}>
         {value}
       </p>
-      {hint ? <p className="mt-1 text-sm font-semibold text-stone-500">{hint}</p> : null}
+      {hint ? <p className="mt-auto pt-1 text-sm font-semibold text-stone-500">{hint}</p> : null}
     </Card>
   );
+}
+
+export function MetricGrid({ children }: { children: ReactNode }) {
+  return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">{children}</div>;
 }
 
 export function ChartCard({
@@ -131,23 +106,35 @@ export function SimpleBars({
   dataKey,
   name,
   color = "#ea580c",
+  labelWidth = 110,
+  showValues,
 }: {
   data: Array<Record<string, string | number>>;
   dataKey: string;
   name: string;
   color?: string;
+  labelWidth?: number;
+  showValues?: boolean;
 }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={data} layout="vertical" margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+      <BarChart data={data} layout="vertical" margin={{ top: 8, right: showValues ? 64 : 16, left: 8, bottom: 8 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
         <XAxis type="number" tick={{ fontSize: 12 }} />
-        <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 12 }} />
-        <Tooltip />
+        <YAxis type="category" dataKey="name" width={labelWidth} tick={{ fontSize: 12 }} />
+        <Tooltip formatter={showValues ? (value) => [`${Number(value)} un.`, name] : undefined} />
         <Bar dataKey={dataKey} name={name} fill={color} radius={[0, 8, 8, 0]}>
           {data.map((_, index) => (
             <Cell key={index} fill={COLORS[index % COLORS.length]} />
           ))}
+          {showValues ? (
+            <LabelList
+              dataKey={dataKey}
+              position="right"
+              formatter={(value) => `${Number(value)} un.`}
+              style={{ fontSize: 12, fill: "#44403c", fontWeight: 700 }}
+            />
+          ) : null}
         </Bar>
       </BarChart>
     </ResponsiveContainer>

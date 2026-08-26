@@ -5,7 +5,8 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AccessGate } from "@/components/AccessGate";
 import { AppShell } from "@/components/AppShell";
-import { Button, Card, Empty, Field, Input, PageTitle } from "@/components/ui";
+import { DateRangeFilter } from "@/components/DateRangeFilter";
+import { Card, Empty, PageTitle } from "@/components/ui";
 import { Pager, usePager } from "@/components/pager";
 import { getPanel } from "@/lib/locations";
 import { formatDate, formatTime, todayDate } from "@/lib/money";
@@ -16,12 +17,14 @@ import { useReady } from "@/lib/use-ready";
 export default function ProducaoPage() {
   const ready = useReady();
   const panel = ready ? getPanel(getLocationId() ?? "") : undefined;
-  const [date, setDate] = useState("");
+  const today = todayDate();
+  const [from, setFrom] = useState(today);
+  const [to, setTo] = useState(today);
   const logs = useLiveQuery(
-    () => (ready ? listProductionLogs(80, date || undefined) : []),
-    [ready, date],
+    () => (ready ? listProductionLogs(from ? 400 : 80, from || undefined, to || undefined) : []),
+    [ready, from, to],
   );
-  const list = usePager(logs ?? [], 8, date);
+  const list = usePager(logs ?? [], 8, `${from}|${to}`);
 
   const summary = useMemo(() => {
     const rows = logs ?? [];
@@ -41,7 +44,7 @@ export default function ProducaoPage() {
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <PageTitle
             title="Registro de produção"
-            hint="Tudo que a fábrica lançou, com data, quantidade e validade do lote. Filtre pelo dia em que o produto foi feito."
+            hint="O recorte é o dia em que o lote foi feito, não o horário em que a Rita lançou."
           />
           {panel?.type === "factory" ? (
             <Link
@@ -54,37 +57,37 @@ export default function ProducaoPage() {
         </div>
 
         <Card className="mb-6 space-y-3">
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant={!date ? "primary" : "ghost"} onClick={() => setDate("")}>
-              Todos os dias
-            </Button>
-            <Button
-              type="button"
-              variant={date === todayDate() ? "primary" : "ghost"}
-              onClick={() => setDate(todayDate())}
-            >
-              Feito hoje
-            </Button>
-          </div>
-          <div className="max-w-xs">
-            <Field label="Buscar por data de produção" hint="É o dia em que o lote foi feito, não o horário do lançamento.">
-              <Input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-            </Field>
-          </div>
+          <DateRangeFilter
+            from={from}
+            to={to}
+            onChange={(nextFrom, nextTo) => {
+              setFrom(nextFrom);
+              setTo(nextTo);
+            }}
+            presets={["today", "yesterday", "week", "all"]}
+            allowEmpty
+            maxToday={false}
+            fromHint="Dia em que foi frito."
+            toHint="Inclui este dia."
+          />
           {logs?.length ? (
             <p className="text-sm font-semibold text-stone-600">
               {summary.batches} {summary.batches === 1 ? "lançamento" : "lançamentos"} · {summary.units} un.
-              {date ? ` · feito em ${formatDate(date)}` : ""}
+              {from && to
+                ? from === to
+                  ? ` · feito em ${formatDate(from)}`
+                  : ` · feito de ${formatDate(from)} até ${formatDate(to)}`
+                : ""}
             </p>
           ) : null}
         </Card>
 
         {!logs?.length ? (
           <Empty
-            title={date ? "Nada produzido neste dia" : "Ainda não tem produção registrada"}
+            title={from ? "Nada produzido neste recorte" : "Ainda não tem produção registrada"}
             hint={
-              date
-                ? "Tente outra data ou limpe o filtro para ver o histórico completo."
+              from
+                ? "Tente outras datas. O filtro olha o dia em que o lote foi feito."
                 : "Quando a fábrica lançar o que foi feito, o registro aparece aqui."
             }
           />

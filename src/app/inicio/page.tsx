@@ -10,17 +10,18 @@ import { getPanel } from "@/lib/locations";
 import { loadDashboard } from "@/lib/queries";
 import { getLocationId } from "@/lib/session";
 import { useReady } from "@/lib/use-ready";
-import type { Period } from "@/lib/money";
+import { todayDate } from "@/lib/money";
 
 export default function InicioPage() {
   const ready = useReady();
   const panelId = ready ? getLocationId() : null;
   const panel = panelId ? getPanel(panelId) : undefined;
-  const [period, setPeriod] = useState<Period>("today");
+  const [from, setFrom] = useState(() => todayDate());
+  const [to, setTo] = useState(() => todayDate());
 
   const data = useLiveQuery(
-    () => (ready && panelId && panel?.type !== "store" ? loadDashboard(period, panelId) : undefined),
-    [ready, period, panelId, panel?.type],
+    () => (ready && panelId && panel?.type !== "store" ? loadDashboard({ from, to }, panelId) : undefined),
+    [ready, from, to, panelId, panel?.type],
   );
 
   return (
@@ -31,13 +32,13 @@ export default function InicioPage() {
         !data ? (
           <p className="text-xl font-bold text-stone-500">Carregando...</p>
         ) : (
-          <AdminDashboard data={data} period={period} onPeriod={setPeriod} />
+          <AdminDashboard data={data} from={from} to={to} onRange={(nextFrom, nextTo) => { setFrom(nextFrom); setTo(nextTo); }} />
         )
       ) : panel.type === "factory" ? (
         !data ? (
           <p className="text-xl font-bold text-stone-500">Carregando...</p>
         ) : (
-          <FactoryDashboard data={data} period={period} onPeriod={setPeriod} />
+          <FactoryDashboard data={data} from={from} to={to} onRange={(nextFrom, nextTo) => { setFrom(nextFrom); setTo(nextTo); }} />
         )
       ) : (
         <StoreDashboard locationId={panelId} storeName={panel.name} />

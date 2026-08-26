@@ -1,14 +1,20 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Bell } from "lucide-react";
+import { ensurePortfolioAlerts } from "@/lib/customers";
 import { unreadNotifications } from "@/lib/requests";
 import type { NotificationAudience } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 export function NotificationBell({ audience }: { audience: NotificationAudience }) {
   const ready = useReady();
+  useEffect(() => {
+    if (!ready) return;
+    void ensurePortfolioAlerts();
+  }, [ready, audience]);
   const unread = useLiveQuery(
     () => (ready ? unreadNotifications(audience) : []),
     [ready, audience],

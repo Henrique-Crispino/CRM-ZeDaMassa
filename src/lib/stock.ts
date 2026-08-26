@@ -1,13 +1,14 @@
 import { isClosedPackage, isPurchased, isSoldAtRegister, notForSaleMessage } from "./categories";
 import { ComboError, loadComboForCheckout, splitComboPrice } from "./combos";
-import { currentCashSession, money2 } from "./cash";
+import { currentCashSession, money2, sessionLedger } from "./cash";
 import { getDb } from "./db";
 import { isStore } from "./locations";
 import { addDays, daysUntil, newId, todayDate } from "./money";
 import { changeStock, oldestLots, StockError, stockQty } from "./stock-core";
-import type { AdjustmentReason, InventoryLine, PaymentMethod, ReturnReason, SaleChannel, SalePayment, SaleVoidReason } from "./types";
+import type { AdjustmentReason, CashDestination, InventoryLine, PaymentMethod, ReturnReason, SaleChannel, SaleKind, SalePayment, SaleVoidReason } from "./types";
 import {
   ADJUSTMENT_REASONS,
+  CASH_DESTINATIONS,
   PAYMENT_METHODS,
   RETURN_REASONS,
   SALE_VOID_REASONS,
@@ -159,6 +160,7 @@ export async function sendToStore(input: {
   items: { nicheId: string; qty: number }[];
   sentBy?: string;
   respectWell?: boolean;
+  requestId?: string;
 }) {
   if (!isStore(input.toLocationId)) {
     throw new StockError("Escolha uma loja para receber o envio.");
@@ -204,6 +206,7 @@ export async function sendToStore(input: {
         status: "em_transito",
         kind: "envio",
         sentBy: input.sentBy?.trim() || "Fábrica",
+        requestId: input.requestId,
       });
 
       for (const item of items) {
@@ -530,6 +533,10 @@ export async function checkout(input: {
   payments?: SalePayment[];
   items?: { nicheId: string; qty: number; promo?: boolean }[];
   combos?: { comboId: string; qty: number }[];
+  signalCredit?: number;
+  saleTotal?: number;
+  requestId?: string;
+  kind?: SaleKind;
 }) {
   if (!isStore(input.locationId)) {
     throw new StockError("A venda é feita na loja, não na fábrica.");
@@ -703,16 +710,28 @@ export async function checkout(input: {
       }
 
       total = money2(total);
-      const payments = normalizeSalePayments(total, input);
+      if (input.saleTotal != null) {
+        const forced = money2(input.saleTotal);
+        if (forced <= 0) throw new StockError("O valor da festa não fecha.");
+        total = forced;
+      }
+      const credit = money2(Math.max(0, input.signalCredit ?? 0));
+      if (credit > 0 && credit >= total) {
+        throw new StockError("O sinal tem que ser menor que o total da festa.");
+      }
+      const due = money2(total - credit);
+      const payments = normalizeSalePayments(due, input);
       await db.sales.add({
         id: saleId,
         locationId: input.locationId,
         channel: input.channel,
         payment: payments[0]?.method ?? "dinheiro",
-        payments: payments.length > 1 ? payments : undefined,
+        payments: payments.length > 1 || credit > 0 ? payments : undefined,
         total,
         at,
         cashSessionId: live.id,
+        kind: input.kind === "sinal" ? "sinal" : "venda",
+        requestId: input.requestId,
       });
     },
   );
@@ -739,13 +758,15 @@ export async function voidSale(input: { saleId: string; reason: SaleVoidReason }
   }
 
   const items = await db.saleItems.where("saleId").equals(sale.id).toArray();
-  if (items.length === 0) throw new StockError("Esta venda não tem itens para devolver.");
+  if (items.length === 0 && sale.kind !== "sinal") {
+    throw new StockError("Esta venda não tem itens para devolver.");
+  }
 
   const at = new Date().toISOString();
 
   await db.transaction(
     "rw",
-    [db.stock, db.lots, db.movements, db.sales, db.saleItems, db.cashSessions],
+    [db.stock, db.lots, db.movements, db.sales, db.saleItems, db.cashSessions, db.requests],
     async () => {
       const current = await db.sales.get(sale.id);
       if (!current || current.voidedAt) throw new StockError("Esta venda já foi estornada.");
@@ -772,8 +793,84 @@ export async function voidSale(input: { saleId: string; reason: SaleVoidReason }
         voidedAt: at,
         voidReason: input.reason,
       });
+      if (sale.kind === "sinal" && sale.requestId) {
+        const request = await db.requests.get(sale.requestId);
+        if (request && request.signalSaleId === sale.id && !request.deliveredAt) {
+          await db.requests.update(request.id, { signalAmount: undefined, signalSaleId: undefined });
+        }
+      }
     },
   );
+}
+
+export async function withdrawProductAndCash(input: {
+  locationId: string;
+  nicheId: string;
+  qty: number;
+  amount: number;
+  reason: string;
+  destination: CashDestination;
+}) {
+  if (!isStore(input.locationId)) {
+    throw new StockError("A retirada é na loja, com o caixa aberto.");
+  }
+  const qty = Math.max(0, Math.floor(input.qty));
+  if (qty <= 0) throw new StockError("Informe a quantidade que sai.");
+  const amount = money2(input.amount);
+  if (amount <= 0) throw new StockError("Informe o valor que sai da gaveta.");
+  const reason = input.reason.trim();
+  if (!reason) throw new StockError("Informe o motivo da retirada.");
+  if (!CASH_DESTINATIONS.some((item) => item.id === input.destination)) {
+    throw new StockError("A retirada precisa ir para o cofre ou para o depósito.");
+  }
+
+  await assertLiveNiches([input.nicheId]);
+  const session = await currentCashSession(input.locationId);
+  if (!session) throw new StockError("Abra o caixa deste período antes de retirar.");
+
+  const db = getDb();
+  const at = new Date().toISOString();
+  const refId = newId();
+
+  await db.transaction(
+    "rw",
+    [db.stock, db.lots, db.movements, db.niches, db.products, db.cashSessions, db.cashMovements, db.sales, db.saleItems],
+    async () => {
+      const live = await db.cashSessions.get(session.id);
+      if (!live || live.closedAt || live.locationId !== input.locationId) {
+        throw new StockError("Abra o caixa deste período antes de retirar.");
+      }
+      const ledger = await sessionLedger(live.id);
+      if (amount > ledger.expectedCash + 0.001) {
+        throw new StockError("A retirada não pode ser maior que o saldo esperado em espécie na gaveta.");
+      }
+      const chunks = await oldestLots(input.locationId, input.nicheId, qty, { skipExpired: true });
+      for (const chunk of chunks) {
+        await changeStock(input.locationId, input.nicheId, chunk.lotId, -chunk.qty);
+        await db.movements.add({
+          id: newId(),
+          locationId: input.locationId,
+          nicheId: input.nicheId,
+          lotId: chunk.lotId,
+          qty: -chunk.qty,
+          type: "retirada",
+          refId,
+          at,
+        });
+      }
+      await db.cashMovements.add({
+        id: newId(),
+        sessionId: live.id,
+        locationId: live.locationId,
+        type: "sangria",
+        amount,
+        reason: `Retirada: ${reason}`,
+        at,
+        destination: input.destination,
+      });
+    },
+  );
+  return refId;
 }
 
 export async function registerWaste(input: {

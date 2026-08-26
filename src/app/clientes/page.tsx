@@ -9,11 +9,11 @@ import { AppShell } from "@/components/AppShell";
 import { Pager, usePager } from "@/components/pager";
 import { SearchField } from "@/components/pick-flow";
 import { Button, Card, Empty, ErrorBox, Field, Input, PageTitle, SuccessBox } from "@/components/ui";
-import { CustomerError, listCustomers, removeCustomer, saveCustomer } from "@/lib/customers";
-import { CUSTOMER_KINDS, customerKind, customerKindLabel, type CustomerKind } from "@/lib/types";
+import { CustomerError, listCustomers, removeCustomer, saveCustomer, suggestUsualWeekdays, usualWeekdaysLabel } from "@/lib/customers";
+import { CUSTOMER_KINDS, WEEKDAYS, customerKind, customerKindLabel, type CustomerKind } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
-const emptyForm = { id: "", name: "", phone: "", note: "", address: "", kind: "festa" as CustomerKind };
+const emptyForm = { id: "", name: "", phone: "", note: "", address: "", kind: "festa" as CustomerKind, usualWeekdays: [] as number[] };
 
 export default function ClientesPage() {
   const ready = useReady();
@@ -69,6 +69,48 @@ export default function ClientesPage() {
           passo.
         </p>
       </div>
+      {form.kind === "volume" ? (
+        <div>
+          <p className="mb-2 font-bold">Costuma pedir</p>
+          <p className="mb-2 text-sm text-stone-500">A Rita marca. Não inventa quantidade. O sino avisa na véspera.</p>
+          <div className="flex flex-wrap gap-2">
+            {WEEKDAYS.map((day) => {
+              const on = form.usualWeekdays.includes(day.id);
+              return (
+                <Button
+                  key={day.id}
+                  type="button"
+                  variant={on ? "primary" : "ghost"}
+                  className="min-h-11"
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      usualWeekdays: on
+                        ? current.usualWeekdays.filter((id) => id !== day.id)
+                        : [...current.usualWeekdays, day.id],
+                    }))
+                  }
+                >
+                  {day.short}
+                </Button>
+              );
+            })}
+          </div>
+          {form.id ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="mt-2 min-h-11 text-sm"
+              onClick={async () => {
+                const days = await suggestUsualWeekdays(form.id);
+                setForm((current) => ({ ...current, usualWeekdays: days }));
+              }}
+            >
+              Sugerir pelos últimos pedidos
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <Field label="Telefone">
         <Input
           value={form.phone}
@@ -107,6 +149,7 @@ export default function ClientesPage() {
                 note: form.note,
                 address: form.address,
                 kind: form.kind,
+                usualWeekdays: form.kind === "volume" ? form.usualWeekdays : [],
               });
               setOk(
                 form.id
@@ -143,7 +186,7 @@ export default function ClientesPage() {
       <AppShell>
         <PageTitle
           title="Clientes"
-          hint="Festa ou compra na fábrica. Ainda sem baixar estoque. Sem nota fiscal e sem crédito."
+          hint="Festa ou compra na fábrica. Quem compra na fábrica marca o dia em que costuma pedir."
         />
 
         {form.id ? formCard : null}
@@ -200,6 +243,11 @@ export default function ClientesPage() {
                   </p>
                   <p className="text-xl font-extrabold text-stone-900">{customer.name}</p>
                   {customer.note ? <p className="mt-1 font-semibold text-stone-600">{customer.note}</p> : null}
+                  {customerKind(customer) === "volume" && usualWeekdaysLabel(customer.usualWeekdays) ? (
+                    <p className="mt-1 text-sm font-semibold text-orange-800">
+                      Costuma pedir {usualWeekdaysLabel(customer.usualWeekdays)}
+                    </p>
+                  ) : null}
                   <p className="mt-2 flex items-center gap-2 text-stone-700">
                     <Phone className="size-4 shrink-0 text-orange-600" />
                     {customer.phone || "Telefone ainda não informado"}
@@ -232,6 +280,7 @@ export default function ClientesPage() {
                         note: customer.note,
                         address: customer.address,
                         kind: customerKind(customer),
+                        usualWeekdays: customer.usualWeekdays ?? [],
                       });
                       setOk("");
                       setError("");

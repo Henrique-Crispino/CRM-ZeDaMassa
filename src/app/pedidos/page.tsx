@@ -11,9 +11,10 @@ import { cancelFactoryOrder, deliverFactoryOrder, FactoryOrderError, listFactory
 import { getPanel } from "@/lib/locations";
 import { reportRomaneio, type ReportTable } from "@/lib/reports";
 import { cancelRequest, fulfillRequest, listRequests, requestWhen, RequestError, type RequestItemView } from "@/lib/requests";
+import { formatDate } from "@/lib/money";
 import { getLocationId } from "@/lib/session";
 import { StockError } from "@/lib/stock";
-import { isOpenRequest, type RequestStatus } from "@/lib/types";
+import { isOpenRequest, storeRequestKind, storeRequestKindLabel, type RequestStatus } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 type QueueRow = {
@@ -24,6 +25,8 @@ type QueueRow = {
   statusLabel: string;
   at: string;
   note: string;
+  neededBy?: string;
+  kindLabel?: string;
   items: RequestItemView[];
 };
 
@@ -49,6 +52,8 @@ export default function PedidosPage() {
       statusLabel: row.statusLabel,
       at: row.at,
       note: row.note,
+      neededBy: row.neededBy,
+      kindLabel: storeRequestKindLabel(storeRequestKind(row)),
       items: row.items,
     }));
     const customers = (orders ?? []).map((row) => ({
@@ -136,7 +141,7 @@ export default function PedidosPage() {
         title="Pedidos"
         hint={
           canSend
-            ? "Loja e cliente de volume na mesma fila. O mais antigo segura o saldo. Cliente levou sai da câmara — não vai para a loja e não passa no caixa."
+            ? "Loja e cliente de volume na mesma fila. O mais antigo segura o saldo. Encomenda da loja traz o dia da festa. Cliente levou sai da câmara — não vai para a loja e não passa no caixa."
             : "Aqui o admin vê o que as lojas e os clientes pediram. Quem manda o estoque da loja e quem separa na câmara é a fábrica."
         }
       />
@@ -155,12 +160,15 @@ export default function PedidosPage() {
               >
                 <div>
                   <p className="text-sm font-extrabold uppercase tracking-wide text-orange-800">
-                    {request.source === "customer" ? "Cliente · câmara" : "Loja"}
+                    {request.source === "customer" ? "Cliente · câmara" : request.kindLabel ?? "Loja"}
                   </p>
                   <p className="text-xl font-extrabold text-stone-900">
                     {request.name} · {request.statusLabel}
                   </p>
                   <p className="text-stone-500">{requestWhen(request.at)}</p>
+                  {request.neededBy ? (
+                    <p className="mt-1 font-extrabold text-orange-900">Para {formatDate(request.neededBy)}</p>
+                  ) : null}
                   {request.note ? <p className="mt-2 font-semibold text-stone-700">Recado: {request.note}</p> : null}
                   {request.status === "sem_saldo" ? (
                     <p className="mt-2 font-bold text-red-700">
@@ -259,8 +267,9 @@ export default function PedidosPage() {
             {othersPage.rows.map((request) => (
               <Card key={`${request.source}-${request.id}`}>
                 <p className="font-extrabold">
-                  {request.source === "customer" ? "Cliente · " : ""}
+                  {request.source === "customer" ? "Cliente · " : request.kindLabel ? `${request.kindLabel} · ` : ""}
                   {request.name} · {request.statusLabel}
+                  {request.neededBy ? ` · ${formatDate(request.neededBy)}` : ""}
                 </p>
                 <p className="text-stone-500">{requestWhen(request.at)}</p>
                 <ul className="mt-1 text-stone-700">
@@ -294,7 +303,9 @@ export default function PedidosPage() {
         hint={
           confirmRow?.source === "customer"
             ? "Confira as quantidades. Sai da câmara agora. Não vai para a loja. Não passa no caixa."
-            : "Confira as quantidades. Sai da fábrica e fica em trânsito até a loja conferir."
+            : confirmRow?.neededBy
+              ? `Para ${formatDate(confirmRow.neededBy)}. Sai da fábrica e fica em trânsito até a loja conferir.`
+              : "Confira as quantidades. Sai da fábrica e fica em trânsito até a loja conferir."
         }
         confirmLabel={confirmRow?.source === "customer" ? "Confirmar: cliente levou" : "Confirmar e mandar"}
         busy={busy === confirmId}

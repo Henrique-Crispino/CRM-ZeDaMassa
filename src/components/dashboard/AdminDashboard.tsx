@@ -2,32 +2,34 @@
 
 import Link from "next/link";
 import { FileDown } from "lucide-react";
+import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { PendingRequests } from "@/components/PendingRequests";
 import { Card, PageTitle } from "@/components/ui";
-import { formatBRL, periodLabel } from "@/lib/money";
+import { formatBRL, rangePhrase } from "@/lib/money";
 import type { DashboardData } from "@/lib/queries";
 import {
   AlertList,
   ChartCard,
   ExpiryList,
   MetricCard,
+  MetricGrid,
   MoneyBars,
-  PeriodTabs,
   SimpleBars,
   TrendLine,
 } from "./shared";
-import type { Period } from "@/lib/money";
 
 export function AdminDashboard({
   data,
-  period,
-  onPeriod,
+  from,
+  to,
+  onRange,
 }: {
   data: DashboardData;
-  period: Period;
-  onPeriod: (value: Period) => void;
+  from: string;
+  to: string;
+  onRange: (from: string, to: string) => void;
 }) {
-  const label = periodLabel(period);
+  const label = rangePhrase(from, to);
 
   return (
     <div>
@@ -36,13 +38,26 @@ export function AdminDashboard({
         hint="Primeiro o dinheiro: venda, lucro e perda. Reposição e validade vêm depois."
       />
 
-      <PeriodTabs value={period} onChange={onPeriod} />
+      <Card className="mb-6">
+        <DateRangeFilter
+          from={from}
+          to={to}
+          onChange={onRange}
+          fromHint="Venda, perda e o que saiu da câmara."
+          toHint="Inclui este dia."
+        />
+      </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <MetricGrid>
         <MetricCard label={`Vendeu ${label}`} value={formatBRL(data.revenue)} hint={`${data.salesCount} vendas nas lojas`} />
+        <MetricCard
+          label="Saiu da câmara"
+          value={`${data.clienteQty} un.`}
+          hint={`${formatBRL(data.clienteCost)} de custo do lote · não passou no caixa`}
+        />
         <MetricCard label={`Lucro ${label}`} value={formatBRL(data.margin)} />
         <MetricCard
-          label="Sobra do dia"
+          label={`Sobra ${label}`}
           value={`${data.wasteQty} un.`}
           hint={`${formatBRL(data.wasteRevenue)} deixou de vender`}
           alert={data.wasteQty > 0}
@@ -53,19 +68,19 @@ export function AdminDashboard({
           hint={`Promoção ${formatBRL(data.promoRevenue)} · consumo interno ${data.internalQty} un.`}
           alert={data.wasteCost > 0}
         />
-      </div>
-      {data.expiredQty > 0 ? (
-        <div className="mt-4">
-          <MetricCard
-            label="Descarte por validade"
-            value={`${data.expiredQty} un.`}
-            hint={`${formatBRL(data.expiredCost)} de custo · ${formatBRL(data.expiredRevenue)} deixou de vender`}
-            alert
-          />
-        </div>
-      ) : null}
+        <MetricCard
+          label="Descarte por validade"
+          value={`${data.expiredQty} un.`}
+          hint={
+            data.expiredQty > 0
+              ? `${formatBRL(data.expiredCost)} de custo · ${formatBRL(data.expiredRevenue)} deixou de vender`
+              : "Nada descartado neste recorte."
+          }
+          alert={data.expiredQty > 0}
+        />
+      </MetricGrid>
 
-      <div className="mt-4 grid gap-4 md:grid-cols-3">
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {data.byLocation.map((location) => (
           <Card key={location.id}>
             <p className="text-base font-bold text-stone-500">{location.name}</p>
@@ -80,6 +95,9 @@ export function AdminDashboard({
           <p className="text-base font-bold text-stone-500">Fábrica {label}</p>
           <p className="mt-2 text-2xl font-extrabold">{data.producedQty} feitos</p>
           <p className="mt-1 text-stone-600">{data.sentQty} mandados para as lojas</p>
+          <p className="mt-1 text-stone-600">
+            {data.clienteQty} cliente levou · {formatBRL(data.clienteCost)} de custo · não passou no caixa
+          </p>
         </Card>
       </div>
 
@@ -97,7 +115,7 @@ export function AdminDashboard({
             ]}
           />
         </ChartCard>
-        <ChartCard title="Sobra por loja (R$)" hint="Quanto cada loja deixou de vender com a sobra do dia. Descarte por validade aparece no card acima." empty={data.wasteRevenue === 0}>
+        <ChartCard title="Sobra por loja (R$)" hint="Quanto cada loja deixou de vender com a sobra do dia. Descarte por validade fica no card da grade." empty={data.wasteRevenue === 0}>
           <MoneyBars
             data={data.byLocation.map((item) => ({
               name: item.name,
@@ -126,6 +144,22 @@ export function AdminDashboard({
             dataKey="total"
             name="Reais"
             color="#d97706"
+          />
+        </ChartCard>
+        <ChartCard
+          title="Para onde saiu a câmara"
+          hint="Unidades. Cliente levou não passou no caixa."
+          empty={data.sentQty === 0 && data.clienteQty === 0}
+        >
+          <SimpleBars
+            data={[
+              { name: "Para as lojas", qty: data.sentQty },
+              { name: "Cliente levou", qty: data.clienteQty },
+            ]}
+            dataKey="qty"
+            name="Unidades"
+            labelWidth={128}
+            showValues
           />
         </ChartCard>
       </div>

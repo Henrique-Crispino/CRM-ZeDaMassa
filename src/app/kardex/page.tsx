@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
+import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { SearchField } from "@/components/pick-flow";
-import { Button, Card, Empty, Field, Input, PageTitle } from "@/components/ui";
+import { Button, Card, Empty, PageTitle } from "@/components/ui";
 import { Pager, usePager } from "@/components/pager";
 import { getPanel, useLocationCatalog } from "@/lib/locations";
 import { addDays, endOfDayIso, formatDate, formatTime, startOfDayIso, todayDate } from "@/lib/money";
@@ -41,8 +42,8 @@ export default function KardexPage() {
         ? loadKardex({
             nicheId,
             locationId: locationId || undefined,
-            from: startOfDayIso(from),
-            to: endOfDayIso(to),
+            from: startOfDayIso(from || "2000-01-01"),
+            to: endOfDayIso(to || todayDate()),
           })
         : undefined,
     [ready, nicheId, locationId, from, to],
@@ -76,14 +77,20 @@ export default function KardexPage() {
         </Card>
       )}
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        <Field label="De">
-          <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-        </Field>
-        <Field label="Até">
-          <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
-        </Field>
-      </div>
+      <Card className="mb-4">
+        <DateRangeFilter
+          from={from}
+          to={to}
+          onChange={(nextFrom, nextTo) => {
+            setFrom(nextFrom);
+            setTo(nextTo);
+          }}
+          presets={["today", "yesterday", "week", "month", "all"]}
+          allowEmpty
+          fromHint="Quando o movimento aconteceu."
+          toHint="Inclui este dia."
+        />
+      </Card>
 
       <div className="mb-4">
         <SearchField value={search} onChange={setSearch} placeholder="Procurar produto..." />
@@ -123,7 +130,7 @@ export default function KardexPage() {
           <Card className="mb-4 bg-orange-50 ring-orange-200">
             <p className="text-xl font-extrabold text-stone-900">{chosen?.label ?? extract.label}</p>
             <p className="text-stone-600">
-              {formatDate(from)} a {formatDate(to)}
+              {from && to ? `${formatDate(from)} a ${formatDate(to)}` : "Todos os dias"}
               {extract.opening != null ? ` · saldo inicial ${extract.opening} · final ${extract.closing}` : ""}
             </p>
           </Card>

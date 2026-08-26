@@ -44,3 +44,7 @@ next-env.d.ts
 docs/.obsidian/workspace.json
 docs/.obsidian/workspace-mobile.json
 docs/.obsidian/cache
+
+# Prints e JSON de passeio no Chrome (gerados na máquina)
+scripts/audit-shots/
+scripts/audit-*-result.json

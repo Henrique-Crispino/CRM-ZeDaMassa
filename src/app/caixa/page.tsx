@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ConfirmDialog } from "@/components/pick-flow";
+import { ConfirmDialog, SearchField } from "@/components/pick-flow";
 import { SessionSalesList } from "@/components/SessionSalesList";
 import { PageBoard, Pager, usePager } from "@/components/pager";
 import { CashLoading, CashMetric, OpenSessionCard, useCashWorkspace } from "@/components/caixa/workspace";
-import { Button, Card, Empty, ErrorBox, Field, Input, SuccessBox } from "@/components/ui";
+import { Button, Card, Empty, ErrorBox, Field, Input, NumberStepper, SuccessBox } from "@/components/ui";
 import {
   CASH_PERIODS,
   CASH_REOPEN_CODE,
@@ -18,8 +18,12 @@ import {
   reopenCashSession,
   sessionLedger,
 } from "@/lib/cash";
+import { isSoldAtRegister } from "@/lib/categories";
 import { formatBRL, formatDate, formatTime, parseMoney, todayDate } from "@/lib/money";
+import { sellableQty, stockByLocation } from "@/lib/queries";
+import { StockError, withdrawProductAndCash } from "@/lib/stock";
 import type { CashDestination, CashPeriod } from "@/lib/types";
+import { CASH_DESTINATIONS, cashDestinationLabel, productIsLive } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 export default function CaixaTurnoPage() {
@@ -117,8 +121,9 @@ export default function CaixaTurnoPage() {
               value={formatBRL(ledger.expectedCash)}
               accent
             />
-            <CashMetric label="Total do turno" hint="Dinheiro, Pix e cartão" value={formatBRL(ledger.salesTotal)} />
+            <CashMetric label="Total do turno" hint="Dinheiro, Pix e cartão das vendas. Sinal entra nas formas, não neste total." value={formatBRL(ledger.salesTotal)} />
           </div>
+          {locationId ? <WithdrawCard locationId={locationId} expectedCash={ledger.expectedCash} /> : null}
           <div className="mb-6">
             <SessionSalesList sessionId={session.id} canVoid />
           </div>
@@ -296,6 +301,138 @@ export default function CaixaTurnoPage() {
         </div>
       </ConfirmDialog>
     </>
+  );
+}
+
+function WithdrawCard({ locationId, expectedCash }: { locationId: string; expectedCash: number }) {
+  const ready = useReady();
+  const stock = useLiveQuery(() => (ready ? stockByLocation() : []), [ready]);
+  const [search, setSearch] = useState("");
+  const [nicheId, setNicheId] = useState("");
+  const [qty, setQty] = useState(0);
+  const [amountText, setAmountText] = useState("");
+  const [reason, setReason] = useState("");
+  const [destination, setDestination] = useState<CashDestination>("cofre");
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+
+  const options = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (stock ?? [])
+      .filter((item) => productIsLive(item.product) && isSoldAtRegister(item.product.category))
+      .filter((item) => sellableQty(item, locationId) > 0)
+      .filter((item) => !q || item.label.toLowerCase().includes(q) || item.product.name.toLowerCase().includes(q));
+  }, [locationId, search, stock]);
+  const chosen = options.find((item) => item.niche.id === nicheId) ?? (stock ?? []).find((item) => item.niche.id === nicheId);
+  const available = chosen ? sellableQty(chosen, locationId) : 0;
+  const amount = parseMoney(amountText);
+  const canReview = Boolean(nicheId) && qty > 0 && qty <= available && amount > 0 && amount <= expectedCash + 0.001 && reason.trim().length >= 2;
+
+  async function save() {
+    setError("");
+    setOk("");
+    setSaving(true);
+    try {
+      await withdrawProductAndCash({
+        locationId,
+        nicheId,
+        qty,
+        amount,
+        reason,
+        destination,
+      });
+      setQty(0);
+      setAmountText("");
+      setReason("");
+      setConfirm(false);
+      setOk("Retirada lançada. Saiu da prateleira e da gaveta. Não é venda.");
+    } catch (err) {
+      setConfirm(false);
+      setError(err instanceof StockError ? err.message : "Não deu para retirar.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card className="mb-6 space-y-4">
+      <div>
+        <p className="text-lg font-extrabold">Retirada</p>
+        <p className="text-stone-600">
+          Dono tira produto e dinheiro no mesmo clique. Não é venda. A gaveta sai como sangria, com destino.
+        </p>
+      </div>
+      <SearchField value={search} onChange={setSearch} placeholder="Coxinha, coca..." />
+      {options.length === 0 ? (
+        <p className="font-semibold text-stone-500">Nada vendável nesta loja para retirar agora.</p>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {options.slice(0, 8).map((item) => (
+            <Button
+              key={item.niche.id}
+              type="button"
+              variant={nicheId === item.niche.id ? "secondary" : "ghost"}
+              className="min-h-12 justify-start text-left"
+              onClick={() => {
+                setNicheId(item.niche.id);
+                setQty((current) => Math.min(current, sellableQty(item, locationId)));
+              }}
+            >
+              {item.label} · {sellableQty(item, locationId)} un.
+            </Button>
+          ))}
+        </div>
+      )}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Quantidade" hint={chosen ? `Até ${available} nesta loja.` : "Escolha o produto."}>
+          <NumberStepper value={qty} max={available || 0} onChange={setQty} />
+        </Field>
+        <Field label="Valor que sai da gaveta" hint={`No máximo ${formatBRL(expectedCash)} em espécie.`}>
+          <Input inputMode="decimal" value={amountText} onChange={(event) => setAmountText(event.target.value)} placeholder="0,00" />
+        </Field>
+      </div>
+      <Field label="Motivo">
+        <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Ex.: dono levou para outro ponto" />
+      </Field>
+      <div>
+        <p className="mb-2 font-bold">Para onde foi o dinheiro</p>
+        <div className="grid grid-cols-2 gap-2">
+          {CASH_DESTINATIONS.map((item) => (
+            <Button
+              key={item.id}
+              type="button"
+              variant={destination === item.id ? "secondary" : "ghost"}
+              onClick={() => setDestination(item.id)}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+      <ErrorBox message={error} />
+      <SuccessBox message={ok} />
+      <Button type="button" variant="secondary" disabled={saving || !canReview} onClick={() => { setOk(""); setConfirm(true); }}>
+        Conferir retirada
+      </Button>
+      <ConfirmDialog
+        open={confirm}
+        title="Lançar esta retirada?"
+        hint="Prateleira desce. Gaveta desce. Sem linha de venda."
+        confirmLabel="Confirmar retirada"
+        confirmVariant="secondary"
+        busy={saving}
+        onConfirm={save}
+        onCancel={() => setConfirm(false)}
+      >
+        <ul className="space-y-2 font-semibold text-stone-800">
+          <li>{chosen?.label ?? "Produto"} · {qty} un.</li>
+          <li>{formatBRL(amount)} · {cashDestinationLabel(destination)}</li>
+          <li>{reason.trim()}</li>
+        </ul>
+      </ConfirmDialog>
+    </Card>
   );
 }
 

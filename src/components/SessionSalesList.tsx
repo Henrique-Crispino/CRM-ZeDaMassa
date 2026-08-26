@@ -90,12 +90,16 @@ export function SessionSalesList({
                           .map((row) => `${paymentMethodLabel(row.method)} ${formatBRL(row.amount)}`)
                           .join(" + ")}{" "}
                         ·{" "}
-                        {CHANNEL_LABEL[ticket.sale.channel]}
+                        {ticket.sale.kind === "sinal"
+                          ? "Sinal da festa"
+                          : CHANNEL_LABEL[ticket.sale.channel]}
                       </p>
                       <p className="text-sm font-semibold text-stone-600">
-                        {ticket.items
-                          .map((item) => `${item.qty}× ${item.label}${item.promo ? " (promo)" : ""}`)
-                          .join(" · ")}
+                        {ticket.sale.kind === "sinal"
+                          ? "Entrou no caixa. Estoque não saiu."
+                          : ticket.items
+                              .map((item) => `${item.qty}× ${item.label}${item.promo ? " (promo)" : ""}`)
+                              .join(" · ")}
                       </p>
                       {!live ? (
                         <p className="text-sm font-bold text-red-700">
@@ -151,15 +155,19 @@ export function SessionSalesList({
         {chosen ? (
           <div className="space-y-4">
             <ul className="divide-y divide-stone-100 rounded-2xl bg-stone-50 px-4">
-              {chosen.items.map((item) => (
-                <li key={`${item.label}-${item.qty}-${item.unitPrice}`} className="flex justify-between gap-3 py-3">
-                  <span className="font-bold text-stone-800">
-                    {item.qty}× {item.label}
-                    {item.promo ? " · promoção" : ""}
-                  </span>
-                  <span className="font-extrabold">{formatBRL(item.qty * item.unitPrice)}</span>
-                </li>
-              ))}
+              {chosen.sale.kind === "sinal" ? (
+                <li className="py-3 font-bold text-stone-800">Sinal da festa · estoque não saiu</li>
+              ) : (
+                chosen.items.map((item) => (
+                  <li key={`${item.label}-${item.qty}-${item.unitPrice}`} className="flex justify-between gap-3 py-3">
+                    <span className="font-bold text-stone-800">
+                      {item.qty}× {item.label}
+                      {item.promo ? " · promoção" : ""}
+                    </span>
+                    <span className="font-extrabold">{formatBRL(item.qty * item.unitPrice)}</span>
+                  </li>
+                ))
+              )}
             </ul>
             <p className="text-2xl font-extrabold">{formatBRL(chosen.sale.total)}</p>
             <div>

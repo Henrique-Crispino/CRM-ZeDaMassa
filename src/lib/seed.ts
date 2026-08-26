@@ -1,9 +1,11 @@
 import { CASH_REOPEN_CODE, CASH_REOPEN_SETTING } from "./cash";
 import { getDb } from "./db";
+import { deliverFactoryOrder } from "./factory-orders";
 import { asConsumeUser, mergePeopleIfNeeded, personCanConsume } from "./people";
 import { DEFAULT_STORES, refreshLocations } from "./locations";
 import { addDays, endOfDayIso, newId, startOfDayIso, todayDate } from "./money";
 import { createStoreRequest } from "./requests";
+import type { NotificationAudience } from "./types";
 import type {
   CashMovement,
   CashSession,
@@ -284,6 +286,8 @@ export const DEFAULT_COMBO_ITEMS: ComboItem[] = [
   { id: "combo-10mini-coca-coca", comboId: "combo-10mini-coca", nicheId: "coca-350", qty: 1 },
 ];
 
+const VOLUME_DEMO_SETTING = "volume-demo";
+
 export const DEFAULT_CUSTOMERS: Customer[] = [
   {
     id: "cust-marcia",
@@ -296,16 +300,221 @@ export const DEFAULT_CUSTOMERS: Customer[] = [
     createdAt: `${todayDate()}T10:00:00.000Z`,
   },
   {
+    id: "cust-buffet-sabor",
+    name: "Buffet Sabor de Casa",
+    phone: "(11) 96666-3030",
+    note: "Aniversário pontual. Não é volume.",
+    address: "Av. das Festas, 90",
+    kind: "festa",
+    active: true,
+    createdAt: `${todayDate()}T10:00:00.000Z`,
+  },
+  {
     id: "cust-padaria-ze",
     name: "Padaria do Zé",
     phone: "(11) 97777-2020",
-    note: "Compra grande. Retira na câmara.",
+    note: "Toda terça. Retira na câmara. Costuma 80 mini.",
     address: "Rua do Forno, 40",
     kind: "volume",
+    usualWeekdays: [2],
+    active: true,
+    createdAt: `${todayDate()}T10:00:00.000Z`,
+  },
+  {
+    id: "cust-mercado-vila",
+    name: "Mercado da Vila",
+    phone: "(11) 95555-4040",
+    note: "Quase sempre quarta. Retira de manhã.",
+    address: "Rua da Feira, 12",
+    kind: "volume",
+    usualWeekdays: [3],
+    active: true,
+    createdAt: `${todayDate()}T10:00:00.000Z`,
+  },
+  {
+    id: "cust-cantina-escola",
+    name: "Cantina da Escola",
+    phone: "(11) 94444-5050",
+    note: "Sexta, recreio. Pedido aberto na fila para a Rita separar.",
+    address: "Rua do Colégio, 8",
+    kind: "volume",
+    usualWeekdays: [5],
+    active: true,
+    createdAt: `${todayDate()}T10:00:00.000Z`,
+  },
+  {
+    id: "cust-rest-bairro",
+    name: "Restaurante do Bairro",
+    phone: "(11) 93333-6060",
+    note: "Terça e quinta. Já levou hoje — o dono vê no Saiu da câmara.",
+    address: "Praça Central, 3",
+    kind: "volume",
+    usualWeekdays: [2, 4],
     active: true,
     createdAt: `${todayDate()}T10:00:00.000Z`,
   },
 ];
+
+function lastWeekdayDaysAgo(dow: number, weeksAgo = 1) {
+  const current = new Date(`${todayDate()}T12:00:00`).getDay();
+  let daysBack = (current - dow + 7) % 7;
+  if (daysBack === 0) daysBack = 7;
+  return daysBack + (weeksAgo - 1) * 7;
+}
+
+async function notifyVolumeDemo(
+  type: "factory_order" | "factory_order_delivered",
+  title: string,
+  body: string,
+  refId: string,
+  at: string,
+) {
+  const db = getDb();
+  await db.notifications.bulkAdd(
+    (["admin", "factory"] as const).map((audience: NotificationAudience) => ({
+      id: newId(),
+      audience,
+      type,
+      title,
+      body,
+      refId,
+      at,
+    })),
+  );
+}
+
+async function backdateVolumeOrder(orderId: string, at: string) {
+  const db = getDb();
+  const order = await db.factoryOrders.get(orderId);
+  if (!order) return;
+  await db.factoryOrders.update(orderId, { at, resolvedAt: order.resolvedAt ? at : undefined });
+  const moves = await db.movements.where("refId").equals(orderId).toArray();
+  for (const row of moves) await db.movements.update(row.id, { at });
+  const notes = await db.notifications.filter((row) => row.refId === orderId).toArray();
+  for (const row of notes) await db.notifications.update(row.id, { at });
+}
+
+async function upsertDemoCustomers() {
+  const db = getDb();
+  for (const customer of DEFAULT_CUSTOMERS) {
+    const current = await db.customers.get(customer.id);
+    if (!current) {
+      await db.customers.add(customer);
+      continue;
+    }
+    if (customer.kind === "volume" && !(current.usualWeekdays?.length) && customer.usualWeekdays?.length) {
+      await db.customers.update(customer.id, { usualWeekdays: customer.usualWeekdays, note: customer.note });
+    }
+  }
+}
+
+async function seedVolumeOrder(input: {
+  id: string;
+  customerId: string;
+  note: string;
+  at: string;
+  items: { nicheId: string; qty: number }[];
+  deliver?: boolean;
+}) {
+  const db = getDb();
+  if (await db.factoryOrders.get(input.id)) return true;
+  await db.factoryOrders.add({
+    id: input.id,
+    customerId: input.customerId,
+    status: "pending",
+    note: input.note,
+    at: input.at,
+  });
+  for (const item of input.items) {
+    await db.factoryOrderItems.add({
+      id: `${input.id}-${item.nicheId}`,
+      orderId: input.id,
+      nicheId: item.nicheId,
+      qty: item.qty,
+      sentQty: 0,
+    });
+  }
+  const labels = input.items
+    .map((item) => {
+      const niche = NICHE_BY_ID.get(item.nicheId);
+      const product = PRODUCT_BY_NICHE.get(item.nicheId);
+      return product && niche ? `${item.qty} ${product.name} · ${niche.name}` : `${item.qty}`;
+    })
+    .join(", ");
+  const customer = DEFAULT_CUSTOMERS.find((row) => row.id === input.customerId);
+  const name = customer?.name ?? "Cliente";
+  await notifyVolumeDemo("factory_order", `${name} pediu na câmara`, labels, input.id, input.at);
+  if (!input.deliver) return true;
+  try {
+    await deliverFactoryOrder(input.id);
+    await backdateVolumeOrder(input.id, input.at);
+    return true;
+  } catch {
+    await db.factoryOrderItems.where("orderId").equals(input.id).delete();
+    await db.factoryOrders.delete(input.id);
+    const notes = await db.notifications.filter((row) => row.refId === input.id).toArray();
+    for (const row of notes) await db.notifications.delete(row.id);
+    return false;
+  }
+}
+
+async function ensureVolumeStory() {
+  const db = getDb();
+  await upsertDemoCustomers();
+  if ((await db.settings.get(VOLUME_DEMO_SETTING))?.value === "1") return;
+
+  const padaria7 = lastWeekdayDaysAgo(2, 1);
+  const padaria14 = lastWeekdayDaysAgo(2, 2);
+  await seedVolumeOrder({
+    id: "fo-vol-padaria-14",
+    customerId: "cust-padaria-ze",
+    note: "Pedido da terça passada da passada. Já levou.",
+    at: dayAt(padaria14, 9, 10).toISOString(),
+    items: [
+      { nicheId: "cox-mini", qty: 80 },
+      { nicheId: "kibe-mini", qty: 40 },
+    ],
+    deliver: true,
+  });
+  await seedVolumeOrder({
+    id: "fo-vol-padaria-7",
+    customerId: "cust-padaria-ze",
+    note: "Pedido da terça passada. Já levou. Serve no Repetir o último.",
+    at: dayAt(padaria7, 9, 25).toISOString(),
+    items: [
+      { nicheId: "cox-mini", qty: 80 },
+      { nicheId: "ris-mini", qty: 40 },
+      { nicheId: "kibe-mini", qty: 30 },
+    ],
+    deliver: true,
+  });
+  await seedVolumeOrder({
+    id: "fo-vol-rest-hoje",
+    customerId: "cust-rest-bairro",
+    note: "Levou hoje de manhã. Saiu da câmara, não passou no caixa.",
+    at: dayAt(0, 9, 20).toISOString(),
+    items: [
+      { nicheId: "cox-mini", qty: 50 },
+      { nicheId: "kibe-festa", qty: 20 },
+    ],
+    deliver: true,
+  });
+  await seedVolumeOrder({
+    id: "fo-vol-cantina",
+    customerId: "cust-cantina-escola",
+    note: "Recreio da tarde. A Rita ainda separa — Cliente levou.",
+    at: dayAt(0, 8, 40).toISOString(),
+    items: [
+      { nicheId: "cox-festa", qty: 30 },
+      { nicheId: "ris-mini", qty: 40 },
+    ],
+    deliver: false,
+  });
+
+  const ready =
+    (await db.factoryOrders.get("fo-vol-padaria-7")) && (await db.factoryOrders.get("fo-vol-cantina"));
+  if (ready) await db.settings.put({ id: VOLUME_DEMO_SETTING, value: "1" });
+}
 
 function lotExpiry(nicheId: string, madeAt: string) {
   const product = PRODUCT_BY_NICHE.get(nicheId);
@@ -424,10 +633,7 @@ export async function ensureAppDefaults() {
         await db.customers.update(row.id, { kind: "festa" });
       }
     }
-    if (!rows.some((row) => row.id === "cust-padaria-ze")) {
-      const padaria = DEFAULT_CUSTOMERS.find((item) => item.id === "cust-padaria-ze");
-      if (padaria) await db.customers.add(padaria);
-    }
+    await upsertDemoCustomers();
   }
 
   const cox = await db.niches.get("cox-mini");
@@ -479,6 +685,7 @@ export async function ensureAppDefaults() {
   }
 
   await refreshLocations();
+  await ensureVolumeStory();
 }
 
 export async function loadDemoData() {
@@ -1067,4 +1274,5 @@ export async function loadDemoData() {
     note: "Geladeira do Jardim no fim. Mandar lata.",
     items: [{ nicheId: "coca-350", qty: 18 }],
   });
+  await ensureVolumeStory();
 }

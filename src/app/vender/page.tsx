@@ -36,7 +36,6 @@ import { useReady } from "@/lib/use-ready";
 const channels: { id: SaleChannel; label: string }[] = [
   { id: "caixa", label: "No caixa" },
   { id: "delivery", label: "Delivery" },
-  { id: "encomenda", label: "Encomenda" },
 ];
 
 type Kind = "todos" | Category;
@@ -74,6 +73,7 @@ export default function VenderPage() {
   const [ok, setOk] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [quick, setQuick] = useState(false);
 
   const sellable = useMemo(() => {
     return (stock ?? []).filter(
@@ -171,14 +171,14 @@ export default function VenderPage() {
     try {
       await checkout({
         locationId,
-        channel,
+        channel: quick ? "caixa" : channel,
         payments: paymentLines,
         items: cartItems.map((item) => ({
           nicheId: item.niche.id,
           qty: item.cartQty,
-          promo: item.usePromo,
+          promo: quick ? false : item.usePromo,
         })),
-        combos: comboCartItems.map((item) => ({ comboId: item.id, qty: item.cartQty })),
+        combos: quick ? [] : comboCartItems.map((item) => ({ comboId: item.id, qty: item.cartQty })),
       });
       setCart({});
       setComboCart({});
@@ -186,6 +186,7 @@ export default function VenderPage() {
       setSplit(false);
       setSplitAmounts({ dinheiro: "", pix: "", cartao: "" });
       setConfirm(false);
+      setQuick(false);
       setOk(`Venda feita. ${formatBRL(total)}`);
     } catch (err) {
       setConfirm(false);
@@ -199,7 +200,7 @@ export default function VenderPage() {
     <AppShell>
       <PageTitle
         title="Vender"
-        hint="Só salgado e bebida. Combo baixa os dois. Embalagem, limpeza e insumo não vendem aqui. Sem estoque ou só vencido fica na lista, apagado."
+        hint="Só salgado e bebida. Combo baixa os dois. Encomenda de festa fica em Pedir, com data. Sem estoque ou só vencido fica na lista, apagado."
       />
 
       <DiscardExpiredBanner
@@ -231,7 +232,7 @@ export default function VenderPage() {
         </Card>
       )}
 
-      <div className="pb-32 lg:pb-0">
+      <div className="pb-40 lg:pb-0">
       <div className="mb-4 space-y-3">
         <SearchField
           value={search}
@@ -443,7 +444,7 @@ export default function VenderPage() {
               <div className="space-y-2">
                 <p className="rounded-2xl bg-orange-50 px-4 py-3 font-extrabold text-orange-900">No caixa</p>
                 <Button type="button" variant="ghost" className="w-full min-h-11 text-sm" onClick={() => setMoreSale(true)}>
-                  Mais nesta venda
+                  Delivery nesta venda
                 </Button>
               </div>
             )}
@@ -519,10 +520,31 @@ export default function VenderPage() {
             disabled={saving || (cartItems.length === 0 && comboCartItems.length === 0) || !session || !payReady}
             onClick={() => {
               setOk("");
+              setQuick(false);
               setConfirm(true);
             }}
           >
             Revisar e fechar
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="mt-2 hidden w-full lg:inline-flex"
+            disabled={
+              saving ||
+              cartItems.length === 0 ||
+              comboCartItems.length > 0 ||
+              split ||
+              !session ||
+              !payReady
+            }
+            onClick={() => {
+              setOk("");
+              setQuick(true);
+              setConfirm(true);
+            }}
+          >
+            Fechar rápido
           </Button>
         </Card>
       </div>
@@ -538,28 +560,58 @@ export default function VenderPage() {
         <StickyActionBar>
           <div className="flex items-center justify-between gap-3">
             <p className="text-2xl font-extrabold">{formatBRL(total)}</p>
-            <Button
-              className="min-w-44"
-              disabled={saving || (cartItems.length === 0 && comboCartItems.length === 0) || !session || !payReady}
-              onClick={() => {
-                setOk("");
-                setConfirm(true);
-              }}
-            >
-              Revisar e fechar
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Button
+                className="min-w-44"
+                disabled={saving || (cartItems.length === 0 && comboCartItems.length === 0) || !session || !payReady}
+                onClick={() => {
+                  setOk("");
+                  setQuick(false);
+                  setConfirm(true);
+                }}
+              >
+                Revisar e fechar
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="min-h-11 min-w-44 text-sm"
+                disabled={
+                  saving ||
+                  cartItems.length === 0 ||
+                  comboCartItems.length > 0 ||
+                  split ||
+                  !session ||
+                  !payReady
+                }
+                onClick={() => {
+                  setOk("");
+                  setQuick(true);
+                  setConfirm(true);
+                }}
+              >
+                Fechar rápido
+              </Button>
+            </div>
           </div>
         </StickyActionBar>
       </div>
 
       <ConfirmDialog
         open={confirm}
-        title="Fechar esta venda?"
-        hint={`${channels.find((item) => item.id === channel)?.label} · ${paymentLines.map((row) => `${paymentMethodLabel(row.method)} ${formatBRL(row.amount)}`).join(" + ")}${session ? ` · ${session.employeeName}` : ""}`}
+        title={quick ? "Fechar rápido?" : "Fechar esta venda?"}
+        hint={
+          quick
+            ? `No caixa · ${paymentLines.map((row) => `${paymentMethodLabel(row.method)} ${formatBRL(row.amount)}`).join(" + ")}`
+            : `${channels.find((item) => item.id === channel)?.label} · ${paymentLines.map((row) => `${paymentMethodLabel(row.method)} ${formatBRL(row.amount)}`).join(" + ")}${session ? ` · ${session.employeeName}` : ""}`
+        }
         confirmLabel="Confirmar venda"
         busy={saving}
         onConfirm={finish}
-        onCancel={() => setConfirm(false)}
+        onCancel={() => {
+          setConfirm(false);
+          setQuick(false);
+        }}
       >
         <ul className="divide-y divide-stone-100 rounded-2xl bg-stone-50 px-4">
           {comboCartItems.map((item) => (

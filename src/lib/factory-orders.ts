@@ -11,6 +11,7 @@ import {
   customerKind,
   factoryOrderStatusLabel,
   isOpenRequest,
+  lotCost,
   productIsLive,
   type RequestStatus,
 } from "./types";
@@ -242,7 +243,9 @@ export async function deliverFactoryOrder(orderId: string, qtyByNiche?: Record<s
 
         for (const row of payload) {
           const chunks = await oldestLots("factory", row.item.nicheId, row.qty, { skipExpired: true });
+          const found = catalog.find((item) => item.niche.id === row.item.nicheId);
           for (const chunk of chunks) {
+            const lot = await db.lots.get(chunk.lotId);
             await changeStock("factory", row.item.nicheId, chunk.lotId, -chunk.qty);
             await db.movements.add({
               id: newId(),
@@ -253,6 +256,7 @@ export async function deliverFactoryOrder(orderId: string, qtyByNiche?: Record<s
               type: "cliente",
               refId: orderId,
               at,
+              unitCost: lotCost(lot, found?.niche.costPrice ?? 0),
             });
           }
           const fresh = await db.factoryOrderItems.get(row.item.id);

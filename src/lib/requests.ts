@@ -1,10 +1,10 @@
 import { getDb } from "./db";
 import { getLocation, isStore } from "./locations";
-import { formatTime, newId } from "./money";
+import { formatDate, formatTime, newId, todayDate } from "./money";
 import { catalogItems, sellableQty, stockByLocation } from "./queries";
 import { sendToStore, StockError } from "./stock";
-import type { AppNotification, NotificationAudience, RequestStatus, StockRequest } from "./types";
-import { closedCatalogMessage, isOpenRequest, productIsLive, requestStatusLabel } from "./types";
+import type { AppNotification, NotificationAudience, RequestStatus, StockRequest, StoreRequestKind } from "./types";
+import { closedCatalogMessage, isOpenRequest, productIsLive, requestStatusLabel, storeRequestKind } from "./types";
 
 export class RequestError extends Error {}
 
@@ -60,6 +60,10 @@ export function coverageStatus(items: Pick<RequestItemView, "remaining" | "avail
 export async function createStoreRequest(input: {
   fromLocationId: string;
   note?: string;
+  kind?: StoreRequestKind;
+  neededBy?: string;
+  guestName?: string;
+  estimatedTotal?: number;
   items: { nicheId: string; qty: number }[];
 }) {
   if (!isStore(input.fromLocationId)) {
@@ -69,6 +73,13 @@ export async function createStoreRequest(input: {
   const items = input.items.filter((item) => item.qty > 0);
   if (items.length === 0) {
     throw new RequestError("Escolha pelo menos um produto e a quantidade.");
+  }
+
+  const kind = storeRequestKind({ kind: input.kind });
+  const neededBy = input.neededBy?.trim() ?? "";
+  if (kind === "encomenda") {
+    if (!neededBy) throw new RequestError("A encomenda precisa do dia da festa.");
+    if (neededBy < todayDate()) throw new RequestError("A data da encomenda não pode ser no passado.");
   }
 
   const db = getDb();
@@ -82,6 +93,7 @@ export async function createStoreRequest(input: {
       throw new RequestError(closedCatalogMessage(found.product.name));
     }
   }
+  const units = items.reduce((sum, item) => sum + item.qty, 0);
   const labels = items
     .map((item) => {
       const found = catalog.find((row) => row.niche.id === item.nicheId);
@@ -90,6 +102,10 @@ export async function createStoreRequest(input: {
     .slice(0, 4)
     .join(", ");
 
+  const guestName = input.guestName?.trim() ?? "";
+  const estimatedTotal =
+    kind === "encomenda" && Number.isFinite(input.estimatedTotal) ? Math.max(0, Number(input.estimatedTotal)) : undefined;
+
   await db.transaction("rw", [db.requests, db.requestItems, db.notifications], async () => {
     await db.requests.add({
       id: requestId,
@@ -97,6 +113,10 @@ export async function createStoreRequest(input: {
       status: "pending",
       note: input.note?.trim() ?? "",
       at,
+      kind,
+      neededBy: kind === "encomenda" ? neededBy : undefined,
+      guestName: guestName || undefined,
+      estimatedTotal,
     });
     for (const item of items) {
       await db.requestItems.add({
@@ -107,10 +127,20 @@ export async function createStoreRequest(input: {
         sentQty: 0,
       });
     }
+    const weekday =
+      kind === "encomenda"
+        ? new Date(`${neededBy}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long" })
+        : "";
     await notify({
       type: "store_request",
-      title: `${storeName} pediu produto`,
-      body: labels,
+      title:
+        kind === "encomenda"
+          ? `${storeName} encomendou para ${weekday}`
+          : `${storeName} pediu produto`,
+      body:
+        kind === "encomenda"
+          ? `${labels} · ${formatDate(neededBy)} · ${units} un.`
+          : labels,
       refId: requestId,
     });
   });
@@ -130,6 +160,14 @@ export type WellClaim = {
   note: string;
   at: string;
   resolvedAt?: string;
+  kind?: StoreRequestKind;
+  neededBy?: string;
+  guestName?: string;
+  estimatedTotal?: number;
+  signalAmount?: number;
+  signalSaleId?: string;
+  remainderSaleId?: string;
+  deliveredAt?: string;
   items: RequestItemView[];
 };
 
@@ -180,6 +218,14 @@ export async function loadFactoryWell() {
     note: request.note,
     at: request.at,
     resolvedAt: request.resolvedAt,
+    kind: storeRequestKind(request),
+    neededBy: request.neededBy,
+    guestName: request.guestName,
+    estimatedTotal: request.estimatedTotal,
+    signalAmount: request.signalAmount,
+    signalSaleId: request.signalSaleId,
+    remainderSaleId: request.remainderSaleId,
+    deliveredAt: request.deliveredAt,
     items: claimLines(
       requestItems.filter((item) => item.requestId === request.id),
       catalog,
@@ -267,6 +313,14 @@ function asRequestView(claim: WellClaim): RequestView {
     note: claim.note,
     at: claim.at,
     resolvedAt: claim.resolvedAt,
+    kind: claim.kind,
+    neededBy: claim.neededBy,
+    guestName: claim.guestName,
+    estimatedTotal: claim.estimatedTotal,
+    signalAmount: claim.signalAmount,
+    signalSaleId: claim.signalSaleId,
+    remainderSaleId: claim.remainderSaleId,
+    deliveredAt: claim.deliveredAt,
     statusLabel: requestStatusLabel(live),
     storeName: claim.name,
     items: claim.items,
@@ -353,6 +407,7 @@ export async function fulfillRequest(
           items: payload.map((row) => ({ nicheId: row.item.nicheId, qty: row.qty })),
           sentBy: sentBy?.trim() || "Fábrica",
           respectWell: false,
+          requestId,
         });
 
         const at = new Date().toISOString();

@@ -60,19 +60,21 @@ async function main() {
     discardExpiredLots,
     applyInventory,
     openPackages,
+    withdrawProductAndCash,
   } = await import("../src/lib/stock.ts");
   const { openCashSession, registerCashMovement, closeCashSession, reopenCashSession, currentCashSession, sessionLedger } =
     await import("../src/lib/cash.ts");
   const { createStoreRequest, fulfillRequest, listRequests, cancelRequest, factoryFreeByNiche } = await import("../src/lib/requests.ts");
   const { registerInternalConsume } = await import("../src/lib/consume.ts");
-  const { reportDayPack, reportWindow, reportClosing } = await import("../src/lib/reports.ts");
-  const { catalogItems, inventorySheet, setProductActive, loadKardex } = await import("../src/lib/queries.ts");
+  const { reportDayPack, reportWindow, reportClosing, reportFactoryClients } = await import("../src/lib/reports.ts");
+  const { catalogItems, inventorySheet, setProductActive, loadKardex, loadDashboard, listProductionLogs } = await import("../src/lib/queries.ts");
   const { saleCategories } = await import("../src/lib/categories.ts");
   const { saveCombo } = await import("../src/lib/combos.ts");
-  const { listCustomers, saveCustomer } = await import("../src/lib/customers.ts");
+  const { listCustomers, saveCustomer, ensurePortfolioAlerts } = await import("../src/lib/customers.ts");
   const { createFactoryOrder, listFactoryOrders, deliverFactoryOrder, lastFactoryOrder, cancelFactoryOrder } =
     await import("../src/lib/factory-orders.ts");
-  const { customerKind } = await import("../src/lib/types.ts");
+  const { customerKind, isRevenueSale } = await import("../src/lib/types.ts");
+  const { takeEncomendaSignal, deliverEncomenda } = await import("../src/lib/encomendas.ts");
   const db = getDb();
   const today = todayDate();
 
@@ -1351,6 +1353,218 @@ async function main() {
     `ok=${deliveredOk} baixou ${factoryBeforeDeliverRace - factoryAfterDeliverRace} · sentQty ${raceOrderItems[0]?.sentQty}`,
   );
 
+  for (const row of await listRequests("open")) {
+    await cancelRequest(row.id);
+  }
+  for (const row of await listFactoryOrders("open")) {
+    await cancelFactoryOrder(row.id);
+  }
+  await produceItems({ items: [{ nicheId: "cox-mini", qty: 80 }], madeAt: today });
+  const factoryBeforeParty = await stockQty("factory", "cox-mini");
+  const storeBeforeParty = await stockQty("store_1", "cox-mini");
+  const partyDay = addDays(today, 5);
+  const partyId = (await expectOk("Loja lança encomenda com data sem baixar estoque", () =>
+    createStoreRequest({
+      fromLocationId: "store_1",
+      kind: "encomenda",
+      neededBy: partyDay,
+      estimatedTotal: 400,
+      items: [{ nicheId: "cox-mini", qty: 40 }],
+    }),
+  )) as string | null;
+  const factoryAfterPartyAsk = await stockQty("factory", "cox-mini");
+  const storeAfterPartyAsk = await stockQty("store_1", "cox-mini");
+  const partyRow = partyId ? await db.requests.get(partyId) : undefined;
+  const partyNotes = (await db.notifications.toArray()).filter((row) => row.refId === partyId);
+  record(
+    "Encomenda da loja avisa a fábrica com a data e não mexe estoque",
+    partyRow?.kind === "encomenda" &&
+      partyRow.neededBy === partyDay &&
+      factoryAfterPartyAsk === factoryBeforeParty &&
+      storeAfterPartyAsk === storeBeforeParty &&
+      partyNotes.some((row) => row.audience === "factory" && row.title.toLowerCase().includes("encomendou")),
+    `neededBy=${partyRow?.neededBy} avisos=${partyNotes.length}`,
+  );
+
+  const cashBeforeSignal = await currentCashSession("store_1");
+  if (!cashBeforeSignal) {
+    await openCashSession({ locationId: "store_1", period: "tarde", employeeId: "emp-ana", openingAmount: 150 });
+  }
+  const sessionForParty = await currentCashSession("store_1");
+  const ledgerBeforeSignal = sessionForParty ? await sessionLedger(sessionForParty.id) : null;
+  if (partyId) {
+    await expectOk("Sinal entra no caixa sem baixar estoque", () =>
+      takeEncomendaSignal({ requestId: partyId, amount: 200, payment: "pix" }),
+    );
+  }
+  const ledgerAfterSignal = sessionForParty ? await sessionLedger(sessionForParty.id) : null;
+  const storeAfterSignal = await stockQty("store_1", "cox-mini");
+  const factoryAfterSignal = await stockQty("factory", "cox-mini");
+  const signalSale = partyId
+    ? (await db.sales.toArray()).find((sale) => sale.requestId === partyId && sale.kind === "sinal")
+    : undefined;
+  record(
+    "Sinal não mexe estoque e não entra no faturamento do turno",
+    Boolean(signalSale) &&
+      storeAfterSignal === storeAfterPartyAsk &&
+      factoryAfterSignal === factoryAfterPartyAsk &&
+      Math.abs((ledgerAfterSignal?.byPayment.pix ?? 0) - (ledgerBeforeSignal?.byPayment.pix ?? 0) - 200) < 0.01 &&
+      Math.abs((ledgerAfterSignal?.salesTotal ?? 0) - (ledgerBeforeSignal?.salesTotal ?? 0)) < 0.01,
+    `pix +${((ledgerAfterSignal?.byPayment.pix ?? 0) - (ledgerBeforeSignal?.byPayment.pix ?? 0)).toFixed(2)} fatura ${ledgerAfterSignal?.salesTotal}`,
+  );
+
+  if (partyId) {
+    await expectOk("Fábrica manda a encomenda da festa", () => fulfillRequest(partyId, { "cox-mini": 40 }, "Rita"));
+    await expectFail(
+      "Entrega da festa recusa envio ainda em trânsito",
+      () => deliverEncomenda({ requestId: partyId, payment: "pix" }),
+      "receber",
+    );
+    const partyTransfers = (await db.transfers.toArray()).filter((row) => row.requestId === partyId);
+    const openParty = partyTransfers.find((row) => !row.receivedAt);
+    if (openParty) {
+      const parts = await db.transferItems.where("transferId").equals(openParty.id).toArray();
+      await expectOk("Loja confere o envio da encomenda", () =>
+        receiveTransfer({
+          transferId: openParty.id,
+          receivedBy: "Ana",
+          items: parts.map((part) => ({ id: part.id, receivedQty: part.qty })),
+        }),
+      );
+    }
+    const storeBeforeDeliver = await stockQty("store_1", "cox-mini");
+    const ledgerBeforeDeliver = sessionForParty ? await sessionLedger(sessionForParty.id) : null;
+    await expectOk("Resto entra e a festa sai da prateleira da loja", () =>
+      deliverEncomenda({ requestId: partyId, payment: "pix" }),
+    );
+    const storeAfterDeliver = await stockQty("store_1", "cox-mini");
+    const delivered = await db.requests.get(partyId);
+    const remainder = delivered?.remainderSaleId ? await db.sales.get(delivered.remainderSaleId) : undefined;
+    const ledgerAfterDeliver = sessionForParty ? await sessionLedger(sessionForParty.id) : null;
+    record(
+      "Entrega da festa cobra o resto, baixa a loja e fatura o total combinado",
+      Boolean(delivered?.deliveredAt) &&
+        storeBeforeDeliver - storeAfterDeliver === 40 &&
+        remainder?.total === 400 &&
+        remainder?.kind !== "sinal" &&
+        Math.abs((ledgerAfterDeliver?.byPayment.pix ?? 0) - (ledgerBeforeDeliver?.byPayment.pix ?? 0) - 200) < 0.01 &&
+        Math.abs((ledgerAfterDeliver?.salesTotal ?? 0) - (ledgerBeforeDeliver?.salesTotal ?? 0) - 400) < 0.01,
+      `baixou ${storeBeforeDeliver - storeAfterDeliver} cupom ${remainder?.total} fatura ${ledgerAfterDeliver?.salesTotal}`,
+    );
+  }
+
+  const madePast = addDays(today, -3);
+  await produceItems({ items: [{ nicheId: "cox-mini", qty: 9 }], madeAt: madePast });
+  const logsPast = await listProductionLogs(400, madePast, madePast);
+  const logsTodayOnly = await listProductionLogs(400, today, today);
+  record(
+    "Registro de produção recorta pelo dia em que foi feito",
+    logsPast.some((log) => log.madeAt === madePast && log.items.some((item) => item.qty === 9)) &&
+      !logsTodayOnly.some((log) => log.madeAt === madePast),
+    `passado=${logsPast.length} hoje=${logsTodayOnly.length}`,
+  );
+
+  const tomorrow = addDays(today, 1);
+  const tomorrowDow = new Date(`${tomorrow}T12:00:00`).getDay();
+  const alertCustomerId = await saveCustomer({
+    name: "Padaria Alerta",
+    kind: "volume",
+    usualWeekdays: [tomorrowDow],
+  });
+  await ensurePortfolioAlerts();
+  const portfolioNotes = (await db.notifications.where("type").equals("portfolio_reminder").toArray()).filter(
+    (row) => row.refId?.startsWith(`${alertCustomerId}:`),
+  );
+  record(
+    "Carteira avisa na véspera sem chutar quantidade",
+    portfolioNotes.some((row) => row.audience === "factory" && row.title.includes("Amanhã") && !/\d+\s*un/.test(row.title + row.body)),
+    portfolioNotes.map((row) => row.title).join(" · "),
+  );
+
+  const dashBeforeClient = await loadDashboard("today", "admin");
+  await produceItems({ items: [{ nicheId: "cox-mini", qty: 80 }], madeAt: today });
+  const volumeOrder = await createFactoryOrder({
+    customerId: padaria?.id ?? "x",
+    items: [{ nicheId: "cox-mini", qty: 80 }],
+  });
+  await expectOk("Padaria levou 80 da câmara", () => deliverFactoryOrder(volumeOrder, { "cox-mini": 80 }));
+  const dashAfterClient = await loadDashboard("today", "admin");
+  const clientMoves = (await db.movements.toArray()).filter((row) => row.type === "cliente" && row.refId === volumeOrder);
+  const clientCost = clientMoves.reduce((sum, row) => sum + Math.abs(row.qty) * (row.unitCost ?? 0), 0);
+  const factoryClients = await reportFactoryClients(reportWindow("today"));
+  record(
+    "Volume sai da câmara com custo e não soma no Vendeu da loja",
+    dashAfterClient.clienteQty - dashBeforeClient.clienteQty === 80 &&
+      Math.abs(dashAfterClient.revenue - dashBeforeClient.revenue) < 0.01 &&
+      clientMoves.every((row) => (row.unitCost ?? 0) > 0) &&
+      factoryClients.rows.some((row) => String(row[7]).toLowerCase().includes("não passou")),
+    `cliente ${dashAfterClient.clienteQty} custo ${clientCost} vendeu ${dashAfterClient.revenue}`,
+  );
+
+  await produceItems({ items: [{ nicheId: "cox-mini", qty: 20 }], madeAt: today });
+  const extraSend = (await expectOk("Mandar 15 para a retirada", () =>
+    sendToStore({
+      toLocationId: "store_1",
+      items: [{ nicheId: "cox-mini", qty: 15 }],
+      sentBy: "Rita",
+    }),
+  )) as string | null;
+  if (extraSend) {
+    const extraParts = await db.transferItems.where("transferId").equals(extraSend).toArray();
+    await expectOk("Loja confere o envio da retirada", () =>
+      receiveTransfer({
+        transferId: extraSend,
+        receivedBy: "Ana",
+        items: extraParts.map((part) => ({ id: part.id, receivedQty: part.qty })),
+      }),
+    );
+  }
+  const storeBeforeWithdraw = await stockQty("store_1", "cox-mini");
+  let liveWithdraw = await currentCashSession("store_1");
+  if (!liveWithdraw) {
+    await openCashSession({ locationId: "store_1", period: "tarde", employeeId: "emp-ana", openingAmount: 150 });
+    liveWithdraw = await currentCashSession("store_1");
+  }
+  let ledgerBeforeWithdraw = liveWithdraw ? await sessionLedger(liveWithdraw.id) : null;
+  if (liveWithdraw && (ledgerBeforeWithdraw?.expectedCash ?? 0) < 1) {
+    await checkout({
+      locationId: "store_1",
+      channel: "caixa",
+      payment: "dinheiro",
+      items: [{ nicheId: "cox-mini", qty: 1 }],
+    });
+    ledgerBeforeWithdraw = await sessionLedger(liveWithdraw.id);
+  }
+  const storeQtyBeforeWithdraw = await stockQty("store_1", "cox-mini");
+  const salesBeforeWithdraw = liveWithdraw
+    ? (await db.sales.where("cashSessionId").equals(liveWithdraw.id).toArray()).filter((sale) => !sale.voidedAt).length
+    : 0;
+  const withdrawAmount = Math.min(20, Math.max(1, Math.round((ledgerBeforeWithdraw?.expectedCash ?? 1) * 100) / 100));
+  await expectOk("Retirada baixa produto e gaveta na mesma tacada", () =>
+    withdrawProductAndCash({
+      locationId: "store_1",
+      nicheId: "cox-mini",
+      qty: 10,
+      amount: withdrawAmount,
+      reason: "dono levou",
+      destination: "cofre",
+    }),
+  );
+  const storeAfterWithdraw = await stockQty("store_1", "cox-mini");
+  const ledgerAfterWithdraw = liveWithdraw ? await sessionLedger(liveWithdraw.id) : null;
+  const salesAfterWithdraw = liveWithdraw
+    ? (await db.sales.where("cashSessionId").equals(liveWithdraw.id).toArray()).filter((sale) => !sale.voidedAt).length
+    : 0;
+  const withdrawMoves = (await db.movements.toArray()).filter((row) => row.type === "retirada");
+  record(
+    "Retirada não vira venda",
+    storeQtyBeforeWithdraw - storeAfterWithdraw === 10 &&
+      (ledgerAfterWithdraw?.sangriaTotal ?? 0) > (ledgerBeforeWithdraw?.sangriaTotal ?? 0) &&
+      salesAfterWithdraw === salesBeforeWithdraw &&
+      withdrawMoves.length > 0,
+    `baixou ${storeQtyBeforeWithdraw - storeAfterWithdraw} sangria ${ledgerAfterWithdraw?.sangriaTotal}`,
+  );
+
   await db.sales.add({
     id: "sale-round-test",
     locationId: "store_1",
@@ -1374,7 +1588,7 @@ async function main() {
   const liveCupons = (await db.sales.toArray()).filter(
     (sale) =>
       sale.locationId === "store_1" &&
-      !sale.voidedAt &&
+      isRevenueSale(sale) &&
       sale.at >= closingWindow.from &&
       sale.at <= closingWindow.to,
   );

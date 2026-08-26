@@ -3,29 +3,27 @@
 import { useMemo, useState } from "react";
 import { Download, Printer } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { ReportPreview } from "@/components/ReportPreview";
-import { Button, Card, Empty, Field, Input, PageTitle } from "@/components/ui";
+import { Button, Card, Empty, PageTitle } from "@/components/ui";
 import { getLocation, getPanel, storeLocations } from "@/lib/locations";
 import { addDays, todayDate } from "@/lib/money";
 import {
   downloadCsv,
   fileName,
-  clampReportDate,
-  matchReportPreset,
   orderedReportDates,
   reportCash,
   reportClosing,
-  reportDatePresets,
   reportDayPack,
   reportInternal,
   reportInventory,
   reportProduction,
+  reportFactoryClients,
   reportSales,
   reportStock,
   reportTransfers,
   reportWaste,
   reportWindow,
-  type ReportPresetId,
   type ReportTable,
   type StoreScope,
 } from "@/lib/reports";
@@ -45,7 +43,6 @@ export default function RelatoriosPage() {
 
   const range = useMemo(() => orderedReportDates(from, to, today), [from, to, today]);
   const window = useMemo(() => reportWindow("range", range), [range]);
-  const preset = matchReportPreset(range.from, range.to, today);
   const oneDay = window.fromDate === window.toDate;
   const storeLabel =
     scope === "all" ? "a rede" : scope === "factory" ? "a fábrica" : (getLocation(scope)?.name ?? scope);
@@ -56,25 +53,6 @@ export default function RelatoriosPage() {
       : window.fromDate === addDays(today, -1)
         ? "Ontem · uma folha"
         : "Um dia · uma folha";
-
-  function applyFrom(value: string) {
-    const nextFrom = clampReportDate(value, today);
-    setFrom(nextFrom);
-    if (nextFrom > to) setTo(nextFrom);
-  }
-
-  function applyTo(value: string) {
-    const nextTo = clampReportDate(value, today);
-    setTo(nextTo);
-    if (nextTo < from) setFrom(nextTo);
-  }
-
-  function applyPreset(id: ReportPresetId) {
-    const next = reportDatePresets(today).find((item) => item.id === id);
-    if (!next) return;
-    setFrom(next.from);
-    setTo(next.to);
-  }
 
   if (panel && panel.type !== "admin") {
     return (
@@ -119,38 +97,14 @@ export default function RelatoriosPage() {
           <p className="mb-3 text-sm text-stone-500">
             Vale para fechamento, vendas, perdas, envios, produção e consumo. Posição de estoque é foto agora — não usa essas datas.
           </p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="De">
-              <Input
-                type="date"
-                max={today}
-                value={from}
-                onChange={(event) => applyFrom(event.target.value)}
-              />
-            </Field>
-            <Field label="Até">
-              <Input
-                type="date"
-                max={today}
-                value={to}
-                onChange={(event) => applyTo(event.target.value)}
-              />
-            </Field>
-          </div>
-          <p className="mb-2 mt-4 text-sm font-bold text-stone-700">Atalhos</p>
-          <div className="flex flex-wrap gap-2">
-            {reportDatePresets(today).map((item) => (
-              <Button
-                key={item.id}
-                type="button"
-                variant={preset === item.id ? "primary" : "ghost"}
-                className="min-h-12"
-                onClick={() => applyPreset(item.id)}
-              >
-                {item.label}
-              </Button>
-            ))}
-          </div>
+          <DateRangeFilter
+            from={from}
+            to={to}
+            onChange={(nextFrom, nextTo) => {
+              setFrom(nextFrom);
+              setTo(nextTo);
+            }}
+          />
         </div>
 
         <div>
@@ -256,12 +210,21 @@ export default function RelatoriosPage() {
         />
         <ReportCard
           title="Produção da fábrica"
-          hint="Entrada no estoque da fábrica: data do lote, lançamento, quantidade e validade."
+          hint="O recorte é o dia em que o lote foi feito, não o horário do lançamento."
           uses="Período · fábrica"
           busy={busy}
           id="prod"
           onCsv={() => run("prod", "csv", () => reportProduction(window), "producao")}
           onPrint={() => run("prod", "print", () => reportProduction(window), "producao")}
+        />
+        <ReportCard
+          title="Compra na fábrica"
+          hint="Cliente levou na câmara: unidades e custo do lote. Não passou no caixa. Não entra no faturamento da loja."
+          uses="Período · fábrica"
+          busy={busy}
+          id="factory-clients"
+          onCsv={() => run("factory-clients", "csv", () => reportFactoryClients(window), "compra-na-fabrica")}
+          onPrint={() => run("factory-clients", "print", () => reportFactoryClients(window), "compra-na-fabrica")}
         />
         <ReportCard
           title="Consumo interno"

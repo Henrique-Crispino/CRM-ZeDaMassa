@@ -1,11 +1,13 @@
 import { getDb } from "./db";
 import { getLocation, storeLocations } from "./locations";
 import {
-  addDays,
+  clampToToday,
+  datePresets,
   endOfDayIso,
   formatBRL,
   formatDate,
   formatTime,
+  matchDatePreset,
   periodRange,
   startOfDayIso,
   todayDate,
@@ -16,7 +18,7 @@ import { personLocation } from "./people";
 import { catalogItems, listProductionLogs, stockByLocation } from "./queries";
 import { factoryMin, storeMin } from "./stock-min";
 import type { Niche } from "./types";
-import { adjustmentReasonLabel, cashDestinationLabel, isLiveSale, lotCost, lotPrice, receivedQtyOf, salePayments, transferKind, transferStatus, transferStatusLabel } from "./types";
+import { adjustmentReasonLabel, cashDestinationLabel, isLiveSale, isRevenueSale, lotCost, lotPrice, receivedQtyOf, salePayments, transferKind, transferStatus, transferStatusLabel } from "./types";
 
 export type StoreScope = "all" | string;
 
@@ -25,21 +27,16 @@ export type WhenKind = Period | "range";
 export type ReportPresetId = "today" | "yesterday" | "week" | "month";
 
 export function reportDatePresets(today = todayDate()) {
-  return [
-    { id: "today" as const, label: "Hoje", from: today, to: today },
-    { id: "yesterday" as const, label: "Ontem", from: addDays(today, -1), to: addDays(today, -1) },
-    { id: "week" as const, label: "Últimos 7 dias", from: addDays(today, -6), to: today },
-    { id: "month" as const, label: "Últimos 30 dias", from: addDays(today, -29), to: today },
-  ];
+  return datePresets(today);
 }
 
 export function matchReportPreset(from: string, to: string, today = todayDate()) {
-  return reportDatePresets(today).find((preset) => preset.from === from && preset.to === to)?.id ?? null;
+  const preset = matchDatePreset(from, to, today);
+  return preset === "today" || preset === "yesterday" || preset === "week" || preset === "month" ? preset : null;
 }
 
 export function clampReportDate(value: string, today = todayDate()) {
-  if (!value) return today;
-  return value > today ? today : value;
+  return clampToToday(value, today) || today;
 }
 
 export function orderedReportDates(from: string, to: string, today = todayDate()) {
@@ -129,8 +126,8 @@ function filterStore<T extends { locationId: string }>(rows: T[], scope: StoreSc
   return rows.filter((row) => row.locationId === scope);
 }
 
-function liveSales<T extends { locationId: string; voidedAt?: string }>(rows: T[], scope: StoreScope) {
-  return filterStore(rows, scope).filter(isLiveSale);
+function liveSales<T extends { locationId: string; voidedAt?: string; kind?: string }>(rows: T[], scope: StoreScope) {
+  return filterStore(rows, scope).filter((row) => isRevenueSale(row));
 }
 
 export function downloadCsv(filename: string, report: ReportTable) {
@@ -287,6 +284,8 @@ export async function reportClosing(window: ReportWindow, scope: StoreScope): Pr
       `Pagamentos: Dinheiro ${money(pay.dinheiro)} (${pct(pay.dinheiro, revenue)}) · Pix ${money(pay.pix)} (${pct(pay.pix, revenue)}) · Cartão ${money(pay.cartao)} (${pct(pay.cartao, revenue)})`,
       `Canais: Caixa ${money(channel.caixa)} · Delivery ${money(channel.delivery)} · Encomenda ${money(channel.encomenda)}`,
       `Custo do que vendeu. Taxa de perda = (sobra + vencido) ÷ (vendido + sobra + vencido).`,
+      `Saída de cliente da câmara não entra neste faturamento. Ver o papel Compra na fábrica.`,
+      `Sinal de festa da loja entra no caixa, não neste faturamento, até a entrega.`,
       `Custo da sobra ${money(leftoverCost)} · custo do vencido ${money(expiredCost)} · custo do consumo interno ${money(consumeCost)} · perdas totais ${money(wasteCost)}`,
       wasteQty > 0
         ? `Deixou de vender ${money(wasteRevenue)} com sobra e validade. Isso não entra no faturamento.`
@@ -644,11 +643,10 @@ export async function reportStock(scope: StoreScope): Promise<ReportTable> {
 }
 
 export async function reportProduction(window: ReportWindow): Promise<ReportTable> {
-  const logs = await listProductionLogs(1000);
-  const inWindow = logs.filter((log) => log.at >= window.from && log.at <= window.to);
+  const logs = await listProductionLogs(400, window.fromDate, window.toDate);
   const rows: (string | number)[][] = [];
   let total = 0;
-  for (const log of inWindow) {
+  for (const log of logs) {
     for (const item of log.items) {
       total += item.qty;
       rows.push([
@@ -668,8 +666,59 @@ export async function reportProduction(window: ReportWindow): Promise<ReportTabl
     headers: ["Feito em", "Lançado em", "Hora", "Produto", "Quantidade", "Validade"],
     rows: rows.length ? [...rows, ["TOTAL", "", "", "", total, ""]] : rows,
     notes: [
-      rows.length === 0 ? "Nenhuma produção neste recorte." : `${total} un. entraram no estoque da fábrica.`,
-      "A data 'feito em' é a do lote. Use o registro de produção para filtrar um dia específico.",
+      rows.length === 0 ? "Nenhuma produção neste recorte." : `${total} un. feitas nestes dias.`,
+      "O recorte é o dia em que o lote foi feito, não o horário do lançamento.",
+    ],
+  };
+}
+
+export async function reportFactoryClients(window: ReportWindow): Promise<ReportTable> {
+  const db = getDb();
+  const [movements, lots, catalog, orders, customers] = await Promise.all([
+    db.movements.where("at").between(window.from, window.to, true, true).toArray(),
+    db.lots.toArray(),
+    catalogItems(false),
+    db.factoryOrders.toArray(),
+    db.customers.toArray(),
+  ]);
+  const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+  const labelByNiche = new Map(catalog.map((item) => [item.niche.id, item.label]));
+  const orderById = new Map(orders.map((row) => [row.id, row]));
+  const nameById = new Map(customers.map((row) => [row.id, row.name]));
+
+  let qty = 0;
+  let cost = 0;
+  const table = movements
+    .filter((row) => row.type === "cliente" && row.qty < 0)
+    .sort((a, b) => a.at.localeCompare(b.at))
+    .map((row) => {
+      const unit = row.unitCost ?? lotCost(lotById.get(row.lotId), 0);
+      const lineCost = Math.abs(row.qty) * unit;
+      qty += Math.abs(row.qty);
+      cost += lineCost;
+      const order = orderById.get(row.refId);
+      return [
+        formatDate(row.at.slice(0, 10)),
+        formatTime(row.at),
+        order ? nameById.get(order.customerId) ?? "Cliente" : "Cliente",
+        labelByNiche.get(row.nicheId) ?? "Produto",
+        Math.abs(row.qty),
+        money(unit),
+        money(lineCost),
+        "Não passou no caixa",
+      ];
+    });
+
+  return {
+    title: "Compra na fábrica",
+    subtitle: window.label,
+    headers: ["Dia", "Hora", "Cliente", "Produto", "Unidades", "Custo un.", "Custo", "Caixa"],
+    rows: table.length ? [...table, ["TOTAL", "", "", "", qty, "", money(cost), ""]] : table,
+    notes: [
+      table.length === 0
+        ? "Nenhuma saída de cliente da câmara neste recorte."
+        : `${qty} un. saíram da câmara. Custo do lote ${money(cost)}. Não entra no faturamento das lojas.`,
+      "Isto não é venda de loja. Sem Pix no sistema até o dono mandar caixa da fábrica.",
     ],
   };
 }
@@ -949,9 +998,12 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
   const packQty = movements
     .filter((row) => row.type === "uso")
     .reduce((sum, row) => sum + Math.abs(row.qty), 0);
-  const clienteQty = movements
-    .filter((row) => row.type === "cliente")
-    .reduce((sum, row) => sum + Math.abs(row.qty), 0);
+  const clienteMoves = movements.filter((row) => row.type === "cliente");
+  const clienteQty = clienteMoves.reduce((sum, row) => sum + Math.abs(row.qty), 0);
+  const clienteCost = clienteMoves.reduce((sum, row) => {
+    const unit = row.unitCost ?? 0;
+    return sum + Math.abs(row.qty) * unit;
+  }, 0);
 
   const dinheiro = ledgers.reduce((sum, ledger) => sum + ledger.byPayment.dinheiro, 0);
   const pix = ledgers.reduce((sum, ledger) => sum + ledger.byPayment.pix, 0);
@@ -1034,7 +1086,11 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
 
   rows.push(["Saídas", "Vendeu", `${soldQty} un. · ${money(soldRev)}`]);
   if ((scope === "all" || scope === "factory") && clienteQty > 0) {
-    rows.push(["Saídas", "Cliente", `${clienteQty} un.`]);
+    rows.push([
+      "Saídas",
+      "Cliente",
+      `${clienteQty} un.${clienteCost > 0 ? ` · custo ${money(clienteCost)} · não passou no caixa` : " · não passou no caixa"}`,
+    ]);
   }
   rows.push(
     ["Saídas", "Sobra", `${leftoverQty} un.`],
@@ -1068,7 +1124,8 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
       "Espécie no caixa é só a parte em dinheiro. Pix e cartão não entram na gaveta.",
       "Mandou é o que saiu da câmara. Confirmou é o que a loja conferiu. O que faltou volta para a fábrica. Em trânsito ainda não é estoque da loja.",
       "Sobra não é vencido. Inventário não é venda.",
-      "Cliente da câmara só aparece na folha da fábrica ou da rede. A loja não conta essas unidades.",
+      "Cliente da câmara só aparece na folha da fábrica ou da rede. A loja não conta essas unidades. O custo do lote não é faturamento — não passou no caixa.",
+      "Sinal de festa da loja entra no caixa, não no 'vendeu' de produto, até a entrega.",
       closed.length < ledgers.length ? "Tem caixa ainda aberto neste recorte: o apurado fica em branco até encerrar." : "",
     ].filter(Boolean),
   };
