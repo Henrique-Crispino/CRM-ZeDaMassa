@@ -26,6 +26,10 @@ export function isSoldAtRegister(category: Category) {
   return category === "salgado" || category === "bebida";
 }
 
+export function isSoldAtFactory(category: Category) {
+  return category === "salgado";
+}
+
 export function notForSaleMessage(name: string, category: Category) {
   if (isClosedPackage(category)) {
     return `${name} é pacote fechado. Não vende no caixa. Abra o pacote quando for usar.`;

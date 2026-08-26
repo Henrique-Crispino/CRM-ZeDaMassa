@@ -7,14 +7,22 @@ import { ConfirmDialog } from "@/components/pick-flow";
 import { ReportPreview } from "@/components/ReportPreview";
 import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { PageBoard, Pager, usePager } from "@/components/pager";
-import { cancelFactoryOrder, deliverFactoryOrder, FactoryOrderError, listFactoryOrders } from "@/lib/factory-orders";
+import { cancelFactoryOrder, deliverFactoryOrder, FactoryOrderError, listFactoryOrders, quoteFactoryOrder } from "@/lib/factory-orders";
 import { getPanel } from "@/lib/locations";
 import { reportRomaneio, type ReportTable } from "@/lib/reports";
 import { cancelRequest, fulfillRequest, listRequests, requestWhen, RequestError, type RequestItemView } from "@/lib/requests";
-import { formatDate } from "@/lib/money";
+import { formatBRL, formatDate } from "@/lib/money";
 import { getLocationId } from "@/lib/session";
 import { StockError } from "@/lib/stock";
-import { isOpenRequest, storeRequestKind, storeRequestKindLabel, type RequestStatus } from "@/lib/types";
+import {
+  isOpenRequest,
+  PAYMENT_METHODS,
+  paymentMethodLabel,
+  storeRequestKind,
+  storeRequestKindLabel,
+  type PaymentMethod,
+  type RequestStatus,
+} from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 type QueueRow = {
@@ -41,6 +49,7 @@ export default function PedidosPage() {
   const [ok, setOk] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [payMethod, setPayMethod] = useState<PaymentMethod>("pix");
   const [sheet, setSheet] = useState<ReportTable | null>(null);
 
   const queue = useMemo<QueueRow[]>(() => {
@@ -74,6 +83,13 @@ export default function PedidosPage() {
   const othersPage = usePager(others, 8);
   const pendingPage = usePager(pending, 4);
   const confirmRow = pending.find((row) => row.id === confirmId);
+  const quote = useLiveQuery(
+    () =>
+      ready && confirmId && confirmRow?.source === "customer"
+        ? quoteFactoryOrder(confirmId, qty[confirmId])
+        : undefined,
+    [ready, confirmId, confirmRow?.source, qty],
+  );
 
   if (panel && panel.type === "store") {
     return (
@@ -108,9 +124,14 @@ export default function PedidosPage() {
     setOk("");
     setBusy(orderId);
     try {
-      await deliverFactoryOrder(orderId, qty[orderId]);
+      const result = await deliverFactoryOrder(orderId, qty[orderId], { method: payMethod });
       setConfirmId(null);
-      setOk("Saiu da câmara. A loja não ganhou estoque. O caixa da loja não mexeu.");
+      const paid = `${formatBRL(result.amount)} no ${paymentMethodLabel(result.method)}`;
+      setOk(
+        result.leftover
+          ? `Saiu o que cabia. Recebeu ${paid}. O que faltou continua no pedido.`
+          : `Saiu da câmara. Recebeu ${paid} na fábrica. A loja não ganhou estoque.`,
+      );
     } catch (err) {
       setError(err instanceof FactoryOrderError ? err.message : "Não deu para separar.");
     } finally {
@@ -141,7 +162,7 @@ export default function PedidosPage() {
         title="Pedidos"
         hint={
           canSend
-            ? "Loja e cliente de volume na mesma fila. O mais antigo segura o saldo. Encomenda da loja traz o dia da festa. Cliente levou sai da câmara — não vai para a loja e não passa no caixa."
+            ? "Loja e cliente de volume na mesma fila. O mais antigo segura o saldo. Encomenda da loja traz o dia da festa. Cliente levou sai da câmara e paga na fábrica — não vai para a loja e não mistura no caixa da loja."
             : "Aqui o admin vê o que as lojas e os clientes pediram. Quem manda o estoque da loja e quem separa na câmara é a fábrica."
         }
       />
@@ -302,13 +323,16 @@ export default function PedidosPage() {
         }
         hint={
           confirmRow?.source === "customer"
-            ? "Confira as quantidades. Sai da câmara agora. Não vai para a loja. Não passa no caixa."
+            ? "Confira as quantidades e como pagou. Sai da câmara agora. Não vai para a loja. O dinheiro fica na fábrica."
             : confirmRow?.neededBy
               ? `Para ${formatDate(confirmRow.neededBy)}. Sai da fábrica e fica em trânsito até a loja conferir.`
               : "Confira as quantidades. Sai da fábrica e fica em trânsito até a loja conferir."
         }
         confirmLabel={confirmRow?.source === "customer" ? "Confirmar: cliente levou" : "Confirmar e mandar"}
         busy={busy === confirmId}
+        confirmDisabled={
+          confirmRow?.source === "customer" && (!quote || quote.qty <= 0)
+        }
         onConfirm={() => {
           if (!confirmId || !confirmRow) return;
           if (confirmRow.source === "customer") deliver(confirmId);
@@ -323,11 +347,15 @@ export default function PedidosPage() {
               item.nicheId,
               Math.min(item.remaining, item.availableQty),
             );
+            const line = quote?.lines.find((row) => row.nicheId === item.nicheId);
             return (
               <li key={item.nicheId} className="py-3">
                 <div className="flex justify-between gap-3">
                   <span className="font-bold text-stone-800">{item.label}</span>
-                  <span className="font-extrabold">{sendQty} un.</span>
+                  <span className="font-extrabold">
+                    {sendQty} un.
+                    {confirmRow?.source === "customer" && line ? ` · ${formatBRL(line.revenue)}` : ""}
+                  </span>
                 </div>
                 {confirmRow?.source === "customer" ? (
                   <p className="mt-1 text-sm font-semibold text-stone-600">
@@ -339,6 +367,30 @@ export default function PedidosPage() {
             );
           })}
         </ul>
+        {confirmRow?.source === "customer" ? (
+          <div className="mt-4 space-y-3">
+            <p className="text-xl font-extrabold text-stone-900">
+              {quote ? `Recebe ${formatBRL(quote.revenue)} na fábrica` : "Contando o total..."}
+            </p>
+            <p className="font-bold text-stone-700">Como pagou</p>
+            <div className="grid grid-cols-3 gap-2">
+              {PAYMENT_METHODS.map((item) => (
+                <Button
+                  key={item.id}
+                  type="button"
+                  variant={payMethod === item.id ? "secondary" : "ghost"}
+                  className="min-h-12 px-2 text-sm"
+                  onClick={() => setPayMethod(item.id)}
+                >
+                  {item.label}
+                </Button>
+              ))}
+            </div>
+            <p className="text-sm font-semibold text-stone-600">
+              Pagou na fábrica. A loja não vê este dinheiro.
+            </p>
+          </div>
+        ) : null}
       </ConfirmDialog>
       {sheet ? <ReportPreview report={sheet} onClose={() => setSheet(null)} closeLabel="Voltar" /> : null}
     </AppShell>

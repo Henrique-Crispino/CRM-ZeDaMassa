@@ -17,7 +17,7 @@ import {
   type PickKind,
 } from "@/components/pick-flow";
 import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
-import { isSoldAtRegister, saleKindOptions } from "@/lib/categories";
+import { isSoldAtFactory } from "@/lib/categories";
 import { getCustomer } from "@/lib/customers";
 import {
   createFactoryOrder,
@@ -58,7 +58,7 @@ export default function SepararPedidoPage() {
   const [confirm, setConfirm] = useState(false);
 
   const sellable = useMemo(
-    () => (catalog ?? []).filter((item) => isSoldAtRegister(item.product.category)),
+    () => (catalog ?? []).filter((item) => isSoldAtFactory(item.product.category)),
     [catalog],
   );
   const selected = useMemo(() => Object.entries(qty).filter(([, value]) => value > 0), [qty]);
@@ -66,7 +66,7 @@ export default function SepararPedidoPage() {
   const selectedUnits = selected.reduce((sum, [, value]) => sum + value, 0);
   const kindOptions = useMemo(
     () => [
-      ...saleKindOptions(),
+      { id: "todos" as const, label: "Tudo" },
       { id: "pedido" as const, label: selectedCount ? `Escolhidos (${selectedCount})` : "Escolhidos" },
     ],
     [selectedCount],
@@ -144,20 +144,20 @@ export default function SepararPedidoPage() {
           <div className="pb-44">
             <PageTitle
               title={customer ? `Separar para ${customer.name}` : "Separar pedido"}
-              hint="Isto reserva o poço da câmara junto com o pedido da loja. Ainda não baixa estoque."
+              hint="Isto reserva o poço da câmara junto com o pedido da loja. Ainda não baixa estoque. Só salgado — bebida a padaria não leva daqui."
             />
 
             <div className="mb-4 space-y-3">
-              <SearchField value={search} onChange={setSearch} placeholder="Buscar: coxinha, festa, coca..." />
+              <SearchField value={search} onChange={setSearch} placeholder="Buscar: coxinha, festa, mini..." />
               <FilterChips value={kind} onChange={setKind} options={kindOptions} />
             </div>
 
             {!sellable.length ? (
-              <Empty title="Cadastre os produtos primeiro" hint="Só salgado e bebida saem da câmara para cliente." />
+              <Empty title="Cadastre os produtos primeiro" hint="Quem compra na fábrica leva só salgado da câmara." />
             ) : grouped.length === 0 ? (
               <Empty
                 title="Nada com esse nome"
-                hint="Tente outro trecho: mini, festa, refrigerante."
+                hint="Tente outro trecho: mini, festa, coxinha."
                 action={
                   <Button
                     type="button"

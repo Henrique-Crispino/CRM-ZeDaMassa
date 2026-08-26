@@ -29,7 +29,7 @@ import type {
   TransferItem,
   Waste,
 } from "./types";
-import { promoIsLive, salePaymentShare } from "./types";
+import { lotPrice, promoIsLive, salePaymentShare } from "./types";
 
 type Rng = { n: number };
 
@@ -346,7 +346,7 @@ export const DEFAULT_CUSTOMERS: Customer[] = [
     id: "cust-rest-bairro",
     name: "Restaurante do Bairro",
     phone: "(11) 93333-6060",
-    note: "Terça e quinta. Já levou hoje — o dono vê no Saiu da câmara.",
+    note: "Terça e quinta. Já levou hoje — o dono vê na Compra na fábrica.",
     address: "Praça Central, 3",
     kind: "volume",
     usualWeekdays: [2, 4],
@@ -446,7 +446,7 @@ async function seedVolumeOrder(input: {
   await notifyVolumeDemo("factory_order", `${name} pediu na câmara`, labels, input.id, input.at);
   if (!input.deliver) return true;
   try {
-    await deliverFactoryOrder(input.id);
+    await deliverFactoryOrder(input.id, undefined, { method: "pix" });
     await backdateVolumeOrder(input.id, input.at);
     return true;
   } catch {
@@ -458,9 +458,27 @@ async function seedVolumeOrder(input: {
   }
 }
 
+async function backfillClientePayments() {
+  const db = getDb();
+  const moves = await db.movements.where("type").equals("cliente").toArray();
+  if (moves.length === 0) return;
+  const lots = await db.lots.toArray();
+  const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+  for (const row of moves) {
+    if (row.payment && row.unitPrice != null) continue;
+    const lot = lotById.get(row.lotId);
+    const niche = NICHE_BY_ID.get(row.nicheId);
+    await db.movements.update(row.id, {
+      unitPrice: row.unitPrice ?? lotPrice(lot, niche?.sellPrice ?? 0),
+      payment: row.payment ?? "pix",
+    });
+  }
+}
+
 async function ensureVolumeStory() {
   const db = getDb();
   await upsertDemoCustomers();
+  await backfillClientePayments();
   if ((await db.settings.get(VOLUME_DEMO_SETTING))?.value === "1") return;
 
   const padaria7 = lastWeekdayDaysAgo(2, 1);
@@ -491,7 +509,7 @@ async function ensureVolumeStory() {
   await seedVolumeOrder({
     id: "fo-vol-rest-hoje",
     customerId: "cust-rest-bairro",
-    note: "Levou hoje de manhã. Saiu da câmara, não passou no caixa.",
+    note: "Levou hoje de manhã. Saiu da câmara e pagou na fábrica.",
     at: dayAt(0, 9, 20).toISOString(),
     items: [
       { nicheId: "cox-mini", qty: 50 },

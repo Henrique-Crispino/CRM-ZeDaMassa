@@ -1,7 +1,7 @@
-import { isSoldAtRegister } from "./categories";
+import { isSoldAtFactory } from "./categories";
 import { getCustomer } from "./customers";
 import { getDb } from "./db";
-import { newId } from "./money";
+import { formatBRL, newId } from "./money";
 import { catalogItems } from "./queries";
 import { coverageStatus, loadFactoryWell, type RequestItemView } from "./requests";
 import { assertLiveNiches, StockError } from "./stock";
@@ -12,7 +12,11 @@ import {
   factoryOrderStatusLabel,
   isOpenRequest,
   lotCost,
+  lotPrice,
+  PAYMENT_METHODS,
+  paymentMethodLabel,
   productIsLive,
+  type PaymentMethod,
   type RequestStatus,
 } from "./types";
 
@@ -29,6 +33,74 @@ export type FactoryOrderView = {
   resolvedAt?: string;
   items: RequestItemView[];
 };
+
+export type FactoryOrderQuote = {
+  qty: number;
+  cost: number;
+  revenue: number;
+  lines: { nicheId: string; label: string; qty: number; cost: number; revenue: number }[];
+};
+
+type DeliveryRow = {
+  item: { id: string; nicheId: string; qty: number; sentQty?: number };
+  line?: RequestItemView;
+  remaining: number;
+  available: number;
+  qty: number;
+};
+
+function cents(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function requirePayment(payment?: { method: PaymentMethod }): PaymentMethod {
+  const method = payment?.method;
+  if (!PAYMENT_METHODS.some((item) => item.id === method)) {
+    throw new FactoryOrderError("Diga como pagou: dinheiro, Pix ou cartão.");
+  }
+  return method;
+}
+
+async function planFactoryDelivery(orderId: string, qtyByNiche?: Record<string, number>) {
+  const db = getDb();
+  const order = await db.factoryOrders.get(orderId);
+  if (!order || !isOpenRequest(order.status)) {
+    throw new FactoryOrderError("Esse pedido já foi resolvido.");
+  }
+
+  const views = await listFactoryOrders();
+  const view = views.find((row) => row.id === orderId);
+  if (!view) throw new FactoryOrderError("Esse pedido já foi resolvido.");
+
+  const items = await db.factoryOrderItems.where("orderId").equals(orderId).toArray();
+  const payload: DeliveryRow[] = items
+    .map((item) => {
+      const line = view.items.find((row) => row.nicheId === item.nicheId);
+      const remaining = Math.max(0, item.qty - (item.sentQty ?? 0));
+      const available = line?.availableQty ?? 0;
+      const asked = qtyByNiche?.[item.nicheId] ?? available;
+      const qty = Math.max(0, Math.floor(asked));
+      return { item, line, remaining, available, qty };
+    })
+    .filter((row) => row.qty > 0);
+
+  if (payload.length === 0) {
+    throw new FactoryOrderError("Informe o que o cliente levou.");
+  }
+
+  for (const row of payload) {
+    if (row.qty > row.available) {
+      throw new FactoryOrderError(
+        `Não tem ${row.qty} livres neste pedido de ${row.line?.label ?? "produto"}. A câmara reserva ${row.available}; o resto já está na fila da loja.`,
+      );
+    }
+    if (row.qty > row.remaining) {
+      throw new FactoryOrderError("Não dá para levar mais do que o pedido.");
+    }
+  }
+
+  return { order, view, payload };
+}
 
 async function notify(input: {
   type: "factory_order" | "factory_order_cancelled" | "factory_order_delivered";
@@ -74,8 +146,8 @@ export async function createFactoryOrder(input: {
     if (!productIsLive(found.product)) {
       throw new FactoryOrderError(closedCatalogMessage(found.product.name));
     }
-    if (!isSoldAtRegister(found.product.category)) {
-      throw new FactoryOrderError(`${found.product.name} não sai da câmara para cliente. Só salgado e bebida.`);
+    if (!isSoldAtFactory(found.product.category)) {
+      throw new FactoryOrderError(`${found.product.name} não sai da câmara para cliente. Quem compra na fábrica leva só salgado.`);
     }
   }
 
@@ -149,7 +221,51 @@ export async function lastFactoryOrder(customerId: string) {
   if (orders.length === 0) return null;
   const last = orders.sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id))[0];
   const items = await db.factoryOrderItems.where("orderId").equals(last.id).toArray();
-  return items.map((item) => ({ nicheId: item.nicheId, qty: item.qty }));
+  const catalog = await catalogItems(false);
+  const salgados = items
+    .filter((item) => {
+      const found = catalog.find((row) => row.niche.id === item.nicheId);
+      return found ? isSoldAtFactory(found.product.category) : false;
+    })
+    .map((item) => ({ nicheId: item.nicheId, qty: item.qty }));
+  return salgados.length ? salgados : null;
+}
+
+export async function quoteFactoryOrder(
+  orderId: string,
+  qtyByNiche?: Record<string, number>,
+): Promise<FactoryOrderQuote> {
+  const { payload } = await planFactoryDelivery(orderId, qtyByNiche);
+  const catalog = await catalogItems(false);
+  const db = getDb();
+  const lines: FactoryOrderQuote["lines"] = [];
+  let qty = 0;
+  let cost = 0;
+  let revenue = 0;
+
+  for (const row of payload) {
+    const chunks = await oldestLots("factory", row.item.nicheId, row.qty, { skipExpired: true });
+    const found = catalog.find((item) => item.niche.id === row.item.nicheId);
+    let lineCost = 0;
+    let lineRev = 0;
+    for (const chunk of chunks) {
+      const lot = await db.lots.get(chunk.lotId);
+      lineCost += chunk.qty * lotCost(lot, found?.niche.costPrice ?? 0);
+      lineRev += chunk.qty * lotPrice(lot, found?.niche.sellPrice ?? 0);
+    }
+    qty += row.qty;
+    cost += lineCost;
+    revenue += lineRev;
+    lines.push({
+      nicheId: row.item.nicheId,
+      label: row.line?.label ?? found?.label ?? "Produto",
+      qty: row.qty,
+      cost: cents(lineCost),
+      revenue: cents(lineRev),
+    });
+  }
+
+  return { qty, cost: cents(cost), revenue: cents(revenue), lines };
 }
 
 export async function cancelFactoryOrder(orderId: string) {
@@ -168,11 +284,16 @@ export async function cancelFactoryOrder(orderId: string) {
   });
 }
 
-export async function deliverFactoryOrder(orderId: string, qtyByNiche?: Record<string, number>) {
+export async function deliverFactoryOrder(
+  orderId: string,
+  qtyByNiche?: Record<string, number>,
+  payment?: { method: PaymentMethod },
+) {
+  const method = requirePayment(payment);
   const db = getDb();
 
   try {
-    await db.transaction(
+    return await db.transaction(
       "rw",
       [
         db.stock,
@@ -188,41 +309,7 @@ export async function deliverFactoryOrder(orderId: string, qtyByNiche?: Record<s
         db.customers,
       ],
       async () => {
-        const order = await db.factoryOrders.get(orderId);
-        if (!order || !isOpenRequest(order.status)) {
-          throw new FactoryOrderError("Esse pedido já foi resolvido.");
-        }
-
-        const views = await listFactoryOrders();
-        const view = views.find((row) => row.id === orderId);
-        if (!view) throw new FactoryOrderError("Esse pedido já foi resolvido.");
-
-        const items = await db.factoryOrderItems.where("orderId").equals(orderId).toArray();
-        const payload = items
-          .map((item) => {
-            const line = view.items.find((row) => row.nicheId === item.nicheId);
-            const remaining = Math.max(0, item.qty - (item.sentQty ?? 0));
-            const available = line?.availableQty ?? 0;
-            const asked = qtyByNiche?.[item.nicheId] ?? available;
-            const qty = Math.max(0, Math.floor(asked));
-            return { item, line, remaining, available, qty };
-          })
-          .filter((row) => row.qty > 0);
-
-        if (payload.length === 0) {
-          throw new FactoryOrderError("Informe o que o cliente levou.");
-        }
-
-        for (const row of payload) {
-          if (row.qty > row.available) {
-            throw new FactoryOrderError(
-              `Não tem ${row.qty} livres neste pedido de ${row.line?.label ?? "produto"}. A câmara reserva ${row.available}; o resto já está na fila da loja.`,
-            );
-          }
-          if (row.qty > row.remaining) {
-            throw new FactoryOrderError("Não dá para levar mais do que o pedido.");
-          }
-        }
+        const { order, payload } = await planFactoryDelivery(orderId, qtyByNiche);
 
         try {
           await assertLiveNiches(payload.map((row) => row.item.nicheId));
@@ -233,19 +320,24 @@ export async function deliverFactoryOrder(orderId: string, qtyByNiche?: Record<s
         const catalog = await catalogItems(false);
         for (const row of payload) {
           const found = catalog.find((item) => item.niche.id === row.item.nicheId);
-          if (found && !isSoldAtRegister(found.product.category)) {
-            throw new FactoryOrderError(`${found.product.name} não sai da câmara para cliente. Só salgado e bebida.`);
+          if (found && !isSoldAtFactory(found.product.category)) {
+            throw new FactoryOrderError(`${found.product.name} não sai da câmara para cliente. Quem compra na fábrica leva só salgado.`);
           }
         }
 
         const at = new Date().toISOString();
         const customer = await getCustomer(order.customerId);
+        let amount = 0;
 
         for (const row of payload) {
           const chunks = await oldestLots("factory", row.item.nicheId, row.qty, { skipExpired: true });
           const found = catalog.find((item) => item.niche.id === row.item.nicheId);
           for (const chunk of chunks) {
             const lot = await db.lots.get(chunk.lotId);
+            const unitCost = lotCost(lot, found?.niche.costPrice ?? 0);
+            const unitPrice = cents(lotPrice(lot, found?.niche.sellPrice ?? 0));
+            const chunkMoney = cents(unitPrice * chunk.qty);
+            amount = cents(amount + chunkMoney);
             await changeStock("factory", row.item.nicheId, chunk.lotId, -chunk.qty);
             await db.movements.add({
               id: newId(),
@@ -256,7 +348,9 @@ export async function deliverFactoryOrder(orderId: string, qtyByNiche?: Record<s
               type: "cliente",
               refId: orderId,
               at,
-              unitCost: lotCost(lot, found?.niche.costPrice ?? 0),
+              unitCost,
+              unitPrice,
+              payment: method,
             });
           }
           const fresh = await db.factoryOrderItems.get(row.item.id);
@@ -272,16 +366,19 @@ export async function deliverFactoryOrder(orderId: string, qtyByNiche?: Record<s
           resolvedAt: leftover ? undefined : at,
         });
 
+        const paid = `${formatBRL(amount)} no ${paymentMethodLabel(method)}`;
         await notify({
           type: "factory_order_delivered",
           title: leftover
             ? `${customer?.name ?? "Cliente"} levou parte`
             : `${customer?.name ?? "Cliente"} levou o pedido`,
           body: leftover
-            ? "Saiu da câmara o que cabia. O que faltou continua no pedido — não finge que saiu tudo."
-            : "Saiu da câmara. A loja não ganhou estoque. O caixa da loja não mexeu.",
+            ? `Saiu da câmara o que cabia. Recebeu ${paid}. O que faltou continua no pedido — não finge que saiu tudo.`
+            : `Saiu da câmara. Recebeu ${paid} na fábrica. A loja não ganhou estoque.`,
           refId: orderId,
         });
+
+        return { amount, method, leftover };
       },
     );
   } catch (err) {

@@ -1100,6 +1100,11 @@ async function main() {
     () => createFactoryOrder({ customerId: padaria?.id ?? "x", items: [{ nicheId: "farinha-25kg", qty: 1 }] }),
     "não sai da câmara",
   );
+  await expectFail(
+    "Bebida não entra no pedido da câmara",
+    () => createFactoryOrder({ customerId: padaria?.id ?? "x", items: [{ nicheId: "coca-350", qty: 10 }] }),
+    "só salgado",
+  );
 
   for (const row of await listRequests("open")) {
     if (row.items.some((item) => item.nicheId === "cox-mini" && item.remaining > 0)) {
@@ -1157,11 +1162,16 @@ async function main() {
 
   await expectFail(
     "Não leva mais do que a fila reserva",
-    () => deliverFactoryOrder(orderId ?? "x", { "cox-mini": 50 }),
+    () => deliverFactoryOrder(orderId ?? "x", { "cox-mini": 50 }, { method: "pix" }),
     "livres",
   );
+  await expectFail(
+    "Cliente levou pede como pagou",
+    () => deliverFactoryOrder(orderId ?? "x", { "cox-mini": 20 }),
+    "pagou",
+  );
   await expectOk("Padaria leva as 20 livres da câmara", () =>
-    deliverFactoryOrder(orderId ?? "x", { "cox-mini": 20 }),
+    deliverFactoryOrder(orderId ?? "x", { "cox-mini": 20 }, { method: "pix" }),
   );
 
   const factoryAfterDeliver = await stockQty("factory", "cox-mini");
@@ -1339,8 +1349,8 @@ async function main() {
   });
   const factoryBeforeDeliverRace = await stockQty("factory", "cox-mini");
   const raceDeliver = await Promise.allSettled([
-    deliverFactoryOrder(raceOrder, { "cox-mini": 10 }),
-    deliverFactoryOrder(raceOrder, { "cox-mini": 10 }),
+    deliverFactoryOrder(raceOrder, { "cox-mini": 10 }, { method: "pix" }),
+    deliverFactoryOrder(raceOrder, { "cox-mini": 10 }, { method: "pix" }),
   ]);
   const deliveredOk = raceDeliver.filter((row) => row.status === "fulfilled").length;
   const factoryAfterDeliverRace = await stockQty("factory", "cox-mini");
@@ -1487,18 +1497,25 @@ async function main() {
     customerId: padaria?.id ?? "x",
     items: [{ nicheId: "cox-mini", qty: 80 }],
   });
-  await expectOk("Padaria levou 80 da câmara", () => deliverFactoryOrder(volumeOrder, { "cox-mini": 80 }));
+  await expectOk("Padaria levou 80 da câmara", () =>
+    deliverFactoryOrder(volumeOrder, { "cox-mini": 80 }, { method: "pix" }),
+  );
   const dashAfterClient = await loadDashboard("today", "admin");
   const clientMoves = (await db.movements.toArray()).filter((row) => row.type === "cliente" && row.refId === volumeOrder);
   const clientCost = clientMoves.reduce((sum, row) => sum + Math.abs(row.qty) * (row.unitCost ?? 0), 0);
+  const clientRev = clientMoves.reduce((sum, row) => sum + Math.abs(row.qty) * (row.unitPrice ?? 0), 0);
   const factoryClients = await reportFactoryClients(reportWindow("today"));
   record(
-    "Volume sai da câmara com custo e não soma no Vendeu da loja",
-    dashAfterClient.clienteQty - dashBeforeClient.clienteQty === 80 &&
+    "Volume sai da câmara com preço, paga na fábrica e não soma no Vendeu da loja",
+      dashAfterClient.clienteQty - dashBeforeClient.clienteQty === 80 &&
       Math.abs(dashAfterClient.revenue - dashBeforeClient.revenue) < 0.01 &&
-      clientMoves.every((row) => (row.unitCost ?? 0) > 0) &&
-      factoryClients.rows.some((row) => String(row[7]).toLowerCase().includes("não passou")),
-    `cliente ${dashAfterClient.clienteQty} custo ${clientCost} vendeu ${dashAfterClient.revenue}`,
+      Math.abs(dashAfterClient.clienteRevenue - dashBeforeClient.clienteRevenue - clientRev) < 0.01 &&
+      clientRev > 0 &&
+      clientMoves.every((row) => (row.unitCost ?? 0) > 0 && (row.unitPrice ?? 0) > 0 && row.payment === "pix") &&
+      factoryClients.rows.some((row) =>
+        row.some((cell) => String(cell).toLowerCase().includes("pix")),
+      ),
+    `cliente ${dashAfterClient.clienteQty} recebeu ${clientRev} custo ${clientCost} vendeu ${dashAfterClient.revenue}`,
   );
 
   await produceItems({ items: [{ nicheId: "cox-mini", qty: 20 }], madeAt: today });

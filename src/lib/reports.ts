@@ -18,7 +18,7 @@ import { personLocation } from "./people";
 import { catalogItems, listProductionLogs, stockByLocation } from "./queries";
 import { factoryMin, storeMin } from "./stock-min";
 import type { Niche } from "./types";
-import { adjustmentReasonLabel, cashDestinationLabel, isLiveSale, isRevenueSale, lotCost, lotPrice, receivedQtyOf, salePayments, transferKind, transferStatus, transferStatusLabel } from "./types";
+import { adjustmentReasonLabel, cashDestinationLabel, isLiveSale, isRevenueSale, lotCost, lotPrice, movementCharge, paymentMethodLabel, receivedQtyOf, salePayments, transferKind, transferStatus, transferStatusLabel } from "./types";
 
 export type StoreScope = "all" | string;
 
@@ -284,7 +284,7 @@ export async function reportClosing(window: ReportWindow, scope: StoreScope): Pr
       `Pagamentos: Dinheiro ${money(pay.dinheiro)} (${pct(pay.dinheiro, revenue)}) · Pix ${money(pay.pix)} (${pct(pay.pix, revenue)}) · Cartão ${money(pay.cartao)} (${pct(pay.cartao, revenue)})`,
       `Canais: Caixa ${money(channel.caixa)} · Delivery ${money(channel.delivery)} · Encomenda ${money(channel.encomenda)}`,
       `Custo do que vendeu. Taxa de perda = (sobra + vencido) ÷ (vendido + sobra + vencido).`,
-      `Saída de cliente da câmara não entra neste faturamento. Ver o papel Compra na fábrica.`,
+      `Saída de cliente da câmara não entra neste faturamento. O que a padaria pagou na fábrica está no papel Compra na fábrica.`,
       `Sinal de festa da loja entra no caixa, não neste faturamento, até a entrega.`,
       `Custo da sobra ${money(leftoverCost)} · custo do vencido ${money(expiredCost)} · custo do consumo interno ${money(consumeCost)} · perdas totais ${money(wasteCost)}`,
       wasteQty > 0
@@ -688,37 +688,42 @@ export async function reportFactoryClients(window: ReportWindow): Promise<Report
 
   let qty = 0;
   let cost = 0;
+  let revenue = 0;
   const table = movements
     .filter((row) => row.type === "cliente" && row.qty < 0)
     .sort((a, b) => a.at.localeCompare(b.at))
     .map((row) => {
-      const unit = row.unitCost ?? lotCost(lotById.get(row.lotId), 0);
-      const lineCost = Math.abs(row.qty) * unit;
-      qty += Math.abs(row.qty);
-      cost += lineCost;
+      const lot = lotById.get(row.lotId);
+      const found = catalog.find((item) => item.niche.id === row.nicheId);
+      const charged = movementCharge(row, lot, found?.niche);
+      qty += charged.qty;
+      cost += charged.cost;
+      revenue += charged.revenue;
       const order = orderById.get(row.refId);
       return [
         formatDate(row.at.slice(0, 10)),
         formatTime(row.at),
         order ? nameById.get(order.customerId) ?? "Cliente" : "Cliente",
         labelByNiche.get(row.nicheId) ?? "Produto",
-        Math.abs(row.qty),
-        money(unit),
-        money(lineCost),
-        "Não passou no caixa",
+        charged.qty,
+        money(charged.unitPrice),
+        money(charged.revenue),
+        money(charged.unitCost),
+        money(charged.cost),
+        row.payment ? `${paymentMethodLabel(row.payment)} na fábrica` : "Sem forma gravada",
       ];
     });
 
   return {
     title: "Compra na fábrica",
     subtitle: window.label,
-    headers: ["Dia", "Hora", "Cliente", "Produto", "Unidades", "Custo un.", "Custo", "Caixa"],
-    rows: table.length ? [...table, ["TOTAL", "", "", "", qty, "", money(cost), ""]] : table,
+    headers: ["Dia", "Hora", "Cliente", "Produto", "Unidades", "Preço un.", "Recebeu", "Custo un.", "Custo", "Pagamento"],
+    rows: table.length ? [...table, ["TOTAL", "", "", "", qty, "", money(revenue), "", money(cost), ""]] : table,
     notes: [
       table.length === 0
         ? "Nenhuma saída de cliente da câmara neste recorte."
-        : `${qty} un. saíram da câmara. Custo do lote ${money(cost)}. Não entra no faturamento das lojas.`,
-      "Isto não é venda de loja. Sem Pix no sistema até o dono mandar caixa da fábrica.",
+        : `${qty} un. saíram da câmara. Recebeu ${money(revenue)} na fábrica. Custo do lote ${money(cost)}.`,
+      "Pago na fábrica. Não entra no faturamento das lojas. Não abre o caixa da loja.",
     ],
   };
 }
@@ -972,7 +977,7 @@ export async function reportInventory(window: ReportWindow, scope: StoreScope): 
 
 export async function reportDayPack(window: ReportWindow, scope: StoreScope): Promise<ReportTable> {
   const db = getDb();
-  const [sales, wastes, consumptions, sessions, transfers, transferItems, counts, lines, movements] = await Promise.all([
+  const [sales, wastes, consumptions, sessions, transfers, transferItems, counts, lines, movements, lots, catalog] = await Promise.all([
     liveSales(await db.sales.where("at").between(window.from, window.to, true, true).toArray(), scope),
     filterStore(await db.wastes.where("at").between(window.from, window.to, true, true).toArray(), scope),
     filterStore(await db.consumptions.where("at").between(window.from, window.to, true, true).toArray(), scope),
@@ -984,6 +989,8 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
     db.inventoryCounts.toArray(),
     db.inventoryLines.toArray(),
     filterStore(await db.movements.where("at").between(window.from, window.to, true, true).toArray(), scope),
+    db.lots.toArray(),
+    catalogItems(false),
   ]);
 
   const ledgers = await Promise.all(sessions.map((session) => sessionLedger(session.id)));
@@ -999,11 +1006,16 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
     .filter((row) => row.type === "uso")
     .reduce((sum, row) => sum + Math.abs(row.qty), 0);
   const clienteMoves = movements.filter((row) => row.type === "cliente");
+  const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+  const nicheById = new Map(catalog.map((item) => [item.niche.id, item.niche]));
   const clienteQty = clienteMoves.reduce((sum, row) => sum + Math.abs(row.qty), 0);
-  const clienteCost = clienteMoves.reduce((sum, row) => {
-    const unit = row.unitCost ?? 0;
-    return sum + Math.abs(row.qty) * unit;
-  }, 0);
+  let clienteCost = 0;
+  let clienteRevenue = 0;
+  for (const row of clienteMoves) {
+    const charged = movementCharge(row, lotById.get(row.lotId), nicheById.get(row.nicheId));
+    clienteCost += charged.cost;
+    clienteRevenue += charged.revenue;
+  }
 
   const dinheiro = ledgers.reduce((sum, ledger) => sum + ledger.byPayment.dinheiro, 0);
   const pix = ledgers.reduce((sum, ledger) => sum + ledger.byPayment.pix, 0);
@@ -1089,7 +1101,11 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
     rows.push([
       "Saídas",
       "Cliente",
-      `${clienteQty} un.${clienteCost > 0 ? ` · custo ${money(clienteCost)} · não passou no caixa` : " · não passou no caixa"}`,
+      `${clienteQty} un.${
+        clienteRevenue > 0 || clienteCost > 0
+          ? ` · recebeu ${money(clienteRevenue)} na fábrica · custo ${money(clienteCost)}`
+          : " · pago na fábrica"
+      }`,
     ]);
   }
   rows.push(
@@ -1124,7 +1140,7 @@ export async function reportDayPack(window: ReportWindow, scope: StoreScope): Pr
       "Espécie no caixa é só a parte em dinheiro. Pix e cartão não entram na gaveta.",
       "Mandou é o que saiu da câmara. Confirmou é o que a loja conferiu. O que faltou volta para a fábrica. Em trânsito ainda não é estoque da loja.",
       "Sobra não é vencido. Inventário não é venda.",
-      "Cliente da câmara só aparece na folha da fábrica ou da rede. A loja não conta essas unidades. O custo do lote não é faturamento — não passou no caixa.",
+      "Cliente da câmara só aparece na folha da fábrica ou da rede. A loja não conta essas unidades. O que pagou na fábrica não mistura no faturamento da loja.",
       "Sinal de festa da loja entra no caixa, não no 'vendeu' de produto, até a entrega.",
       closed.length < ledgers.length ? "Tem caixa ainda aberto neste recorte: o apurado fica em branco até encerrar." : "",
     ].filter(Boolean),

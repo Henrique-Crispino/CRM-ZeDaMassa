@@ -264,6 +264,17 @@ export function lotPrice(lot?: Pick<Lot, "unitPrice"> | null, nichePrice = 0) {
   return lot?.unitPrice ?? nichePrice;
 }
 
+export function movementCharge(
+  row: { qty: number; unitPrice?: number; unitCost?: number },
+  lot?: Pick<Lot, "unitPrice" | "unitCost"> | null,
+  niche?: { sellPrice?: number; costPrice?: number } | null,
+) {
+  const qty = Math.abs(row.qty);
+  const unitPrice = row.unitPrice ?? lotPrice(lot, niche?.sellPrice ?? 0);
+  const unitCost = row.unitCost ?? lotCost(lot, niche?.costPrice ?? 0);
+  return { qty, unitPrice, unitCost, revenue: qty * unitPrice, cost: qty * unitCost };
+}
+
 export type FifoPriceChunk = { qty: number; unitPrice: number };
 
 export function saleLotPrice(
@@ -323,6 +334,8 @@ export type Movement = {
   refId: string;
   at: string;
   unitCost?: number;
+  unitPrice?: number;
+  payment?: PaymentMethod;
 };
 
 export type TransferStatus = "em_transito" | "conferido" | "divergente";

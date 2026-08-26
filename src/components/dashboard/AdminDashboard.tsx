@@ -35,7 +35,7 @@ export function AdminDashboard({
     <div>
       <PageTitle
         title="Visão geral"
-        hint="Primeiro o dinheiro: venda, lucro e perda. Reposição e validade vêm depois."
+        hint="Primeiro o dinheiro: venda da loja, o que a padaria pagou na fábrica, e a perda. Reposição e validade vêm depois."
       />
 
       <Card className="mb-6">
@@ -51,9 +51,9 @@ export function AdminDashboard({
       <MetricGrid>
         <MetricCard label={`Vendeu ${label}`} value={formatBRL(data.revenue)} hint={`${data.salesCount} vendas nas lojas`} />
         <MetricCard
-          label="Saiu da câmara"
-          value={`${data.clienteQty} un.`}
-          hint={`${formatBRL(data.clienteCost)} de custo do lote · não passou no caixa`}
+          label="Compra na fábrica"
+          value={formatBRL(data.clienteRevenue)}
+          hint={`${data.clienteQty} un. · custo ${formatBRL(data.clienteCost)} · pago na fábrica, não na loja`}
         />
         <MetricCard label={`Lucro ${label}`} value={formatBRL(data.margin)} />
         <MetricCard
@@ -96,7 +96,8 @@ export function AdminDashboard({
           <p className="mt-2 text-2xl font-extrabold">{data.producedQty} feitos</p>
           <p className="mt-1 text-stone-600">{data.sentQty} mandados para as lojas</p>
           <p className="mt-1 text-stone-600">
-            {data.clienteQty} cliente levou · {formatBRL(data.clienteCost)} de custo · não passou no caixa
+            {data.clienteQty} cliente levou · {formatBRL(data.clienteRevenue)} na fábrica · custo{" "}
+            {formatBRL(data.clienteCost)}
           </p>
         </Card>
       </div>
@@ -148,7 +149,7 @@ export function AdminDashboard({
         </ChartCard>
         <ChartCard
           title="Para onde saiu a câmara"
-          hint="Unidades. Cliente levou não passou no caixa."
+          hint="Unidades. Cliente levou pagou na fábrica, não na loja."
           empty={data.sentQty === 0 && data.clienteQty === 0}
         >
           <SimpleBars

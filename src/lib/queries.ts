@@ -1,6 +1,6 @@
 import { getDb } from "./db";
 import { LOCATIONS, storeLocations, getLocation, type Location } from "./locations";
-import { datePresets, dateRangeIso, daysUntil, eachDate, formatDate, todayDate, type Period } from "./money";
+import { datePresets, dateRangeIso, daysUntil, eachDate, formatBRL, formatDate, todayDate, type Period } from "./money";
 import { fifoLotOrder } from "./stock-core";
 import { factoryMin, isLowAt, storeMin } from "./stock-min";
 import type { MovementType, Niche, Product, ReturnReason, Sale, SaleItem, TransferKind, TransferStatus, Waste } from "./types";
@@ -8,9 +8,10 @@ import {
   adjustmentReasonLabel,
   isLiveSale,
   isRevenueSale,
-  lotCost,
   lotPrice,
+  movementCharge,
   movementLabel,
+  paymentMethodLabel,
   productIsLive,
   salePaymentSummary,
   salePayments,
@@ -117,6 +118,7 @@ export type DashboardData = {
   sentQty: number;
   clienteQty: number;
   clienteCost: number;
+  clienteRevenue: number;
   salesCount: number;
   promoRevenue: number;
   internalQty: number;
@@ -437,11 +439,14 @@ export async function loadDashboard(range: Period | { from: string; to: string }
   const lotById = new Map(lots.map((lot) => [lot.id, lot]));
   const clienteMoves = movements.filter((item) => item.type === "cliente" && item.qty < 0);
   const clienteQty = clienteMoves.reduce((sum, item) => sum + Math.abs(item.qty), 0);
-  const clienteCost = clienteMoves.reduce((sum, item) => {
+  let clienteCost = 0;
+  let clienteRevenue = 0;
+  for (const item of clienteMoves) {
     const niche = nicheById.get(item.nicheId)?.niche;
-    const unit = item.unitCost ?? lotCost(lotById.get(item.lotId), niche?.costPrice ?? 0);
-    return sum + Math.abs(item.qty) * unit;
-  }, 0);
+    const charged = movementCharge(item, lotById.get(item.lotId), niche);
+    clienteCost += charged.cost;
+    clienteRevenue += charged.revenue;
+  }
 
   const alerts = await stockAlerts(scope === "admin" || !scope ? "all" : scope === "factory" ? "factory" : scope);
   const expiryAlerts = await expiryAlertsFor(scope);
@@ -467,6 +472,7 @@ export async function loadDashboard(range: Period | { from: string; to: string }
     sentQty,
     clienteQty,
     clienteCost,
+    clienteRevenue,
     salesCount: scopedSales.length,
     promoRevenue,
     internalQty,
@@ -856,7 +862,12 @@ export async function loadKardex(input: {
       const order = factoryOrderById.get(movement.refId);
       const customer = order ? customerById.get(order.customerId) : undefined;
       who = customer?.name ?? "Fábrica";
-      note = "Saiu da câmara · não passou no caixa";
+      const charged = movementCharge(movement, lot, found?.niche);
+      if (movement.payment) {
+        note = `Pago na fábrica · ${paymentMethodLabel(movement.payment)} · ${formatBRL(charged.revenue)}`;
+      } else {
+        note = `Saiu da câmara · ${formatBRL(charged.revenue)} · sem forma gravada`;
+      }
       if (customer?.name) typeLabel = `Cliente · ${customer.name}`;
     } else if (movement.type === "retirada") {
       who = locationName;

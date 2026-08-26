@@ -219,7 +219,7 @@ export default function RelatoriosPage() {
         />
         <ReportCard
           title="Compra na fábrica"
-          hint="Cliente levou na câmara: unidades e custo do lote. Não passou no caixa. Não entra no faturamento da loja."
+          hint="Cliente levou na câmara: o que pagou na fábrica e o custo do lote. Não entra no faturamento da loja."
           uses="Período · fábrica"
           busy={busy}
           id="factory-clients"

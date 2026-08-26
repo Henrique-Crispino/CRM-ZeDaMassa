@@ -65,8 +65,8 @@ export default function ClientesPage() {
           ))}
         </div>
         <p className="mt-2 text-sm text-stone-500">
-          Festa é retirada pontual. Compra na fábrica é quantidade grande, direto da câmara — o pedido vem no próximo
-          passo.
+          Festa é retirada pontual. Compra na fábrica é quantidade grande de salgado, direto da câmara — o pedido vem no próximo
+          passo. Bebida não sai daqui.
         </p>
       </div>
       {form.kind === "volume" ? (

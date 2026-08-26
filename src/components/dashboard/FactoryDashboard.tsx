@@ -32,7 +32,7 @@ export function FactoryDashboard({
     <div>
       <PageTitle
         title="Fábrica"
-        hint="Produza, mande para as lojas e veja o que está faltando — na câmara e no estoque. O dinheiro das lojas fica na administração."
+        hint="Produza, mande para as lojas e veja o que está faltando — na câmara e no estoque. O dinheiro das lojas fica na administração. O que o cliente pagou na câmara aparece aqui."
       />
       <ActionGrid
         actions={[
@@ -80,8 +80,8 @@ export function FactoryDashboard({
         <MetricCard label={`Para as lojas ${label}`} value={`${data.sentQty} un.`} hint="Envio da câmara" />
         <MetricCard
           label="Cliente levou"
-          value={`${data.clienteQty} un.`}
-          hint={`${formatBRL(data.clienteCost)} de custo do lote · não passou no caixa`}
+          value={formatBRL(data.clienteRevenue)}
+          hint={`${data.clienteQty} un. · custo ${formatBRL(data.clienteCost)} · pagou na fábrica`}
         />
         <MetricCard
           label="Sobra das lojas"
@@ -104,7 +104,7 @@ export function FactoryDashboard({
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <ChartCard
           title="Para onde saiu a câmara"
-          hint="Unidades. Cliente levou não passou no caixa."
+          hint="Unidades. Cliente levou pagou na fábrica, não na loja."
           empty={data.sentQty === 0 && data.clienteQty === 0}
         >
           <SimpleBars
