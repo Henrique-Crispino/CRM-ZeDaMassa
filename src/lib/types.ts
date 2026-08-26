@@ -622,6 +622,7 @@ export type CashSession = {
   note?: string;
   secondCount?: number;
   recountedBy?: string;
+  recountedById?: string;
   reopenedAt?: string;
   reopenNote?: string;
   reopenCount?: number;
@@ -678,6 +679,7 @@ export type InventoryCount = {
   at: string;
   countedBy: string;
   recountedBy?: string;
+  recountedById?: string;
   actorId?: string;
 };
 

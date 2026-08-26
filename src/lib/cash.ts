@@ -1,4 +1,4 @@
-import { stampActor } from "./actor";
+import { stampActor, assertWitness } from "./actor";
 import { getDb } from "./db";
 import { isStore } from "./locations";
 import { newId, todayDate } from "./money";
@@ -200,9 +200,11 @@ export async function closeCashSession(input: {
   sessionId: string;
   closingAmount: number;
   secondCount?: number;
-  recountedBy?: string;
+  recountedById?: string;
+  witnessPin?: string;
   note?: string;
 }) {
+  const actor = await stampActor(CashError);
   const db = getDb();
   const session = await db.cashSessions.get(input.sessionId);
   if (!session || session.closedAt) throw new CashError("Esse caixa já foi fechado.");
@@ -213,6 +215,7 @@ export async function closeCashSession(input: {
 
   let secondCount: number | undefined;
   let recountedBy: string | undefined;
+  let recountedById: string | undefined;
   if (needsCashRecount(difference)) {
     if (input.secondCount == null || Number.isNaN(input.secondCount)) {
       throw new CashError("Quebra ou sobra: conte o dinheiro de novo antes de encerrar.");
@@ -221,10 +224,9 @@ export async function closeCashSession(input: {
     if (Math.abs(secondCount - closingAmount) >= 0.005) {
       throw new CashError("A segunda contagem tem que bater com a primeira. Se achou outro valor, corrija o apurado e conte de novo.");
     }
-    recountedBy = input.recountedBy?.trim() ?? "";
-    if (recountedBy.length < 2) {
-      throw new CashError("Quem conferiu a segunda contagem? Escreva o nome.");
-    }
+    const witness = await assertWitness(CashError, { personId: input.recountedById, pin: input.witnessPin });
+    recountedBy = witness.recountedBy;
+    recountedById = witness.recountedById;
   }
 
   await db.cashSessions.update(session.id, {
@@ -240,6 +242,8 @@ export async function closeCashSession(input: {
     note: input.note?.trim() ?? "",
     secondCount,
     recountedBy,
+    recountedById,
+    actorId: session.actorId ?? actor.actorId,
   });
 }
 
@@ -298,6 +302,7 @@ export async function reopenCashSession(input: {
   delete next.supplyTotal;
   delete next.secondCount;
   delete next.recountedBy;
+  delete next.recountedById;
   await db.cashSessions.put(next);
   return next;
 }

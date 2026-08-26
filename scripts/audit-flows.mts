@@ -595,18 +595,58 @@ async function main() {
           sessionId: session.id,
           closingAmount: ledger.expectedCash + 10,
           secondCount: ledger.expectedCash + 12,
-          recountedBy: "Carla",
         }),
       "bater",
     );
-    await expectOk("Fechar caixa com 2ª contagem e nome", () =>
+    await expectFail(
+      "Quebra sem testemunha é recusada",
+      () =>
+        closeCashSession({
+          sessionId: session.id,
+          closingAmount: ledger.expectedCash + 10,
+          secondCount: ledger.expectedCash + 10,
+        }),
+      "outra pessoa",
+    );
+    await expectFail(
+      "Quem opera não confere o próprio caixa",
+      () =>
+        closeCashSession({
+          sessionId: session.id,
+          closingAmount: ledger.expectedCash + 10,
+          secondCount: ledger.expectedCash + 10,
+          recountedById: getActorId() ?? "emp-yokota",
+          witnessPin: "1234",
+        }),
+      "próprio",
+    );
+    await expectFail(
+      "PIN da testemunha do caixa errado é recusado",
+      () =>
+        closeCashSession({
+          sessionId: session.id,
+          closingAmount: ledger.expectedCash + 10,
+          secondCount: ledger.expectedCash + 10,
+          recountedById: "emp-telma",
+          witnessPin: "0000",
+        }),
+      "não confere",
+    );
+    await expectOk("Fechar caixa com 2ª contagem e testemunha", () =>
       closeCashSession({
         sessionId: session.id,
         closingAmount: ledger.expectedCash + 10,
         secondCount: ledger.expectedCash + 10,
-        recountedBy: "Carla Mendes",
+        recountedById: "emp-telma",
+        witnessPin: "1234",
         note: "Faltou troco no fundo",
       }),
+    );
+    const closedSession = await db.cashSessions.get(session.id);
+    record(
+      "Fechamento grava a ficha de quem conferiu",
+      closedSession?.recountedById === "emp-telma" && closedSession?.recountedBy === "Telma",
+      `id=${closedSession?.recountedById} nome=${closedSession?.recountedBy}`,
     );
     await expectFail(
       "Estorno com caixa fechado é recusado",
@@ -980,7 +1020,6 @@ async function main() {
     const qty = await stockQty("store_1", "cox-mini");
     return applyInventory({
       locationId: "store_1",
-      countedBy: "Ana Souza",
       lines: [{ nicheId: "cox-mini", countedQty: Math.max(0, qty - 1), reason: "contagem" }],
     });
   });
@@ -992,7 +1031,6 @@ async function main() {
     () =>
       applyInventory({
         locationId: "store_1",
-        countedBy: "Ana Souza",
         lines: [{ nicheId: "cox-mini", countedQty: countedBig, reason: "contagem" }],
       }),
     "conte de novo",
@@ -1002,21 +1040,59 @@ async function main() {
     () =>
       applyInventory({
         locationId: "store_1",
-        countedBy: "Ana Souza",
-        recountedBy: "Carla Mendes",
         secondCounts: [{ nicheId: "cox-mini", countedQty: qtyRecount }],
         lines: [{ nicheId: "cox-mini", countedQty: countedBig, reason: "contagem" }],
       }),
     "bater",
   );
-  await expectOk("Inventário com diferença grande e 2ª contagem", () =>
+  await expectFail(
+    "Inventário grande sem testemunha é recusado",
+    () =>
+      applyInventory({
+        locationId: "store_1",
+        secondCounts: [{ nicheId: "cox-mini", countedQty: countedBig }],
+        lines: [{ nicheId: "cox-mini", countedQty: countedBig, reason: "contagem" }],
+      }),
+    "outra pessoa",
+  );
+  await expectFail(
+    "Quem opera não confere o próprio inventário",
+    () =>
+      applyInventory({
+        locationId: "store_1",
+        recountedById: getActorId() ?? "emp-yokota",
+        witnessPin: "1234",
+        secondCounts: [{ nicheId: "cox-mini", countedQty: countedBig }],
+        lines: [{ nicheId: "cox-mini", countedQty: countedBig, reason: "contagem" }],
+      }),
+    "próprio",
+  );
+  await expectFail(
+    "PIN da testemunha do inventário errado é recusado",
+    () =>
+      applyInventory({
+        locationId: "store_1",
+        recountedById: "emp-telma",
+        witnessPin: "0000",
+        secondCounts: [{ nicheId: "cox-mini", countedQty: countedBig }],
+        lines: [{ nicheId: "cox-mini", countedQty: countedBig, reason: "contagem" }],
+      }),
+    "não confere",
+  );
+  await expectOk("Inventário com diferença grande e testemunha", () =>
     applyInventory({
       locationId: "store_1",
-      countedBy: "Ana Souza",
-      recountedBy: "Carla Mendes",
+      recountedById: "emp-telma",
+      witnessPin: "1234",
       secondCounts: [{ nicheId: "cox-mini", countedQty: countedBig }],
       lines: [{ nicheId: "cox-mini", countedQty: countedBig, reason: "contagem" }],
     }),
+  );
+  const inventoryCount = (await db.inventoryCounts.toArray()).sort((a, b) => b.at.localeCompare(a.at))[0];
+  record(
+    "Inventário grava a ficha de quem conferiu",
+    inventoryCount?.recountedById === "emp-telma" && inventoryCount?.recountedBy === "Telma",
+    `id=${inventoryCount?.recountedById} nome=${inventoryCount?.recountedBy}`,
   );
 
   await expectOk("Fechar suco", () => setProductActive("prod-suco", false));

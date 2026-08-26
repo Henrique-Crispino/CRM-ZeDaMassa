@@ -1319,8 +1319,10 @@ export async function loadDemoData(opts?: { force?: boolean }) {
     session.difference = difference;
     session.closingAmount = Math.max(0, Math.round((expected + difference) * 100) / 100);
     if (Math.abs(difference) >= 0.005) {
+      const witness = session.employeeId === PERSON_TELMA.id ? PERSON_YOKOTA : PERSON_TELMA;
       session.secondCount = session.closingAmount;
-      session.recountedBy = session.employeeName;
+      session.recountedBy = witness.name;
+      session.recountedById = witness.id;
     }
     if (difference < -1) session.note = "Quebra registrada na conferência.";
     if (difference > 1) session.note = "Sobra registrada na conferência.";

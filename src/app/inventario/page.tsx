@@ -4,12 +4,14 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDialog, SearchField } from "@/components/pick-flow";
+import { WitnessFields, witnessReady } from "@/components/WitnessFields";
 import { Button, Card, Empty, ErrorBox, Field, Input, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { Pager, usePager } from "@/components/pager";
 import { getLocation, getPanel, useLocationCatalog } from "@/lib/locations";
 import { formatDate, formatTime } from "@/lib/money";
 import { inventorySheet } from "@/lib/queries";
-import { getLocationId } from "@/lib/session";
+import { listWitnesses } from "@/lib/actor";
+import { getActorId, getLocationId } from "@/lib/session";
 import {
   applyInventory,
   inventoryCountDetails,
@@ -27,11 +29,13 @@ type Draft = {
 
 export default function InventarioPage() {
   const ready = useReady();
+  const actorId = ready ? getActorId() : null;
   const panelId = ready ? getLocationId() : null;
   const panel = panelId ? getPanel(panelId) : undefined;
   const { locations } = useLocationCatalog();
   const [picked, setPicked] = useState("factory");
   const locationId = panel?.type === "admin" ? picked : panel?.type === "factory" ? "factory" : (panelId ?? "");
+  const witnesses = useLiveQuery(() => (ready ? listWitnesses(actorId) : undefined), [ready, actorId]);
   const sheet = useLiveQuery(
     () => (ready && locationId ? inventorySheet(locationId) : []),
     [ready, locationId],
@@ -49,7 +53,8 @@ export default function InventarioPage() {
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [secondText, setSecondText] = useState<Record<string, string>>({});
-  const [recountedBy, setRecountedBy] = useState("");
+  const [recountedById, setRecountedById] = useState("");
+  const [witnessPin, setWitnessPin] = useState("");
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -74,9 +79,10 @@ export default function InventarioPage() {
   }, [sheet, draft]);
 
   const bigDiffs = diffs.filter((item) => needsInventoryRecount(item.delta));
+  const witnessName = witnesses?.find((person) => person.id === recountedById)?.name ?? "";
   const recountReady =
     bigDiffs.length === 0 ||
-    (recountedBy.trim().length >= 2 &&
+    (witnessReady(recountedById, witnessPin) &&
       bigDiffs.every((item) => {
         const raw = secondText[item.row.key]?.replace(/\D/g, "") ?? "";
         if (raw === "") return false;
@@ -108,8 +114,8 @@ export default function InventarioPage() {
     try {
       await applyInventory({
         locationId,
-        countedBy: panel.name,
-        recountedBy: bigDiffs.length > 0 ? recountedBy : undefined,
+        recountedById: bigDiffs.length > 0 ? recountedById : undefined,
+        witnessPin: bigDiffs.length > 0 ? witnessPin : undefined,
         secondCounts: bigDiffs.map((item) => ({
           nicheId: item.row.nicheId,
           lotId: item.row.lotId,
@@ -124,7 +130,8 @@ export default function InventarioPage() {
       });
       setDraft({});
       setSecondText({});
-      setRecountedBy("");
+      setRecountedById("");
+      setWitnessPin("");
       setConfirm(false);
       setOk(`Ajuste lançado. ${diffs.length} diferença${diffs.length === 1 ? "" : "s"} no estoque.`);
     } catch (err) {
@@ -141,7 +148,7 @@ export default function InventarioPage() {
     <AppShell>
       <PageTitle
         title="Inventário"
-        hint="Conte o que está na câmara ou na loja. A diferença vira ajuste — não precisa fingir venda nem sobra. Se a diferença passar de 5, conte de novo e diga quem conferiu, como no caixa."
+        hint="Conte o que está na câmara ou na loja. A diferença vira ajuste — não precisa fingir venda nem sobra. Se a diferença passar de 5, conte de novo e outra pessoa da Equipe confere, como no caixa."
       />
 
       {panel?.type === "admin" ? (
@@ -155,7 +162,8 @@ export default function InventarioPage() {
                 setPicked(location.id);
                 setDraft({});
                 setSecondText({});
-                setRecountedBy("");
+                setRecountedById("");
+                setWitnessPin("");
                 setOk("");
                 setError("");
               }}
@@ -167,7 +175,7 @@ export default function InventarioPage() {
       ) : (
         <Card className="mb-5 bg-orange-50 ring-orange-200">
           <p className="font-extrabold text-stone-900">Contando: {placeName}</p>
-          <p className="text-stone-600">Só o estoque deste local. O responsável fica no nome deste painel.</p>
+          <p className="text-stone-600">Só o estoque deste local. Quem opera lança a 1ª; a 2ª é outra ficha.</p>
         </Card>
       )}
 
@@ -235,8 +243,8 @@ export default function InventarioPage() {
           <Card className="space-y-4 bg-orange-50 ring-orange-200">
             <p className="font-extrabold text-stone-900">Conte de novo</p>
             <p className="text-stone-700">
-              Diferença maior que 5 não fecha com um número só. Segunda contagem e o nome de quem conferiu — o mesmo
-              ritual do caixa.
+              Diferença maior que 5 não fecha com um número só. Segunda contagem e outra pessoa da Equipe, com o PIN
+              dela — o mesmo ritual do caixa.
             </p>
             {bigDiffs.map((item) => (
               <Field
@@ -254,13 +262,13 @@ export default function InventarioPage() {
                 />
               </Field>
             ))}
-            <Field label="Conferido por" hint="Nome de quem fez a segunda contagem. No demo, digitar basta.">
-              <Input
-                value={recountedBy}
-                onChange={(event) => setRecountedBy(event.target.value)}
-                placeholder="Nome de quem conferiu"
-              />
-            </Field>
+            <WitnessFields
+              people={witnesses}
+              personId={recountedById}
+              pin={witnessPin}
+              onPersonId={setRecountedById}
+              onPin={setWitnessPin}
+            />
           </Card>
         ) : null}
         <ErrorBox message={error} />
@@ -297,8 +305,8 @@ export default function InventarioPage() {
         title="Lançar este inventário?"
         hint={
           bigDiffs.length
-            ? `${placeName} · responsável ${panel?.name ?? ""} · 2ª contagem e um nome`
-            : `${placeName} · responsável ${panel?.name ?? ""}`
+            ? `${placeName} · 2ª contagem e outra ficha`
+            : `${placeName}`
         }
         confirmLabel="Confirmar ajuste"
         confirmVariant="secondary"
@@ -318,7 +326,7 @@ export default function InventarioPage() {
           ))}
         </ul>
         {bigDiffs.length > 0 ? (
-          <p className="mt-3 font-bold text-stone-800">Conferido por: {recountedBy.trim()}</p>
+          <p className="mt-3 font-bold text-stone-800">Conferido por: {witnessName || "falta a ficha"}</p>
         ) : null}
       </ConfirmDialog>
     </AppShell>

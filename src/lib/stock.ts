@@ -1,4 +1,4 @@
-import { stampActor } from "./actor";
+import { stampActor, assertWitness } from "./actor";
 import { isClosedPackage, isPurchased, isSoldAtRegister, notForSaleMessage } from "./categories";
 import { ComboError, loadComboForCheckout, splitComboPrice } from "./combos";
 import { currentCashSession, money2, sessionLedger } from "./cash";
@@ -1075,10 +1075,10 @@ async function stockOnNiche(locationId: string, nicheId: string) {
 
 export async function applyInventory(input: {
   locationId: string;
-  countedBy?: string;
   lines: { nicheId: string; lotId?: string; countedQty: number; reason?: AdjustmentReason }[];
   secondCounts?: { nicheId: string; lotId?: string; countedQty: number }[];
-  recountedBy?: string;
+  recountedById?: string;
+  witnessPin?: string;
 }) {
   if (input.locationId !== "factory" && !isStore(input.locationId)) {
     throw new StockError("Escolha a fábrica ou uma loja para contar.");
@@ -1093,7 +1093,7 @@ export async function applyInventory(input: {
 
   await db.transaction(
     "rw",
-    [db.stock, db.lots, db.movements, db.niches, db.products, db.inventoryCounts, db.inventoryLines],
+    [db.stock, db.lots, db.movements, db.niches, db.products, db.inventoryCounts, db.inventoryLines, db.employees],
     async () => {
       const diffs: InventoryLine[] = [];
 
@@ -1124,11 +1124,8 @@ export async function applyInventory(input: {
 
       const big = diffs.filter((line) => needsInventoryRecount(line.countedQty - line.systemQty));
       let recountedBy: string | undefined;
+      let recountedById: string | undefined;
       if (big.length > 0) {
-        recountedBy = input.recountedBy?.trim() ?? "";
-        if (recountedBy.length < 2) {
-          throw new StockError("Diferença maior que 5: conte de novo e escreva quem conferiu.");
-        }
         const seconds = input.secondCounts ?? [];
         for (const line of big) {
           const found = seconds.find(
@@ -1145,6 +1142,9 @@ export async function applyInventory(input: {
           }
           line.secondCount = secondCount;
         }
+        const witness = await assertWitness(StockError, { personId: input.recountedById, pin: input.witnessPin });
+        recountedBy = witness.recountedBy;
+        recountedById = witness.recountedById;
       }
 
       await db.inventoryCounts.add({
@@ -1153,6 +1153,7 @@ export async function applyInventory(input: {
         at,
         countedBy,
         recountedBy,
+        recountedById,
         actorId: actor.actorId,
       });
 

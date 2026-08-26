@@ -1,17 +1,26 @@
 "use client";
 
 import { useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { ConfirmDialog } from "@/components/pick-flow";
 import { CashClosed, CashLoading, OpenSessionCard, useCashWorkspace } from "@/components/caixa/workspace";
+import { WitnessFields, witnessReady } from "@/components/WitnessFields";
 import { Button, Card, ErrorBox, Field, Input, SuccessBox } from "@/components/ui";
+import { listWitnesses } from "@/lib/actor";
 import { CashError, cashDifferenceLabel, closeCashSession, needsCashRecount } from "@/lib/cash";
 import { formatBRL, parseMoney } from "@/lib/money";
+import { getActorId } from "@/lib/session";
+import { useReady } from "@/lib/use-ready";
 
 export default function CaixaFecharPage() {
+  const ready = useReady();
+  const actorId = ready ? getActorId() : null;
   const { session, ledger } = useCashWorkspace();
+  const witnesses = useLiveQuery(() => (ready ? listWitnesses(actorId) : undefined), [ready, actorId]);
   const [closing, setClosing] = useState("");
   const [secondCount, setSecondCount] = useState("");
-  const [recountedBy, setRecountedBy] = useState("");
+  const [recountedById, setRecountedById] = useState("");
+  const [witnessPin, setWitnessPin] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
@@ -44,9 +53,12 @@ export default function CaixaFecharPage() {
   const counted = parseMoney(closing);
   const previewDifference = counted - ledger.expectedCash;
   const mustRecount = Boolean(closing) && needsCashRecount(previewDifference);
+  const witnessName = witnesses?.find((person) => person.id === recountedById)?.name ?? "";
   const recountReady =
     !mustRecount ||
-    (secondCount !== "" && Math.abs(parseMoney(secondCount) - counted) < 0.005 && recountedBy.trim().length >= 2);
+    (secondCount !== "" &&
+      Math.abs(parseMoney(secondCount) - counted) < 0.005 &&
+      witnessReady(recountedById, witnessPin));
 
   async function closeSession() {
     setError("");
@@ -57,12 +69,14 @@ export default function CaixaFecharPage() {
         sessionId: openSession.id,
         closingAmount: parseMoney(closing),
         secondCount: mustRecount ? parseMoney(secondCount) : undefined,
-        recountedBy: mustRecount ? recountedBy : undefined,
+        recountedById: mustRecount ? recountedById : undefined,
+        witnessPin: mustRecount ? witnessPin : undefined,
         note,
       });
       setClosing("");
       setSecondCount("");
-      setRecountedBy("");
+      setRecountedById("");
+      setWitnessPin("");
       setNote("");
       setConfirmClose(false);
       setOk("Caixa encerrado. O próximo turno já pode abrir o período dele.");
@@ -103,7 +117,7 @@ export default function CaixaFecharPage() {
             <Card className="bg-orange-50 ring-orange-200">
               <p className="font-extrabold text-stone-900">Conte de novo</p>
               <p className="text-stone-600">
-                Quebra ou sobra não fecha com um número só. Segunda contagem e o nome de quem conferiu.
+                Quebra ou sobra não fecha com um número só. Segunda contagem e outra pessoa da Equipe, com o PIN dela.
               </p>
             </Card>
             <Field
@@ -117,13 +131,13 @@ export default function CaixaFecharPage() {
                 placeholder={closing}
               />
             </Field>
-            <Field label="Conferido por" hint="Nome de quem fez a segunda contagem. No demo, digitar basta.">
-              <Input
-                value={recountedBy}
-                onChange={(event) => setRecountedBy(event.target.value)}
-                placeholder="Nome de quem conferiu"
-              />
-            </Field>
+            <WitnessFields
+              people={witnesses}
+              personId={recountedById}
+              pin={witnessPin}
+              onPersonId={setRecountedById}
+              onPin={setWitnessPin}
+            />
           </>
         ) : null}
         <Field label="Ocorrência (opcional)" hint="Use se houver quebra, sobra ou qualquer observação do turno.">
@@ -149,7 +163,7 @@ export default function CaixaFecharPage() {
         title="Encerrar este caixa?"
         hint={
           mustRecount
-            ? "Duas contagens e um nome. Sem isso a quebra ou sobra não fecha."
+            ? "Duas contagens e outra ficha. Sem isso a quebra ou sobra não fecha."
             : "A conferência compara o dinheiro apurado com o saldo esperado em espécie."
         }
         confirmLabel="Encerrar caixa"
@@ -167,7 +181,7 @@ export default function CaixaFecharPage() {
           {mustRecount ? (
             <>
               <li>Segunda contagem: {formatBRL(parseMoney(secondCount))}</li>
-              <li>Conferido por: {recountedBy.trim()}</li>
+              <li>Conferido por: {witnessName || "falta a ficha"}</li>
             </>
           ) : null}
           <li className={mustRecount ? "text-red-700" : "text-emerald-800"}>
