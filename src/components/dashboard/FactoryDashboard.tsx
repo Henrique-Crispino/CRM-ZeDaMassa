@@ -12,7 +12,6 @@ import {
   ExpiryList,
   MetricCard,
   MetricGrid,
-  MoneyBars,
   SimpleBars,
 } from "./shared";
 
@@ -33,7 +32,7 @@ export function FactoryDashboard({
     <div>
       <PageTitle
         title="Fábrica"
-        hint="Produza, mande para as lojas e veja o que está faltando — na câmara da fábrica e em cada loja."
+        hint="Produza, mande para as lojas e veja o que está faltando — na câmara e no estoque. O dinheiro das lojas fica na administração."
       />
       <ActionGrid
         actions={[
@@ -85,14 +84,9 @@ export function FactoryDashboard({
           hint={`${formatBRL(data.clienteCost)} de custo do lote · não passou no caixa`}
         />
         <MetricCard
-          label="Lojas venderam"
-          value={formatBRL(data.revenue)}
-          hint={`Lucro ${formatBRL(data.margin)}`}
-        />
-        <MetricCard
           label="Sobra das lojas"
           value={`${data.wasteQty} un.`}
-          hint={`${formatBRL(data.wasteRevenue)} deixou de vender · custo ${formatBRL(data.wasteCost)}`}
+          hint={data.wasteQty > 0 ? `Custo do lote ${formatBRL(data.wasteCost)}` : "Nada neste recorte."}
           alert={data.wasteQty > 0}
         />
         <MetricCard
@@ -100,7 +94,7 @@ export function FactoryDashboard({
           value={`${data.expiredQty} un.`}
           hint={
             data.expiredQty > 0
-              ? `${formatBRL(data.expiredCost)} de custo · ${formatBRL(data.expiredRevenue)} deixou de vender`
+              ? `${formatBRL(data.expiredCost)} de custo do lote`
               : "Nada descartado neste recorte."
           }
           alert={data.expiredQty > 0}
@@ -108,13 +102,23 @@ export function FactoryDashboard({
       </MetricGrid>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <ChartCard title="O que cada loja vendeu" empty={data.byLocation.every((item) => item.revenue === 0)}>
-          <MoneyBars
-            data={data.byLocation.map((item) => ({ name: item.name, Vendeu: item.revenue }))}
-            bars={[{ key: "Vendeu", name: "Vendeu", color: "#ea580c" }]}
+        <ChartCard
+          title="Para onde saiu a câmara"
+          hint="Unidades. Cliente levou não passou no caixa."
+          empty={data.sentQty === 0 && data.clienteQty === 0}
+        >
+          <SimpleBars
+            data={[
+              { name: "Para as lojas", qty: data.sentQty },
+              { name: "Cliente levou", qty: data.clienteQty },
+            ]}
+            dataKey="qty"
+            name="Unidades"
+            labelWidth={128}
+            showValues
           />
         </ChartCard>
-        <ChartCard title="Mais vendido nas lojas" empty={data.bestSellers.length === 0}>
+        <ChartCard title="Mais vendido nas lojas" hint="Unidades. Para saber o que fritar — sem o R$ da loja." empty={data.bestSellers.length === 0}>
           <SimpleBars
             data={data.bestSellers.map((item) => ({ name: item.label, qty: item.qty }))}
             dataKey="qty"
@@ -122,20 +126,6 @@ export function FactoryDashboard({
           />
         </ChartCard>
       </div>
-
-      {data.byLocation.length > 0 ? (
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          {data.byLocation.map((location) => (
-            <Card key={location.id}>
-              <p className="text-lg font-extrabold">{location.name}</p>
-              <p className="mt-2 text-stone-700">Vendeu {formatBRL(location.revenue)}</p>
-              <p className={location.wasteQty > 0 ? "font-bold text-red-700" : "text-stone-700"}>
-                Perdeu {location.wasteQty} un. ({formatBRL(location.wasteRevenue)})
-              </p>
-            </Card>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
