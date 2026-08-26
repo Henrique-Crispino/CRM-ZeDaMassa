@@ -43,8 +43,8 @@ export default function HomePage() {
         <p className="text-sm font-bold uppercase tracking-wide text-orange-700">Controle da fábrica</p>
         <h1 className="mt-2 text-4xl font-extrabold leading-tight text-stone-900">Quem está operando?</h1>
         <p className="mt-3 max-w-xl text-lg leading-relaxed text-stone-600">
-          Escolha o nome. Depois o PIN da ficha. A Telma não abre a administração. Isto não é senha da empresa — é para
-          não misturar o trabalho neste computador.
+          Escolha o nome. Depois o PIN da ficha. Matheus e Yokota entram em qualquer painel. A Telma não abre a
+          administração. Isto não é senha da empresa — é para não misturar o trabalho neste computador.
         </p>
         {!ready ? <p className="mt-4 text-lg font-bold text-stone-500">Carregando...</p> : null}
 
@@ -75,7 +75,7 @@ export default function HomePage() {
               void enter();
             }}
           >
-            <Field label={`PIN da ${picked.name}`} hint="O mesmo da ficha. No exemplo é 1234.">
+            <Field label={`PIN de ${picked.name}`} hint="O mesmo da ficha. No exemplo é 1234.">
               <Input
                 type="password"
                 inputMode="numeric"

@@ -82,8 +82,8 @@ export default function FuncionariosPage() {
           <div>
             <p className="mb-2 font-bold">Onde esta pessoa trabalha</p>
             <p className="mb-2 text-sm text-stone-500">
-              Loja: caixa no ponto. Fábrica: retira 1× ao dia em qualquer loja, sem caixa. Administração: o Matheus só
-              olha o Início; o Yokota (gerente) pode abrir o caixa de qualquer loja.
+              Loja: caixa no ponto. Fábrica: retira 1× ao dia em qualquer loja, sem caixa. Administração: Matheus e
+              Yokota entram em todos os painéis. Caixa da rede só com o papel de caixa (Yokota).
             </p>
             <div className="flex flex-wrap gap-2">
               {places.map((place) => (

@@ -36,7 +36,7 @@ export function enterOperator(person: Employee, panelId?: string) {
 
 export function switchOperatorPanel(person: Employee, panelId: string) {
   if (!personCanUsePanel(person, panelId)) {
-    throw new PeopleError(`Isto não é da ${person.name}.`);
+    throw new PeopleError(`Isto não é de ${person.name}.`);
   }
   setLocationId(panelId);
 }

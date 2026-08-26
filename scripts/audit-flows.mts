@@ -113,19 +113,25 @@ async function main() {
     telma ? personAllowedPanelIds(telma).join(",") : "sem ficha",
   );
   record(
-    "Yokota cobre admin e as lojas",
+    "Yokota cobre todos os painéis",
     Boolean(
       yokota &&
         personCanUsePanel(yokota, "admin") &&
+        personCanUsePanel(yokota, "factory") &&
         personCanUsePanel(yokota, "store_1") &&
-        personCanUsePanel(yokota, "store_2") &&
-        !personCanUsePanel(yokota, "factory"),
+        personCanUsePanel(yokota, "store_2"),
     ),
     yokota ? personAllowedPanelIds(yokota).join(",") : "sem ficha",
   );
   record(
-    "Matheus só a administração",
-    Boolean(matheus && personAllowedPanelIds(matheus).join(",") === "admin"),
+    "Matheus cobre todos os painéis",
+    Boolean(
+      matheus &&
+        personCanUsePanel(matheus, "admin") &&
+        personCanUsePanel(matheus, "factory") &&
+        personCanUsePanel(matheus, "store_1") &&
+        personCanUsePanel(matheus, "store_2"),
+    ),
     matheus ? personAllowedPanelIds(matheus).join(",") : "sem ficha",
   );
   record(
@@ -144,13 +150,28 @@ async function main() {
       getActorId() === "emp-telma" && getLocationId() === "store_1",
       `actor=${getActorId()} lugar=${getLocationId()}`,
     );
-    await expectFail("Telma não troca para a fábrica", async () => switchOperatorPanel(telmaOk, "factory"), "não é da");
+    await expectFail("Telma não troca para a fábrica", async () => switchOperatorPanel(telmaOk, "factory"), "não é de");
+  }
+  if (matheus) {
+    enterOperator(matheus);
+    record("Matheus entra na administração", getLocationId() === "admin", `lugar=${getLocationId()}`);
+    switchOperatorPanel(matheus, "factory");
+    record("Matheus vai à fábrica", getLocationId() === "factory", `lugar=${getLocationId()}`);
+    switchOperatorPanel(matheus, "store_1");
+    record("Matheus vai ao Centro", getLocationId() === "store_1", `lugar=${getLocationId()}`);
   }
   if (yokota) {
     enterOperator(yokota);
     record("Yokota entra na administração", getLocationId() === "admin", `lugar=${getLocationId()}`);
+    switchOperatorPanel(yokota, "factory");
+    record("Yokota vai à fábrica", getLocationId() === "factory", `lugar=${getLocationId()}`);
     switchOperatorPanel(yokota, "store_2");
     record("Yokota vai ao Jardim", getLocationId() === "store_2", `lugar=${getLocationId()}`);
+  }
+  if (brendao) {
+    enterOperator(brendao);
+    record("Brendão entra na fábrica", getLocationId() === "factory", `lugar=${getLocationId()}`);
+    await expectFail("Brendão não troca para a administração", async () => switchOperatorPanel(brendao, "admin"), "não é de");
   }
 
   await expectFail(

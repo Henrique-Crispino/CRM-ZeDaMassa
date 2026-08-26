@@ -65,8 +65,8 @@ export function asConsumeUser(person: Employee): ConsumeUser {
 
 export function personRoleHint(person: Employee) {
   const place = personLocation(person);
-  if (isAdminWorkplace(place) && !personCanCash(person)) return "dono · vê o Início";
-  if (isAdminWorkplace(place) && personCanCash(person)) return "gerente · admin e caixa da rede";
+  if (isAdminWorkplace(place) && !personCanCash(person)) return "dono · todos os painéis, sem caixa";
+  if (isAdminWorkplace(place) && personCanCash(person)) return "gerente · todos os painéis e caixa da rede";
   const roles = [
     personCanCash(person) ? "caixa" : "",
     personCanConsume(person) ? "consumo" : "",
@@ -74,15 +74,14 @@ export function personRoleHint(person: Employee) {
   return roles.length ? roles.join(" · ") : "sem papel";
 }
 
+export function allPanelIds() {
+  return ["admin", "factory", ...storeLocations().map((store) => store.id)];
+}
+
 export function personAllowedPanelIds(person: Employee) {
   if (!person.active) return [];
   const place = personLocation(person);
-  if (isAdminWorkplace(place)) {
-    if (personCanCash(person)) {
-      return ["admin", ...storeLocations().map((store) => store.id)];
-    }
-    return ["admin"];
-  }
+  if (isAdminWorkplace(place)) return allPanelIds();
   if (place === "factory") return ["factory"];
   if (isStore(place)) return [place];
   return [];
@@ -101,6 +100,9 @@ export function personCanUsePanel(person: Employee, panelId: string) {
 
 export function personDoorHint(person: Employee) {
   const allowed = personAllowedPanelIds(person);
+  if (allowed.includes("admin") && allowed.includes("factory") && allowed.some((id) => isStore(id))) {
+    return "Todos os painéis";
+  }
   if (allowed.includes("admin") && allowed.some((id) => isStore(id))) {
     return "Administração · pode ir às lojas";
   }

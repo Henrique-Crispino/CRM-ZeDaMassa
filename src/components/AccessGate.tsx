@@ -36,7 +36,7 @@ export function AccessGate({
     return (
       <AppShell>
         <Empty
-          title={`Isto não é da ${person.name}`}
+          title={`Isto não é de ${person.name}`}
           hint="Sai e entra de novo com quem opera este lugar. A Telma não abre a administração."
         />
       </AppShell>
