@@ -267,6 +267,8 @@ export type OpenParty = {
   estimatedTotal: number;
   signalAmount: number;
   due: number;
+  fifoTotal?: number;
+  priceDiffers?: boolean;
   stock: PartyStockState;
   stockLabel: string;
   itemsLabel: string;
@@ -356,6 +358,18 @@ export async function listOpenParties(storeId?: string): Promise<OpenParty[]> {
       .slice(0, 4)
       .join(", ");
 
+    let fifoTotal: number | undefined;
+    let priceDiffers: boolean | undefined;
+    if (stock === "na_loja") {
+      try {
+        const quote = await quoteEncomendaDelivery(request.id);
+        fifoTotal = quote.fifoTotal;
+        priceDiffers = quote.differs;
+      } catch {
+        /* prateleira ainda não fecha — segue só o combinado */
+      }
+    }
+
     parties.push({
       id: request.id,
       storeId: request.fromLocationId,
@@ -365,6 +379,8 @@ export async function listOpenParties(storeId?: string): Promise<OpenParty[]> {
       estimatedTotal: money2(request.estimatedTotal ?? 0),
       signalAmount: signal,
       due: partyDue(request.estimatedTotal, signal),
+      fifoTotal,
+      priceDiffers,
       stock,
       stockLabel: partyStockLabel(stock),
       itemsLabel: labels,

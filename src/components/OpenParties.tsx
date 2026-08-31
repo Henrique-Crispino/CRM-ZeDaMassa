@@ -70,6 +70,11 @@ export function OpenParties({ storeId }: { storeId?: string }) {
                   <p className={late ? "text-red-800" : "text-emerald-800"}>
                     Sinal {formatBRL(party.signalAmount)} · faltam {formatBRL(party.due)}
                   </p>
+                  {party.priceDiffers && party.fifoTotal != null ? (
+                    <p className="text-sm font-semibold text-orange-800">
+                      Prateleira (FIFO) {formatBRL(party.fifoTotal)} · combinado {formatBRL(party.estimatedTotal)}
+                    </p>
+                  ) : null}
                   <p className="text-sm font-medium text-stone-500">
                     {party.stockLabel}
                     {party.itemsLabel ? ` · ${party.itemsLabel}` : ""}

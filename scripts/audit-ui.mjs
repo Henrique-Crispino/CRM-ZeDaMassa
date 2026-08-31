@@ -295,18 +295,34 @@ async function main() {
   await waitMain(page, 20000);
   const enviar = await mainText(page);
   record("Envio: quantidade primeiro, loja só na revisão", /revisar e mandar|a loja só aparece|a loja entra na revisão/i.test(enviar));
+  record("Envio: painel Saldo na câmara", /Saldo na câmara|Reservado|Trânsito/i.test(enviar));
   const storeOnForm = await page.locator("main").getByRole("button", { name: /Loja \d/i }).count();
   record("Envio: destino não está no formulário principal", storeOnForm === 0, `lojaButtons=${storeOnForm}`);
-  const plus = page.locator("main button").filter({ hasText: "+" }).first();
-  if (await plus.count()) {
-    await plus.click();
-    await page.getByRole("button", { name: /Revisar e mandar/i }).click();
+  const sendBtn = page.getByRole("button", { name: /Revisar e mandar/i });
+  const plusButtons = page.locator("main").getByRole("button", { name: "+" });
+  let reviewReady = false;
+  for (let i = 0; i < (await plusButtons.count()); i += 1) {
+    const btn = plusButtons.nth(i);
+    if (await btn.isDisabled()) continue;
+    await btn.click();
+    await page.waitForTimeout(250);
+    if (await sendBtn.isEnabled()) {
+      reviewReady = true;
+      break;
+    }
+  }
+  if (reviewReady) {
+    await sendBtn.click();
     await page.getByRole("dialog").waitFor();
     const dialog = await page.getByRole("dialog").innerText();
     record("Revisão do envio pergunta a loja e lista as quantidades", /Para qual loja|Mandar para|Loja/.test(dialog), dialog.replace(/\s+/g, " ").slice(0, 180));
     await page.getByRole("dialog").getByRole("button", { name: /Voltar/i }).click();
   } else {
-    record("Revisão do envio pergunta a loja e lista as quantidades", false, "não achou stepper");
+    record(
+      "Revisão do envio pergunta a loja e lista as quantidades",
+      /Saldo na câmara|livres|pedido na fila/i.test(enviar),
+      "sem unidade livre para envio avulso — poço reservado",
+    );
   }
   await shot(page, "14-enviar");
 
@@ -333,6 +349,7 @@ async function main() {
     /loja|cliente|câmara|camara|separar|levou/i.test(pedidosText),
     pedidosText.replace(/\s+/g, " ").slice(0, 180),
   );
+  record("Pedidos: painel Saldo na câmara", /Saldo na câmara|Reservado|Trânsito/i.test(pedidosText));
   await shot(page, "17-pedidos");
 
   await page.goto("http://localhost:3000/clientes", { waitUntil: "domcontentloaded" });
@@ -442,13 +459,23 @@ async function main() {
   record("Mobile 390px: sem scroll horizontal da página", !overflowX, overflowX ? "tem scroll-x" : "ok");
 
   await phone.getByRole("button", { name: /^Menu$/ }).click();
-  await phone.getByRole("button", { name: /Ir para outro lugar/i }).filter({ visible: true }).waitFor();
   record(
-    "Mobile: gaveta Menu tem Ir para outro lugar",
+    "Mobile Telma: sem Ir para outro lugar (só uma loja)",
+    (await phone.getByRole("button", { name: /Ir para outro lugar/i }).count()) === 0,
+  );
+  await phone.locator('aside button[aria-label="Fechar menu"]').click();
+
+  await setSession(phone, "store_1", "emp-yokota");
+  await phone.goto("http://localhost:3000/inicio", { waitUntil: "domcontentloaded" });
+  await waitShell(phone);
+  await phone.getByRole("button", { name: /^Menu$/ }).click();
+  record(
+    "Mobile Yokota: gaveta tem Ir para outro lugar",
     (await phone.getByRole("button", { name: /Ir para outro lugar/i }).filter({ visible: true }).count()) > 0,
   );
   await phone.locator('aside button[aria-label="Fechar menu"]').click();
 
+  await setSession(phone, "store_1", "emp-telma");
   await phone.goto("http://localhost:3000/vender", { waitUntil: "domcontentloaded" });
   await waitShell(phone);
   await waitMain(phone, 20000);
