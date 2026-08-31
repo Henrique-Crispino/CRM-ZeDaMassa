@@ -5,7 +5,7 @@ import { currentCashSession, money2, sessionLedger } from "./cash";
 import { getDb } from "./db";
 import { isStore } from "./locations";
 import { addDays, daysUntil, newId, todayDate } from "./money";
-import { changeStock, oldestLots, StockError, stockQty } from "./stock-core";
+import { changeStock, oldestLots, StockError, stockQty, type OldestLotsOptions } from "./stock-core";
 import type { AdjustmentReason, CashDestination, InventoryLine, PaymentMethod, ReturnReason, SaleChannel, SaleKind, SalePayment, SaleVoidReason } from "./types";
 import {
   ADJUSTMENT_REASONS,
@@ -13,6 +13,7 @@ import {
   PAYMENT_METHODS,
   RETURN_REASONS,
   SALE_VOID_REASONS,
+  storeRequestKind,
   closedCatalogMessage,
   lotCost,
   lotPrice,
@@ -289,11 +290,19 @@ export async function receiveTransfer(input: {
 
   await db.transaction(
     "rw",
-    [db.stock, db.lots, db.movements, db.transfers, db.transferItems],
+    [db.stock, db.lots, db.movements, db.transfers, db.transferItems, db.requests],
     async () => {
       const current = await db.transfers.get(transfer.id);
       if (!current || transferStatus(current) !== "em_transito") {
         throw new StockError("Este envio já foi conferido.");
+      }
+
+      let partyRequestId: string | undefined;
+      if (transfer.requestId) {
+        const request = await db.requests.get(transfer.requestId);
+        if (request && storeRequestKind(request) === "encomenda") {
+          partyRequestId = transfer.requestId;
+        }
       }
 
       let divergente = false;
@@ -302,7 +311,7 @@ export async function receiveTransfer(input: {
         const returnedQty = part.qty - receivedQty;
         if (returnedQty > 0) divergente = true;
         if (receivedQty > 0) {
-          await changeStock(transfer.toLocationId, part.nicheId, part.lotId, receivedQty);
+          await changeStock(transfer.toLocationId, part.nicheId, part.lotId, receivedQty, partyRequestId);
           await db.movements.add({
             id: newId(),
             locationId: transfer.toLocationId,
@@ -384,6 +393,7 @@ export async function returnToFactory(input: {
       for (const item of items) {
         const chunks = await oldestLots(input.fromLocationId, item.nicheId, item.qty, {
           skipExpired,
+          onlyFree: true,
           expiredMessage:
             "Lote vencido não volta como excedente. Descarte no estoque ou devolva por qualidade.",
         });
@@ -518,6 +528,13 @@ export async function receiveReturn(input: {
   );
 }
 
+function storeLotPick(channel: SaleChannel, requestId?: string): OldestLotsOptions {
+  if (channel === "encomenda" && requestId) {
+    return { skipExpired: true, onlyRequestId: requestId };
+  }
+  return { skipExpired: true, onlyFree: true };
+}
+
 function normalizeSalePayments(total: number, input: { payment?: PaymentMethod; payments?: SalePayment[] }) {
   const raw = (input.payments ?? []).filter((row) => row.amount > 0);
   const lines = raw.length
@@ -616,6 +633,8 @@ export async function checkout(input: {
       }
 
       let total = 0;
+      const lotPick = storeLotPick(input.channel, input.requestId);
+      const stockAlloc = input.channel === "encomenda" && input.requestId ? input.requestId : undefined;
 
       for (const [index, item] of items.entries()) {
         const niche = niches[index];
@@ -631,7 +650,7 @@ export async function checkout(input: {
                 : `${niche.name} não está liberado para promoção.`,
           );
         }
-        const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, { skipExpired: true });
+        const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, lotPick);
         const priced: { qty: number; unitPrice: number }[] = [];
         for (const chunk of chunks) {
           const lot = await db.lots.get(chunk.lotId);
@@ -640,7 +659,7 @@ export async function checkout(input: {
           }
           const unitPrice = saleLotPrice(lot, niche.sellPrice, niche.promoPrice, usePromo);
           priced.push({ qty: chunk.qty, unitPrice });
-          await changeStock(input.locationId, item.nicheId, chunk.lotId, -chunk.qty);
+          await changeStock(input.locationId, item.nicheId, chunk.lotId, -chunk.qty, stockAlloc);
           await db.saleItems.add({
             id: newId(),
             saleId,
@@ -693,7 +712,7 @@ export async function checkout(input: {
         const plans = [];
         for (const alloc of allocated) {
           try {
-            const chunks = await oldestLots(input.locationId, alloc.nicheId, alloc.qty, { skipExpired: true });
+            const chunks = await oldestLots(input.locationId, alloc.nicheId, alloc.qty, lotPick);
             plans.push({ ...alloc, chunks });
           } catch {
             const label = expanded.find((row) => row.nicheId === alloc.nicheId)?.label ?? "um item";
@@ -710,7 +729,7 @@ export async function checkout(input: {
             leftover = money2(leftover - chunkMoney);
             const lot = await db.lots.get(chunk.lotId);
             const niche = await db.niches.get(plan.nicheId);
-            await changeStock(input.locationId, plan.nicheId, chunk.lotId, -chunk.qty);
+            await changeStock(input.locationId, plan.nicheId, chunk.lotId, -chunk.qty, stockAlloc);
             await db.saleItems.add({
               id: newId(),
               saleId,
@@ -826,8 +845,14 @@ export async function voidSale(input: { saleId: string; reason: SaleVoidReason }
         throw new StockError("O caixa desta venda já fechou. Não dá para estornar neste turno.");
       }
 
+      let restoreAlloc: string | undefined;
+      if (sale.requestId && sale.kind !== "sinal") {
+        const request = await db.requests.get(sale.requestId);
+        if (request && storeRequestKind(request) === "encomenda") restoreAlloc = sale.requestId;
+      }
+
       for (const item of items) {
-        await changeStock(sale.locationId, item.nicheId, item.lotId, item.qty);
+        await changeStock(sale.locationId, item.nicheId, item.lotId, item.qty, restoreAlloc);
         await db.movements.add({
           id: newId(),
           locationId: sale.locationId,
@@ -904,7 +929,7 @@ export async function withdrawProductAndCash(input: {
       if (amount > ledger.expectedCash + 0.001) {
         throw new StockError("A retirada não pode ser maior que o saldo esperado em espécie na gaveta.");
       }
-      const chunks = await oldestLots(input.locationId, input.nicheId, qty, { skipExpired: true });
+      const chunks = await oldestLots(input.locationId, input.nicheId, qty, { skipExpired: true, onlyFree: true });
       for (const chunk of chunks) {
         await changeStock(input.locationId, input.nicheId, chunk.lotId, -chunk.qty);
         await db.movements.add({
@@ -958,6 +983,7 @@ export async function registerWaste(input: {
       const niche = await db.niches.get(item.nicheId);
       const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, {
         skipExpired: true,
+        onlyFree: true,
         expiredMessage:
           "Sobra é o que foi frito e não vendeu. Lote vencido não entra aqui. Descarte no estoque.",
       });
@@ -1025,7 +1051,10 @@ export async function openPackages(input: {
 
   await db.transaction("rw", [db.stock, db.lots, db.movements, db.niches, db.products], async () => {
     for (const item of items) {
-      const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, { skipExpired: true });
+      const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, {
+        skipExpired: true,
+        ...(isStore(input.locationId) ? { onlyFree: true } : {}),
+      });
       for (const chunk of chunks) {
         await changeStock(input.locationId, item.nicheId, chunk.lotId, -chunk.qty);
         await db.movements.add({
@@ -1201,7 +1230,10 @@ export async function applyInventory(input: {
         if (lotId) {
           await changeStock(input.locationId, line.nicheId, lotId, delta);
         } else if (delta < 0) {
-          const chunks = await oldestLots(input.locationId, line.nicheId, -delta, { skipExpired: true });
+          const chunks = await oldestLots(input.locationId, line.nicheId, -delta, {
+            skipExpired: true,
+            onlyFree: isStore(input.locationId),
+          });
           for (const chunk of chunks) {
             await changeStock(input.locationId, line.nicheId, chunk.lotId, -chunk.qty);
             await db.movements.add({

@@ -185,6 +185,7 @@ export async function stockByLocation(): Promise<StockView[]> {
   const nichePrice = new Map(items.map((item) => [item.niche.id, item.niche.sellPrice]));
 
   for (const row of rows) {
+    if (row.allocatedToRequestId) continue;
     const key = `${row.locationId}:${row.nicheId}`;
     qty.set(key, (qty.get(key) ?? 0) + row.qty);
     const lot = lotById.get(row.lotId);

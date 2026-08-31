@@ -322,6 +322,8 @@ export type StockRow = {
   nicheId: string;
   lotId: string;
   qty: number;
+  /** Festa conferida — saldo não entra no balcão até entregar ou estornar. */
+  allocatedToRequestId?: string;
 };
 
 export type Movement = {

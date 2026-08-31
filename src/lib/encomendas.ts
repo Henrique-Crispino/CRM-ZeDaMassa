@@ -61,14 +61,21 @@ export type EncomendaDeliveryQuote = {
   differs: boolean;
 };
 
-async function fifoTotalForPayload(locationId: string, payload: { nicheId: string; qty: number }[]) {
+async function fifoTotalForPayload(
+  locationId: string,
+  payload: { nicheId: string; qty: number }[],
+  requestId?: string,
+) {
   const db = getDb();
   let total = 0;
   for (const item of payload) {
     if (item.qty <= 0) continue;
     const niche = await db.niches.get(item.nicheId);
     if (!niche) throw new EncomendaError("Produto não encontrado.");
-    const chunks = await oldestLots(locationId, item.nicheId, item.qty, { skipExpired: true });
+    const chunks = await oldestLots(locationId, item.nicheId, item.qty, {
+      skipExpired: true,
+      onlyRequestId: requestId,
+    });
     const priced: FifoPriceChunk[] = [];
     for (const chunk of chunks) {
       const lot = await db.lots.get(chunk.lotId);
@@ -92,7 +99,7 @@ export async function quoteEncomendaDelivery(requestId: string): Promise<Encomen
   const payload = items
     .filter((item) => (item.sentQty ?? 0) > 0)
     .map((item) => ({ nicheId: item.nicheId, qty: item.sentQty ?? 0 }));
-  const fifoTotal = payload.length ? await fifoTotalForPayload(request.fromLocationId, payload) : 0;
+  const fifoTotal = payload.length ? await fifoTotalForPayload(request.fromLocationId, payload, requestId) : 0;
   const combinedTotal = money2(request.estimatedTotal ?? 0);
   const credit = money2(request.signalAmount ?? 0);
   const due = money2(combinedTotal - credit);

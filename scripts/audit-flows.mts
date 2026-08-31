@@ -1816,6 +1816,36 @@ async function main() {
       openAtStore?.stock === "na_loja" && openAtStore.due === 200,
       `stock=${openAtStore?.stock} due=${openAtStore?.due}`,
     );
+    const partyReserved = (await db.stock.toArray())
+      .filter((row) => row.allocatedToRequestId === partyId && row.nicheId === "cox-mini")
+      .reduce((sum, row) => sum + row.qty, 0);
+    const freeAtStore = (await db.stock.toArray())
+      .filter((row) => row.locationId === "store_1" && row.nicheId === "cox-mini" && !row.allocatedToRequestId)
+      .reduce((sum, row) => sum + row.qty, 0);
+    record(
+      "Conferência trava estoque da festa na loja",
+      partyReserved === 40,
+      `reservado=${partyReserved} livre=${freeAtStore}`,
+    );
+    await expectFail(
+      "Balcão não vende saldo reservado à festa",
+      () =>
+        checkout({
+          locationId: "store_1",
+          channel: "caixa",
+          payment: "pix",
+          items: [{ nicheId: "cox-mini", qty: freeAtStore + partyReserved }],
+        }),
+      "estoque",
+    );
+    const partyAfterCounter = (await db.stock.toArray())
+      .filter((row) => row.allocatedToRequestId === partyId && row.nicheId === "cox-mini")
+      .reduce((sum, row) => sum + row.qty, 0);
+    record(
+      "Reserva da festa intacta após balcão recusado",
+      partyAfterCounter === partyReserved,
+      `reservado=${partyAfterCounter}`,
+    );
     const partyQuote = await quoteEncomendaDelivery(partyId);
     record(
       "Entrega da festa compara FIFO com o combinado",

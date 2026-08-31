@@ -12,18 +12,29 @@ export function fifoLotOrder(
   );
 }
 
-export function stockKey(locationId: string, nicheId: string, lotId: string) {
-  return `${locationId}:${nicheId}:${lotId}`;
+export function stockKey(locationId: string, nicheId: string, lotId: string, allocatedToRequestId?: string) {
+  const base = `${locationId}:${nicheId}:${lotId}`;
+  return allocatedToRequestId ? `${base}@${allocatedToRequestId}` : base;
 }
+
+export type OldestLotsOptions = {
+  skipExpired?: boolean;
+  expiredMessage?: string;
+  /** Balcão, sobra, devolução — ignora saldo reservado à festa. */
+  onlyFree?: boolean;
+  /** Entrega da festa — só o reservado deste pedido. */
+  onlyRequestId?: string;
+};
 
 export async function changeStock(
   locationId: string,
   nicheId: string,
   lotId: string,
   qty: number,
+  allocatedToRequestId?: string,
 ) {
   const db = getDb();
-  const id = stockKey(locationId, nicheId, lotId);
+  const id = stockKey(locationId, nicheId, lotId, allocatedToRequestId);
   const current = await db.stock.get(id);
   if (!Number.isFinite(qty)) {
     throw new StockError("A quantidade do movimento não é um número.");
@@ -36,19 +47,31 @@ export async function changeStock(
     if (current) await db.stock.delete(id);
     return;
   }
-  await db.stock.put({ id, locationId, nicheId, lotId, qty: next });
+  await db.stock.put({
+    id,
+    locationId,
+    nicheId,
+    lotId,
+    qty: next,
+    ...(allocatedToRequestId ? { allocatedToRequestId } : {}),
+  });
 }
 
 export async function oldestLots(
   locationId: string,
   nicheId: string,
   qty: number,
-  options?: { skipExpired?: boolean; expiredMessage?: string },
+  options?: OldestLotsOptions,
 ) {
   const db = getDb();
   const today = todayDate();
   const rows = (await db.stock.where("[locationId+nicheId]").equals([locationId, nicheId]).toArray())
-    .filter((row) => row.qty > 0);
+    .filter((row) => row.qty > 0)
+    .filter((row) => {
+      if (options?.onlyRequestId) return row.allocatedToRequestId === options.onlyRequestId;
+      if (options?.onlyFree) return !row.allocatedToRequestId;
+      return true;
+    });
 
   const lots = await db.lots.bulkGet(rows.map((row) => row.lotId));
   const ordered = rows
@@ -64,11 +87,15 @@ export async function oldestLots(
     .sort(fifoLotOrder);
 
   let missing = qty;
-  const taken: { lotId: string; qty: number }[] = [];
+  const taken: { lotId: string; qty: number; allocatedToRequestId?: string }[] = [];
   for (const item of ordered) {
     if (missing <= 0) break;
     const use = Math.min(item.row.qty, missing);
-    taken.push({ lotId: item.row.lotId, qty: use });
+    taken.push({
+      lotId: item.row.lotId,
+      qty: use,
+      allocatedToRequestId: item.row.allocatedToRequestId,
+    });
     missing -= use;
   }
 

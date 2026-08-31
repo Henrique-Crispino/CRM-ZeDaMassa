@@ -355,7 +355,7 @@ export async function registerInternalConsume(input: {
       }
 
       for (const item of items) {
-        const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, { skipExpired: true });
+        const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, { skipExpired: true, onlyFree: true });
         for (const chunk of chunks) {
           const lot = await db.lots.get(chunk.lotId);
           const niche = await db.niches.get(item.nicheId);
