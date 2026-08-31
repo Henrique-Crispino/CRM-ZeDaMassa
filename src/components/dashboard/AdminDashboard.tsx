@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { FileDown } from "lucide-react";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { PendingRequests } from "@/components/PendingRequests";
 import { OpenParties } from "@/components/OpenParties";
 import { Button, Card, PageTitle, cn } from "@/components/ui";
+import { listOpenParties } from "@/lib/encomendas";
 import { formatBRL, rangePhrase } from "@/lib/money";
+import { listRequests } from "@/lib/requests";
 import type { DashboardData } from "@/lib/queries";
+import { useReady } from "@/lib/use-ready";
 import {
   AlertList,
   ChartCard,
@@ -31,15 +35,29 @@ export function AdminDashboard({
   to: string;
   onRange: (from: string, to: string) => void;
 }) {
+  const ready = useReady();
   const label = rangePhrase(from, to);
   const [showCharts, setShowCharts] = useState(false);
+  const parties = useLiveQuery(() => (ready ? listOpenParties() : []), [ready]);
+  const pending = useLiveQuery(() => (ready ? listRequests("open") : []), [ready]);
+  const partyCount = parties?.length ?? 0;
+  const pendingCount = pending?.length ?? 0;
+  const cashTotal = data.payments.find((row) => row.name === "Dinheiro")?.total ?? 0;
 
   return (
     <div>
-      <PageTitle
-        title="Visão geral"
-        hint="Primeiro o dinheiro: venda da loja, o que a padaria pagou na fábrica, e a perda. Reposição e validade vêm depois."
-      />
+      <div className="md:hidden">
+        <PageTitle
+          title="Visão geral"
+          hint="Urgência primeiro. Gráficos e recorte completo na tela grande ou em Relatórios."
+        />
+      </div>
+      <div className="hidden md:block">
+        <PageTitle
+          title="Visão geral"
+          hint="Primeiro o dinheiro: venda da loja, o que a padaria pagou na fábrica, e a perda. Reposição e validade vêm depois."
+        />
+      </div>
 
       <Card className="mb-6 hidden md:block">
         <DateRangeFilter
@@ -51,21 +69,42 @@ export function AdminDashboard({
         />
       </Card>
 
-      <MetricGrid>
-        <MetricCard label={`Vendeu ${label}`} value={formatBRL(data.revenue)} hint={`${data.salesCount} vendas nas lojas`} />
-        <MetricCard
-          label="Compra na fábrica"
-          value={formatBRL(data.clienteRevenue)}
-          hint={`${data.clienteQty} un. · custo ${formatBRL(data.clienteCost)} · pago na fábrica, não na loja`}
-        />
-        <MetricCard label={`Lucro ${label}`} value={formatBRL(data.margin)} />
-        <MetricCard
-          label={`Sobra ${label}`}
-          value={`${data.wasteQty} un.`}
-          hint={`${formatBRL(data.wasteRevenue)} deixou de vender`}
-          alert={data.wasteQty > 0}
-        />
-      </MetricGrid>
+      <div className="md:hidden">
+        <MetricGrid>
+          <MetricCard label={`Vendeu ${label}`} value={formatBRL(data.revenue)} hint={`${data.salesCount} vendas nas lojas`} />
+          <MetricCard label="Dinheiro no caixa" value={formatBRL(cashTotal)} hint="Soma das lojas neste recorte" />
+          <MetricCard
+            label="Festas abertas"
+            value={String(partyCount)}
+            hint={partyCount > 0 ? "Sinal recebido · resto em aberto" : "Nenhuma festa pendente"}
+            alert={partyCount > 0}
+          />
+          <MetricCard
+            label="Pedidos urgentes"
+            value={String(pendingCount)}
+            hint={pendingCount > 0 ? "Lojas esperando a fábrica" : "Fila limpa agora"}
+            alert={pendingCount > 0}
+          />
+        </MetricGrid>
+      </div>
+
+      <div className="hidden md:block">
+        <MetricGrid>
+          <MetricCard label={`Vendeu ${label}`} value={formatBRL(data.revenue)} hint={`${data.salesCount} vendas nas lojas`} />
+          <MetricCard
+            label="Compra na fábrica"
+            value={formatBRL(data.clienteRevenue)}
+            hint={`${data.clienteQty} un. · custo ${formatBRL(data.clienteCost)} · pago na fábrica, não na loja`}
+          />
+          <MetricCard label={`Lucro ${label}`} value={formatBRL(data.margin)} />
+          <MetricCard
+            label={`Sobra ${label}`}
+            value={`${data.wasteQty} un.`}
+            hint={`${formatBRL(data.wasteRevenue)} deixou de vender`}
+            alert={data.wasteQty > 0}
+          />
+        </MetricGrid>
+      </div>
 
       <div className="mt-4 hidden gap-4 md:grid sm:grid-cols-2 xl:grid-cols-3">
         <MetricCard
@@ -90,9 +129,16 @@ export function AdminDashboard({
 
       <PendingRequests canSend={false} />
 
-      <div className="mb-4 md:hidden">
+      <div className="mb-4 space-y-2 md:hidden">
+        <Link
+          href="/relatorios"
+          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-orange-600 px-4 text-base font-bold text-white hover:bg-orange-700"
+        >
+          <FileDown className="size-5" />
+          Ver gráficos e relatório completo
+        </Link>
         <Button type="button" variant="ghost" className="w-full" onClick={() => setShowCharts((open) => !open)}>
-          {showCharts ? "Esconder gráficos e lojas" : "Ver gráficos, lojas e recorte de datas"}
+          {showCharts ? "Esconder indicadores e reposição" : "Ver mais indicadores e reposição"}
         </Button>
       </div>
 
@@ -193,7 +239,7 @@ export function AdminDashboard({
       </div>
       </div>
 
-      <Card className="mb-8 mt-8">
+      <Card className={cn("mb-8 mt-8", !showCharts && "hidden md:block")}>
         <p className="text-lg font-extrabold text-stone-900">Relatórios para baixar</p>
         <p className="mt-1 text-stone-600">
           Fechamento do dia, vendas, perdas, envios e estoque. Só a administração imprime ou salva no Excel.
@@ -207,9 +253,11 @@ export function AdminDashboard({
         </Link>
       </Card>
 
-      <ExpiryList items={data.expiryAlerts} />
+      <div className={cn(!showCharts && "hidden md:block")}>
+        <ExpiryList items={data.expiryAlerts} />
+      </div>
 
-      <section className="mb-8">
+      <section className={cn("mb-8", !showCharts && "hidden md:block")}>
         <h2 className="mb-3 text-2xl font-extrabold text-stone-900">Reposição agora</h2>
         <p className="mb-4 text-lg text-stone-600">
           {data.factoryAlerts.length + data.storeAlerts.length > 0
@@ -231,6 +279,8 @@ export function AdminDashboard({
           />
         </div>
       </section>
+
+      <p className="mb-6 text-sm text-stone-500 md:hidden">No telefone, o certo é a tela grande.</p>
     </div>
   );
 }

@@ -513,6 +513,27 @@ async function main() {
   );
   await phone.locator('aside button[aria-label="Fechar menu"]').click();
 
+  await setSession(phone, "admin", "emp-matheus");
+  await phone.goto("http://localhost:3000/inicio", { waitUntil: "domcontentloaded" });
+  await waitShell(phone);
+  await waitMain(phone, 45000);
+  await shot(phone, "22-mobile-admin");
+  const adminPhone = await mainText(phone);
+  record(
+    "Mobile admin: urgência no topo",
+    /Festas em aberto|Pedidos feitos na mão/i.test(adminPhone) &&
+      /Pedidos urgentes|Festas abertas/i.test(adminPhone),
+    adminPhone.replace(/\s+/g, " ").slice(0, 160),
+  );
+  record(
+    "Mobile admin: link para relatório completo",
+    /Ver gráficos e relatório completo/i.test(adminPhone),
+  );
+  record(
+    "Mobile admin: gráficos longos fora do primeiro olhar",
+    !/Faturamento por loja/.test(adminPhone) || /Ver mais indicadores/i.test(adminPhone),
+  );
+
   await setSession(phone, "store_1", "emp-telma");
   await phone.goto("http://localhost:3000/vender", { waitUntil: "domcontentloaded" });
   await waitShell(phone);
