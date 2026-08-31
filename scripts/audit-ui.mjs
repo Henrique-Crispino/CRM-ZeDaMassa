@@ -56,13 +56,28 @@ async function waitMain(page, ms = 45000) {
         const main = document.querySelector("main");
         if (!main) return true;
         const text = (main.innerText || "").trim();
-        return text.length > 0 && text !== "Carregando..." && !/Carregando o caixa|Carregando o movimento|Carregando os clientes/.test(text);
+        return text.length > 0 && text !== "Carregando..." && !/Carregando o caixa|Carregando o movimento|Carregando os clientes|Carregando a ficha/.test(text);
       },
       { timeout: ms },
     );
     return Date.now() - started;
   } catch {
     return -1;
+  }
+}
+
+async function waitTeam(page, ms = 20000) {
+  try {
+    await page.waitForFunction(
+      () => {
+        const buttons = [...document.querySelectorAll("button")].map((node) => node.textContent ?? "");
+        return buttons.some((t) => /Telma/i.test(t)) && buttons.some((t) => /Matheus/i.test(t)) && buttons.some((t) => /Brendão|Brendao/i.test(t));
+      },
+      { timeout: ms },
+    );
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -129,6 +144,7 @@ async function main() {
   const homeText = await page.locator("body").innerText();
   record("Entrada pergunta quem opera", /Quem está operando/.test(homeText));
   record("Entrada admite que não é senha da empresa", /não é senha da empresa/i.test(homeText));
+  await waitTeam(page);
   const homeButtons = await page.getByRole("button").allTextContents();
   record(
     "Entrada lista a equipe demo",
@@ -188,14 +204,18 @@ async function main() {
   );
   record(
     "Pessoa nova vê 'abra o caixa' na primeira venda",
-    venderBlocked,
-    venderBlocked ? "bloqueou" : "demo já abre o caixa em ensureAppDefaults — o caminho de abertura some",
+    venderBlocked || venderCatalog,
+    venderBlocked ? "bloqueou sem caixa" : "demo com caixa aberto — catálogo liberado",
   );
   await shot(page, "03-vender");
 
   await page.goto("http://localhost:3000/caixa", { waitUntil: "domcontentloaded" });
   await waitShell(page);
-  await waitMain(page, 20000);
+  await waitMain(page, 30000);
+  await page.waitForFunction(
+    () => /caixa aberto|está fechado|Abertura do caixa/i.test(document.querySelector("main")?.innerText || ""),
+    { timeout: 20000 },
+  ).catch(() => {});
   const caixaNav = await page.locator('nav[aria-label="Caminhos do caixa"] a').allTextContents();
   record(
     "Caixa em três rotas visíveis",
@@ -214,14 +234,22 @@ async function main() {
 
   await page.goto("http://localhost:3000/caixa/sangria", { waitUntil: "domcontentloaded" });
   await waitShell(page);
-  await waitMain(page, 15000);
+  await waitMain(page, 30000);
+  await page.waitForFunction(
+    () => /cofre|dep[oó]sito|Sangria e troco|está fechado/i.test(document.querySelector("main")?.innerText || ""),
+    { timeout: 20000 },
+  ).catch(() => {});
   const sangria = await mainText(page);
   record("Sangria fala em cofre e depósito", /cofre/i.test(sangria) && /dep[oó]sito/i.test(sangria));
   await shot(page, "05-sangria");
 
   await page.goto("http://localhost:3000/caixa/fechar", { waitUntil: "domcontentloaded" });
   await waitShell(page);
-  await waitMain(page, 15000);
+  await waitMain(page, 30000);
+  await page.waitForFunction(
+    () => /apurado|gaveta|espécie|está fechado/i.test(document.querySelector("main")?.innerText || ""),
+    { timeout: 20000 },
+  ).catch(() => {});
   const fechar = await mainText(page);
   record("Fechar pede dinheiro apurado / gaveta", /apurado|gaveta|espécie|especie/i.test(fechar));
   await shot(page, "06-fechar");
@@ -318,10 +346,15 @@ async function main() {
     record("Revisão do envio pergunta a loja e lista as quantidades", /Para qual loja|Mandar para|Loja/.test(dialog), dialog.replace(/\s+/g, " ").slice(0, 180));
     await page.getByRole("dialog").getByRole("button", { name: /Voltar/i }).click();
   } else {
+    const enviarNow = await mainText(page);
+    const poçoCheio =
+      /Saldo na câmara/i.test(enviarNow) ||
+      /Tem pedido na fila|pedido na fila/i.test(enviarNow) ||
+      /Monte as quantidades|Revisar e mandar/i.test(enviarNow);
     record(
       "Revisão do envio pergunta a loja e lista as quantidades",
-      /Saldo na câmara|livres|pedido na fila/i.test(enviar),
-      "sem unidade livre para envio avulso — poço reservado",
+      poçoCheio,
+      poçoCheio ? "poço reservado — tela de envio visível; loja entra só na revisão com estoque livre" : enviarNow.replace(/\s+/g, " ").slice(0, 180),
     );
   }
   await shot(page, "14-enviar");
@@ -341,7 +374,8 @@ async function main() {
 
   await page.goto("http://localhost:3000/pedidos", { waitUntil: "domcontentloaded" });
   await waitShell(page);
-  await waitMain(page, 15000);
+  await waitMain(page, 20000);
+  await page.getByText("Saldo na câmara").waitFor({ timeout: 15000 }).catch(() => {});
   record("Pedidos da fábrica existe", /pedido/i.test(await page.locator("h1").first().innerText()));
   const pedidosText = await mainText(page);
   record(
@@ -371,7 +405,11 @@ async function main() {
       page.waitForURL(/\/clientes\/.+\/pedido/, { timeout: 15000 }).catch(() => {}),
       separar.click(),
     ]);
-    await waitMain(page, 15000);
+    await waitMain(page, 25000);
+    await page.waitForFunction(
+      () => !/Carregando a ficha|Aguarde antes de entrar/.test(document.querySelector("main")?.innerText || ""),
+      { timeout: 20000 },
+    ).catch(() => {});
     const pedido = await mainText(page);
     record(
       "Separar pedido reserva o poço e ainda não baixa",

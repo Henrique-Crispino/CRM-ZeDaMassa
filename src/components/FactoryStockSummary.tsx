@@ -8,10 +8,29 @@ import { useReady } from "@/lib/use-ready";
 
 export function FactoryStockSummary({ pageSize = 6 }: { pageSize?: number }) {
   const ready = useReady();
-  const rows = useLiveQuery(() => (ready ? factoryStockPosition() : []), [ready]);
+  const rows = useLiveQuery(() => (ready ? factoryStockPosition() : undefined), [ready]);
   const page = usePager(rows ?? [], pageSize);
 
-  if (!rows?.length) return null;
+  if (rows === undefined) {
+    return (
+      <Card className="mb-4">
+        <p className="font-extrabold text-stone-900">Saldo na câmara</p>
+        <p className="mt-1 text-sm text-stone-600">Carregando posição do estoque...</p>
+      </Card>
+    );
+  }
+
+  if (!rows.length) {
+    return (
+      <Card className="mb-4">
+        <p className="font-extrabold text-stone-900">Saldo na câmara</p>
+        <p className="mt-1 text-sm text-stone-600">
+          Físico · válido · reservado na fila · livre para envio avulso · em trânsito para loja
+        </p>
+        <p className="mt-2 font-semibold text-stone-500">Sem produto na câmara agora.</p>
+      </Card>
+    );
+  }
 
   return (
     <Card className="mb-4">
