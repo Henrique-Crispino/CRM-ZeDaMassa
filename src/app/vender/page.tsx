@@ -19,7 +19,7 @@ import {
   SuccessBox,
   cn,
 } from "@/components/ui";
-import { isSoldAtRegister, saleKindOptions, categoryLabel } from "@/lib/categories";
+import { isPartyNiche, isSoldAtRegister, saleKindOptions, categoryLabel } from "@/lib/categories";
 import { currentCashSession } from "@/lib/cash";
 import { cashPeriodLabel } from "@/lib/cash";
 import { getPanel } from "@/lib/locations";
@@ -77,7 +77,11 @@ export default function VenderPage() {
 
   const sellable = useMemo(() => {
     return (stock ?? []).filter(
-      (item) => productIsLive(item.product) && item.niche.active && isSoldAtRegister(item.product.category),
+      (item) =>
+        productIsLive(item.product) &&
+        item.niche.active &&
+        isSoldAtRegister(item.product.category) &&
+        !isPartyNiche(item.niche),
     );
   }, [stock]);
 

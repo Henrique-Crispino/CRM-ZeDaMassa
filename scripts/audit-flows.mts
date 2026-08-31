@@ -380,6 +380,56 @@ async function main() {
     "não abre",
   );
 
+  if (matheus) {
+    enterOperator(matheus);
+    switchOperatorPanel(matheus, "store_1");
+    await expectFail(
+      "Matheus não abre caixa no nome da Telma",
+      () => openCashSession({ locationId: "store_1", period: "tarde", employeeId: "emp-telma", openingAmount: 150 }),
+      "não opera",
+    );
+    await expectFail(
+      "Matheus não vende no Centro",
+      () => checkout({ locationId: "store_1", channel: "caixa", payment: "dinheiro", items: [{ nicheId: "cox-mini", qty: 1 }] }),
+      "não opera",
+    );
+    if (session?.id) {
+      await expectFail(
+        "Matheus não sangra",
+        () =>
+          registerCashMovement({
+            sessionId: session.id,
+            type: "sangria",
+            amount: 10,
+            reason: "teste dono",
+            destination: "cofre",
+          }),
+        "não opera",
+      );
+      await expectFail(
+        "Matheus não fecha caixa",
+        () => closeCashSession({ sessionId: session.id, closingAmount: 150 }),
+        "não opera",
+      );
+      await expectFail(
+        "Matheus não retira produto+dinheiro",
+        () =>
+          withdrawProductAndCash({
+            locationId: "store_1",
+            nicheId: "cox-mini",
+            qty: 1,
+            amount: 5,
+            reason: "teste dono",
+            destination: "cofre",
+          }),
+        "não opera",
+      );
+    }
+    switchOperatorPanel(matheus, "admin");
+    await expectOk("Matheus continua na administração", async () => getLocationId() === "admin");
+  }
+  if (yokota) enterOperator(yokota);
+
   await expectFail(
     "Venda de farinha no caixa é recusada",
     () =>
@@ -519,8 +569,13 @@ async function main() {
     );
   }
   await db.niches.update("cox-festa", { sellPrice: 9 });
-  const pricedId = (await expectOk("Venda depois de subir o preço do tipo", () =>
-    checkout({ locationId: "store_1", channel: "caixa", payment: "pix", items: [{ nicheId: "cox-festa", qty: 1 }] }),
+  await expectFail(
+    "Coxinha Festa não vende no balcão",
+    () => checkout({ locationId: "store_1", channel: "caixa", payment: "pix", items: [{ nicheId: "cox-festa", qty: 1 }] }),
+    "festa",
+  );
+  const pricedId = (await expectOk("Encomenda cobra o preço do lote, não o tipo novo", () =>
+    checkout({ locationId: "store_1", channel: "encomenda", payment: "pix", items: [{ nicheId: "cox-festa", qty: 1 }] }),
   )) as string | null;
   if (pricedId) {
     const pricedItems = await db.saleItems.where("saleId").equals(pricedId).toArray();
@@ -1612,11 +1667,12 @@ async function main() {
   record(
     "Sinal não mexe estoque e não entra no faturamento do turno",
     Boolean(signalSale) &&
+      signalSale.channel === "encomenda" &&
       storeAfterSignal === storeAfterPartyAsk &&
       factoryAfterSignal === factoryAfterPartyAsk &&
       Math.abs((ledgerAfterSignal?.byPayment.pix ?? 0) - (ledgerBeforeSignal?.byPayment.pix ?? 0) - 200) < 0.01 &&
       Math.abs((ledgerAfterSignal?.salesTotal ?? 0) - (ledgerBeforeSignal?.salesTotal ?? 0)) < 0.01,
-    `pix +${((ledgerAfterSignal?.byPayment.pix ?? 0) - (ledgerBeforeSignal?.byPayment.pix ?? 0)).toFixed(2)} fatura ${ledgerAfterSignal?.salesTotal}`,
+    `pix +${((ledgerAfterSignal?.byPayment.pix ?? 0) - (ledgerBeforeSignal?.byPayment.pix ?? 0)).toFixed(2)} fatura ${ledgerAfterSignal?.salesTotal} canal=${signalSale?.channel}`,
   );
   const openAfterSignal = partyId ? (await listOpenParties()).find((row) => row.id === partyId) : undefined;
   record(
@@ -1680,12 +1736,33 @@ async function main() {
       Boolean(delivered?.deliveredAt) &&
         storeBeforeDeliver - storeAfterDeliver === 40 &&
         remainder?.total === 400 &&
+        remainder?.channel === "encomenda" &&
         remainder?.kind !== "sinal" &&
         Math.abs((ledgerAfterDeliver?.byPayment.pix ?? 0) - (ledgerBeforeDeliver?.byPayment.pix ?? 0) - 200) < 0.01 &&
         Math.abs((ledgerAfterDeliver?.salesTotal ?? 0) - (ledgerBeforeDeliver?.salesTotal ?? 0) - 400) < 0.01,
-      `baixou ${storeBeforeDeliver - storeAfterDeliver} cupom ${remainder?.total} fatura ${ledgerAfterDeliver?.salesTotal}`,
+      `baixou ${storeBeforeDeliver - storeAfterDeliver} cupom ${remainder?.total} fatura ${ledgerAfterDeliver?.salesTotal} canal=${remainder?.channel}`,
     );
     record("Festa entregue some da lista do admin", !openAfterDeliver, `aindaAberta=${openAfterDeliver}`);
+    await expectFail(
+      "Dois cliques em entregar não geram outro cupom",
+      () => deliverEncomenda({ requestId: partyId, payment: "pix" }),
+      "entregue",
+    );
+    if (delivered?.remainderSaleId) {
+      await expectOk("Estorno do resto reabre a festa", () =>
+        voidSale({ saleId: delivered.remainderSaleId!, reason: "desistencia" }),
+      );
+      const reopened = await db.requests.get(partyId);
+      const openAgain = (await listOpenParties()).some((row) => row.id === partyId);
+      record(
+        "Estornar resto limpa a entrega",
+        Boolean(reopened && !reopened.deliveredAt && !reopened.remainderSaleId && openAgain),
+        `deliveredAt=${reopened?.deliveredAt} remainder=${reopened?.remainderSaleId} lista=${openAgain}`,
+      );
+      await expectOk("Festa reentregável após estorno", () =>
+        deliverEncomenda({ requestId: partyId, payment: "pix" }),
+      );
+    }
   }
 
   const madePast = addDays(today, -3);

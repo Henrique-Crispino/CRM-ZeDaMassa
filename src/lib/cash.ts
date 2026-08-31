@@ -1,4 +1,4 @@
-import { stampActor, assertWitness } from "./actor";
+import { assertOperatorCanCash, assertWitness } from "./actor";
 import { getDb } from "./db";
 import { isStore } from "./locations";
 import { newId, todayDate } from "./money";
@@ -101,7 +101,7 @@ export async function openCashSession(input: {
   openingAmount: number;
 }) {
   if (!isStore(input.locationId)) throw new CashError("O caixa é aberto na loja.");
-  const actor = await stampActor(CashError);
+  const actor = await assertOperatorCanCash(CashError);
   const db = getDb();
   const employee = await db.employees.get(input.employeeId);
   if (!employee || !employee.active) throw new CashError("Escolha o funcionário responsável.");
@@ -148,7 +148,7 @@ export async function registerCashMovement(input: {
   reason: string;
   destination?: CashDestination;
 }) {
-  const actor = await stampActor(CashError);
+  const actor = await assertOperatorCanCash(CashError);
   const db = getDb();
   const amount = money2(input.amount);
   if (amount <= 0) throw new CashError("Informe um valor maior que zero.");
@@ -204,7 +204,7 @@ export async function closeCashSession(input: {
   witnessPin?: string;
   note?: string;
 }) {
-  const actor = await stampActor(CashError);
+  const actor = await assertOperatorCanCash(CashError);
   const db = getDb();
   const session = await db.cashSessions.get(input.sessionId);
   if (!session || session.closedAt) throw new CashError("Esse caixa já foi fechado.");

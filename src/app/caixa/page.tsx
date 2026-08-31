@@ -123,10 +123,23 @@ export default function CaixaTurnoPage() {
             />
             <CashMetric label="Total do turno" hint="Dinheiro, Pix e cartão das vendas. Sinal entra nas formas, não neste total." value={formatBRL(ledger.salesTotal)} />
           </div>
-          {locationId ? <WithdrawCard locationId={locationId} expectedCash={ledger.expectedCash} /> : null}
-          <div className="mb-6">
-            <SessionSalesList sessionId={session.id} canVoid />
-          </div>
+          {locationId ? (
+            isAdminPanel ? (
+              <Card className="mb-6 bg-orange-50 ring-orange-200">
+                <p className="text-lg font-extrabold text-stone-900">Turno aberto na loja</p>
+                <p className="text-stone-600">
+                  Sangria, fechamento, estorno e retirada são na loja, com quem opera a gaveta. Na administração só reabre se o apurado saiu errado.
+                </p>
+              </Card>
+            ) : (
+              <WithdrawCard locationId={locationId} expectedCash={ledger.expectedCash} />
+            )
+          ) : null}
+          {!isAdminPanel ? (
+            <div className="mb-6">
+              <SessionSalesList sessionId={session.id} canVoid />
+            </div>
+          ) : null}
           <ErrorBox message={error} />
           <SuccessBox message={ok} />
         </>

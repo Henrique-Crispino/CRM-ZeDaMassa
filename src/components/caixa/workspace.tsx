@@ -144,7 +144,7 @@ export function CashWorkspace({ children }: { children: ReactNode }) {
       ) : null}
 
       <nav className="mb-6 grid gap-2 sm:grid-cols-3" aria-label="Caminhos do caixa">
-        {CASH_PATHS.map((item) => {
+        {(isAdminPanel && session ? CASH_PATHS.filter((item) => item.href === "/caixa") : CASH_PATHS).map((item) => {
           const active = pathname === item.href;
           return (
             <Link

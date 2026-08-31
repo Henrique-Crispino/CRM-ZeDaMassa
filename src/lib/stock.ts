@@ -1,5 +1,5 @@
-import { stampActor, assertWitness } from "./actor";
-import { isClosedPackage, isPurchased, isSoldAtRegister, notForSaleMessage } from "./categories";
+import { assertOperatorCanCash, stampActor, assertWitness } from "./actor";
+import { isClosedPackage, isPartyNiche, isPurchased, isSoldAtRegister, notForSaleMessage, partyNicheBlockedMessage } from "./categories";
 import { ComboError, loadComboForCheckout, splitComboPrice } from "./combos";
 import { currentCashSession, money2, sessionLedger } from "./cash";
 import { getDb } from "./db";
@@ -552,6 +552,7 @@ export async function checkout(input: {
   saleTotal?: number;
   requestId?: string;
   kind?: SaleKind;
+  markPartyDelivered?: boolean;
 }) {
   if (!isStore(input.locationId)) {
     throw new StockError("A venda é feita na loja, não na fábrica.");
@@ -565,7 +566,7 @@ export async function checkout(input: {
 
   await assertLiveNiches(items.map((item) => item.nicheId));
 
-  const actor = await stampActor(StockError);
+  const actor = await assertOperatorCanCash(StockError);
   const session = await currentCashSession(input.locationId);
   if (!session) {
     throw new StockError("Abra o caixa deste período antes de vender.");
@@ -576,6 +577,11 @@ export async function checkout(input: {
   const at = new Date().toISOString();
   const niches = await db.niches.bulkGet(items.map((item) => item.nicheId));
   const products = await db.products.bulkGet(niches.map((niche) => niche?.productId ?? ""));
+  for (const niche of niches) {
+    if (niche && isPartyNiche(niche) && input.channel !== "encomenda") {
+      throw new StockError(partyNicheBlockedMessage(niche.name));
+    }
+  }
   for (const product of products) {
     if (product && !isSoldAtRegister(product.category)) {
       throw new StockError(notForSaleMessage(product.name, product.category));
@@ -595,6 +601,7 @@ export async function checkout(input: {
       db.combos,
       db.comboItems,
       db.cashSessions,
+      db.requests,
     ],
     async () => {
       const live = await db.cashSessions.get(session.id);
@@ -752,6 +759,23 @@ export async function checkout(input: {
         requestId: input.requestId,
         actorId: actor.actorId,
       });
+
+      if (input.markPartyDelivered) {
+        if (!input.requestId) {
+          throw new StockError("Falta o pedido da festa para marcar a entrega.");
+        }
+        const party = await db.requests.get(input.requestId);
+        if (!party || party.deliveredAt) {
+          throw new StockError("Esta festa já foi entregue.");
+        }
+        if (party.remainderSaleId) {
+          throw new StockError("Esta festa já foi entregue.");
+        }
+        await db.requests.update(input.requestId, {
+          remainderSaleId: saleId,
+          deliveredAt: at,
+        });
+      }
     },
   );
 
@@ -763,7 +787,7 @@ export async function voidSale(input: { saleId: string; reason: SaleVoidReason }
     throw new StockError("Escolha o motivo do estorno: quantidade, produto errado ou desistência.");
   }
 
-  const actor = await stampActor(StockError);
+  const actor = await assertOperatorCanCash(StockError);
   const db = getDb();
   const sale = await db.sales.get(input.saleId);
   if (!sale) throw new StockError("Venda não encontrada.");
@@ -821,6 +845,12 @@ export async function voidSale(input: { saleId: string; reason: SaleVoidReason }
           await db.requests.update(request.id, { signalAmount: undefined, signalSaleId: undefined });
         }
       }
+      if (sale.requestId && sale.kind !== "sinal") {
+        const request = await db.requests.get(sale.requestId);
+        if (request && request.remainderSaleId === sale.id && request.deliveredAt) {
+          await db.requests.update(request.id, { remainderSaleId: undefined, deliveredAt: undefined });
+        }
+      }
     },
   );
 }
@@ -847,7 +877,7 @@ export async function withdrawProductAndCash(input: {
   }
 
   await assertLiveNiches([input.nicheId]);
-  const actor = await stampActor(StockError);
+  const actor = await assertOperatorCanCash(StockError);
   const session = await currentCashSession(input.locationId);
   if (!session) throw new StockError("Abra o caixa deste período antes de retirar.");
 

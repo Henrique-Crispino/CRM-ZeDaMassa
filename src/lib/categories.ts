@@ -26,6 +26,17 @@ export function isSoldAtRegister(category: Category) {
   return category === "salgado" || category === "bebida";
 }
 
+export function isPartyNiche(niche: { id?: string; name?: string | null }) {
+  const name = niche.name?.trim().toLowerCase() ?? "";
+  if (name === "festa") return true;
+  const id = niche.id?.trim() ?? "";
+  return id.endsWith("-festa");
+}
+
+export function partyNicheBlockedMessage(label: string) {
+  return `${label} é de festa. Entregue em Pedir — não vende no balcão.`;
+}
+
 export function isSoldAtFactory(category: Category) {
   return category === "salgado";
 }

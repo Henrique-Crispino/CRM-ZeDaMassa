@@ -1,4 +1,5 @@
 import { getDb } from "./db";
+import { personCanCash } from "./people";
 import { getActorId } from "./session";
 
 export class ActorError extends Error {}
@@ -13,6 +14,18 @@ export function requireActorId(explicit?: string | null) {
   const id = peekActorId(explicit);
   if (!id) throw new ActorError("Falta quem está operando. Volte à porta.");
   return id;
+}
+
+export async function assertOperatorCanCash(ErrorClass: new (message: string) => Error, explicit?: string | null) {
+  const actorId = requireActorId(explicit);
+  const person = await getDb().employees.get(actorId);
+  if (!person?.active) {
+    throw new ErrorClass("Quem opera não está mais na Equipe.");
+  }
+  if (!personCanCash(person)) {
+    throw new ErrorClass("Esta ficha não opera o caixa. Peça para quem abre a gaveta ou vá para a loja com quem tem caixa.");
+  }
+  return { actorId: person.id, actorName: person.name };
 }
 
 export async function stampActor(ErrorClass: new (message: string) => Error, explicit?: string | null) {

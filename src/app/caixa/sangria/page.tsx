@@ -3,14 +3,14 @@
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/pick-flow";
 import { CashClosed, CashLoading, OpenSessionCard, useCashWorkspace } from "@/components/caixa/workspace";
-import { Button, Card, ErrorBox, Field, Input, SuccessBox } from "@/components/ui";
+import { Button, Card, Empty, ErrorBox, Field, Input, SuccessBox } from "@/components/ui";
 import { CashError, registerCashMovement } from "@/lib/cash";
 import { formatBRL, formatTime, parseMoney } from "@/lib/money";
 import type { CashDestination, CashMovementKind } from "@/lib/types";
 import { CASH_DESTINATIONS, cashDestinationLabel } from "@/lib/types";
 
 export default function CaixaSangriaPage() {
-  const { session, ledger } = useCashWorkspace();
+  const { isAdminPanel, session, ledger } = useCashWorkspace();
   const [moveType, setMoveType] = useState<CashMovementKind>("sangria");
   const [moveAmount, setMoveAmount] = useState("");
   const [moveReason, setMoveReason] = useState("");
@@ -22,6 +22,15 @@ export default function CaixaSangriaPage() {
 
   if (session === undefined) {
     return <CashLoading />;
+  }
+
+  if (isAdminPanel) {
+    return (
+      <Empty
+        title="Na administração só reabre"
+        hint="Sangria e suprimento são na loja, com quem opera a gaveta."
+      />
+    );
   }
 
   if (session === null) {

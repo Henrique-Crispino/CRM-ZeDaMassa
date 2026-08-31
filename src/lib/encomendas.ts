@@ -1,4 +1,4 @@
-import { stampActor } from "./actor";
+import { assertOperatorCanCash } from "./actor";
 import { currentCashSession, money2 } from "./cash";
 import { getDb } from "./db";
 import { getLocation, isStore } from "./locations";
@@ -76,7 +76,7 @@ export async function takeEncomendaSignal(input: {
   const session = await currentCashSession(request.fromLocationId);
   if (!session) throw new EncomendaError("Abra o caixa deste período antes de receber o sinal.");
 
-  const actor = await stampActor(EncomendaError);
+  const actor = await assertOperatorCanCash(EncomendaError);
   const payments = paymentsOf(amount, input);
   const saleId = newId();
   const at = new Date().toISOString();
@@ -92,7 +92,7 @@ export async function takeEncomendaSignal(input: {
       await db.sales.add({
         id: saleId,
         locationId: request.fromLocationId,
-        channel: "caixa",
+        channel: "encomenda",
         payment: payments[0]?.method ?? "pix",
         payments: payments.length > 1 ? payments : undefined,
         total: amount,
@@ -151,22 +151,18 @@ export async function deliverEncomenda(input: {
   try {
     saleId = await checkout({
       locationId: request.fromLocationId,
-      channel: "caixa",
+      channel: "encomenda",
       payment: input.payment,
       payments: input.payments,
       items: payload,
       saleTotal: total,
       signalCredit: credit,
       requestId: request.id,
+      markPartyDelivered: true,
     });
   } catch (err) {
     asStock(err);
   }
-
-  await db.requests.update(request.id, {
-    remainderSaleId: saleId,
-    deliveredAt: new Date().toISOString(),
-  });
   return saleId;
 }
 

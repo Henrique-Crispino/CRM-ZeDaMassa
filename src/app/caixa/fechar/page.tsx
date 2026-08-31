@@ -5,7 +5,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { ConfirmDialog } from "@/components/pick-flow";
 import { CashClosed, CashLoading, OpenSessionCard, useCashWorkspace } from "@/components/caixa/workspace";
 import { WitnessFields, witnessReady } from "@/components/WitnessFields";
-import { Button, Card, ErrorBox, Field, Input, SuccessBox } from "@/components/ui";
+import { Button, Card, Empty, ErrorBox, Field, Input, SuccessBox } from "@/components/ui";
 import { listWitnesses } from "@/lib/actor";
 import { CashError, cashDifferenceLabel, closeCashSession, needsCashRecount } from "@/lib/cash";
 import { formatBRL, parseMoney } from "@/lib/money";
@@ -15,7 +15,7 @@ import { useReady } from "@/lib/use-ready";
 export default function CaixaFecharPage() {
   const ready = useReady();
   const actorId = ready ? getActorId() : null;
-  const { session, ledger } = useCashWorkspace();
+  const { isAdminPanel, session, ledger } = useCashWorkspace();
   const witnesses = useLiveQuery(() => (ready ? listWitnesses(actorId) : undefined), [ready, actorId]);
   const [closing, setClosing] = useState("");
   const [secondCount, setSecondCount] = useState("");
@@ -29,6 +29,15 @@ export default function CaixaFecharPage() {
 
   if (session === undefined) {
     return <CashLoading />;
+  }
+
+  if (isAdminPanel) {
+    return (
+      <Empty
+        title="Na administração só reabre"
+        hint="Fechar o caixa é na loja, com quem opera a gaveta."
+      />
+    );
   }
 
   if (session === null) {

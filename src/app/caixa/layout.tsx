@@ -9,6 +9,7 @@ export default function CaixaLayout({ children }: { children: ReactNode }) {
   return (
     <AccessGate
       allow={["store", "admin"]}
+      requireCash="store-only"
       title="O caixa é da loja"
       hint="Cada loja abre e fecha o próprio caixa. A administração reabre o do dia se o apurado saiu errado."
     >

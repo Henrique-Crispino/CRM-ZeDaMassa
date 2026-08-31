@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { getDb } from "@/lib/db";
 import { getPanel, type PanelType } from "@/lib/locations";
-import { personCanUsePanel } from "@/lib/people";
+import { personCanCash, personCanUsePanel } from "@/lib/people";
 import { getActorId, getLocationId } from "@/lib/session";
 import { useReady } from "@/lib/use-ready";
 import { AppShell } from "./AppShell";
@@ -12,11 +12,13 @@ import { Empty } from "./ui";
 
 export function AccessGate({
   allow,
+  requireCash,
   title,
   hint,
   children,
 }: {
   allow: PanelType[];
+  requireCash?: boolean | "store-only";
   title: string;
   hint: string;
   children: ReactNode;
@@ -38,6 +40,20 @@ export function AccessGate({
         <Empty
           title={`Isto não é de ${person.name}`}
           hint="Sai e entra de novo com quem opera este lugar. A Telma não abre a administração."
+        />
+      </AppShell>
+    );
+  }
+  if (
+    person &&
+    ((requireCash === true && !personCanCash(person)) ||
+      (requireCash === "store-only" && panel?.type === "store" && !personCanCash(person)))
+  ) {
+    return (
+      <AppShell>
+        <Empty
+          title={`${person.name} não opera o caixa`}
+          hint="Esta ficha não abre gaveta. Quem opera vende na loja com quem tem caixa — ou reabra o turno na administração."
         />
       </AppShell>
     );
