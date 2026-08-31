@@ -229,7 +229,7 @@ async function main() {
   await page.goto("http://localhost:3000/pedir", { waitUntil: "domcontentloaded" });
   await waitShell(page);
   await waitMain(page, 15000);
-  record("Pedir mais é pedido à fábrica, não envio", /fábrica|fabrica|pedir/i.test((await mainText(page)).toLowerCase()));
+  record("Pedir da loja: reposição ou festa", /reposi[cç][aã]o|festa/i.test((await mainText(page)).toLowerCase()));
   await shot(page, "07-pedir");
 
   await page.goto("http://localhost:3000/receber", { waitUntil: "domcontentloaded" });

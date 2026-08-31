@@ -97,6 +97,8 @@ export async function takeEncomendaSignal(input: {
   } catch (err) {
     asStock(err);
   }
+  const { notifyFactoryOfEncomenda } = await import("./requests");
+  await notifyFactoryOfEncomenda(input.requestId);
   return saleId;
 }
 

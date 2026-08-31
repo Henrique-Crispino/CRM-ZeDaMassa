@@ -35,8 +35,8 @@ export function OpenParties({ storeId }: { storeId?: string }) {
           </p>
           <p className="mt-1 text-sm font-semibold text-stone-500">
             {forStore
-              ? "O resto se recebe em Pedir, no dia, com o caixa aberto."
-              : "O resto se recebe na loja, em Pedir, no dia."}
+              ? "Receba o sinal em Pedir — aí a fábrica manda. O resto, no dia, com o caixa aberto."
+              : "Sinal na loja, depois a fábrica manda. O resto se recebe na loja, em Pedir, no dia."}
           </p>
         </div>
         <Link

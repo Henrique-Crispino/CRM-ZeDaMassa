@@ -11,7 +11,14 @@ import { formatDate, formatTime, newId, todayDate } from "./money";
 import { catalogItems, sellableQty, stockByLocation } from "./queries";
 import { sendToStore, StockError } from "./stock";
 import type { AppNotification, NotificationAudience, PaymentMethod, RequestStatus, SalePayment, StockRequest, StoreRequestKind } from "./types";
-import { closedCatalogMessage, isOpenRequest, productIsLive, requestStatusLabel, storeRequestKind } from "./types";
+import {
+  closedCatalogMessage,
+  encomendaFactoryReady,
+  isOpenRequest,
+  productIsLive,
+  requestStatusLabel,
+  storeRequestKind,
+} from "./types";
 
 export class RequestError extends Error {}
 
@@ -52,6 +59,35 @@ async function notify(input: {
       at,
     })),
   );
+}
+
+export async function notifyFactoryOfEncomenda(requestId: string) {
+  const db = getDb();
+  const request = await db.requests.get(requestId);
+  if (!request || storeRequestKind(request) !== "encomenda" || !request.signalSaleId) return;
+
+  const items = await db.requestItems.where("requestId").equals(requestId).toArray();
+  const catalog = await catalogItems(false);
+  const storeName = getLocation(request.fromLocationId)?.name ?? "loja";
+  const neededBy = request.neededBy ?? "";
+  const labels = items
+    .map((item) => {
+      const found = catalog.find((row) => row.niche.id === item.nicheId);
+      return found ? `${item.qty} ${found.label}` : `${item.qty}`;
+    })
+    .slice(0, 4)
+    .join(", ");
+  const units = items.reduce((sum, item) => sum + item.qty, 0);
+  const weekday = neededBy
+    ? new Date(`${neededBy}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long" })
+    : "";
+
+  await notify({
+    type: "store_request",
+    title: `${storeName} encomendou para ${weekday}`,
+    body: `${labels} · ${formatDate(neededBy)} · ${units} un. · sinal recebido`,
+    refId: requestId,
+  });
 }
 
 export function coverageStatus(items: Pick<RequestItemView, "remaining" | "availableQty" | "sentQty">[]): RequestStatus {
@@ -182,22 +218,22 @@ export async function createStoreRequest(input: {
         saleId: signalWrite.saleId,
       });
     }
-    const weekday =
-      kind === "encomenda"
-        ? new Date(`${neededBy}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long" })
-        : "";
-    await notify({
-      type: "store_request",
-      title:
-        kind === "encomenda"
-          ? `${storeName} encomendou para ${weekday}`
-          : `${storeName} pediu produto`,
-      body:
-        kind === "encomenda"
-          ? `${labels} · ${formatDate(neededBy)} · ${units} un.`
-          : labels,
-      refId: requestId,
-    });
+    if (kind === "reposicao") {
+      await notify({
+        type: "store_request",
+        title: `${storeName} pediu produto`,
+        body: labels,
+        refId: requestId,
+      });
+    } else if (signalWrite) {
+      const weekday = new Date(`${neededBy}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long" });
+      await notify({
+        type: "store_request",
+        title: `${storeName} encomendou para ${weekday}`,
+        body: `${labels} · ${formatDate(neededBy)} · ${units} un. · sinal recebido`,
+        refId: requestId,
+      });
+    }
   });
 
   return requestId;
@@ -305,7 +341,7 @@ export async function loadFactoryWell() {
   }));
 
   const open = [...storeClaims, ...customerClaims]
-    .filter((claim) => isOpenRequest(claim.status))
+    .filter((claim) => isOpenRequest(claim.status) && encomendaFactoryReady(claim))
     .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
 
   for (const claim of open) {
@@ -382,10 +418,14 @@ function asRequestView(claim: WellClaim): RequestView {
   };
 }
 
-export async function listRequests(status?: RequestStatus | "open"): Promise<RequestView[]> {
+export async function listRequests(
+  status?: RequestStatus | "open",
+  opts?: { factoryQueue?: boolean },
+): Promise<RequestView[]> {
   const { storeClaims } = await loadFactoryWell();
   return storeClaims
     .filter((claim) => {
+      if (opts?.factoryQueue && !encomendaFactoryReady(claim)) return false;
       if (!status) return true;
       if (status === "open" || status === "pending") return isOpenRequest(claim.status);
       return claim.status === status;
@@ -427,8 +467,11 @@ export async function fulfillRequest(
         if (!request || !isOpenRequest(request.status)) {
           throw new RequestError("Esse pedido já foi resolvido.");
         }
+        if (storeRequestKind(request) === "encomenda" && !request.signalSaleId) {
+          throw new RequestError("A loja ainda não recebeu o sinal desta festa.");
+        }
 
-        const views = await listRequests();
+        const views = await listRequests(undefined, { factoryQueue: true });
         const view = views.find((row) => row.id === requestId);
         if (!view) throw new RequestError("Esse pedido já foi resolvido.");
 

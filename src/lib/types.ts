@@ -484,7 +484,21 @@ export function storeRequestKind(row?: Pick<StockRequest, "kind"> | null): Store
 }
 
 export function storeRequestKindLabel(kind?: StoreRequestKind | null) {
-  return kind === "encomenda" ? "Encomenda" : "Reposição";
+  return kind === "encomenda" ? "Festa" : "Reposição";
+}
+
+/** Festa da loja só entra na fila da fábrica depois do sinal no caixa. */
+export function encomendaFactoryReady(row?: Pick<StockRequest, "kind" | "signalSaleId"> | null) {
+  if (storeRequestKind(row) !== "encomenda") return true;
+  return Boolean(row?.signalSaleId);
+}
+
+export function isEncomendaAwaitingSignal(
+  row?: Pick<StockRequest, "kind" | "signalSaleId" | "deliveredAt" | "status"> | null,
+) {
+  if (storeRequestKind(row) !== "encomenda") return false;
+  if (row?.deliveredAt || row?.status === "cancelled") return false;
+  return !row?.signalSaleId;
 }
 
 export type StockRequest = {

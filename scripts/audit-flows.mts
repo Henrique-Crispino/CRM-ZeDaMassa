@@ -1638,14 +1638,21 @@ async function main() {
   const partyRow = partyId ? await db.requests.get(partyId) : undefined;
   const partyNotes = (await db.notifications.toArray()).filter((row) => row.refId === partyId);
   record(
-    "Encomenda da loja avisa a fábrica com a data e não mexe estoque",
+    "Festa sem sinal ainda não avisa a fábrica",
     partyRow?.kind === "encomenda" &&
       partyRow.neededBy === partyDay &&
       factoryAfterPartyAsk === factoryBeforeParty &&
       storeAfterPartyAsk === storeBeforeParty &&
-      partyNotes.some((row) => row.audience === "factory" && row.title.toLowerCase().includes("encomendou")),
+      !partyNotes.some((row) => row.audience === "factory" && row.title.toLowerCase().includes("encomendou")),
     `neededBy=${partyRow?.neededBy} avisos=${partyNotes.length}`,
   );
+  if (partyId) {
+    await expectFail(
+      "Fábrica não manda festa sem sinal",
+      () => fulfillRequest(partyId, { "cox-mini": 40 }, "Rita"),
+      "sinal",
+    );
+  }
 
   const cashBeforeSignal = await currentCashSession("store_1");
   if (!cashBeforeSignal) {
@@ -1673,6 +1680,14 @@ async function main() {
       Math.abs((ledgerAfterSignal?.byPayment.pix ?? 0) - (ledgerBeforeSignal?.byPayment.pix ?? 0) - 200) < 0.01 &&
       Math.abs((ledgerAfterSignal?.salesTotal ?? 0) - (ledgerBeforeSignal?.salesTotal ?? 0)) < 0.01,
     `pix +${((ledgerAfterSignal?.byPayment.pix ?? 0) - (ledgerBeforeSignal?.byPayment.pix ?? 0)).toFixed(2)} fatura ${ledgerAfterSignal?.salesTotal} canal=${signalSale?.channel}`,
+  );
+  const partyNotesAfterSignal = partyId
+    ? (await db.notifications.toArray()).filter((row) => row.refId === partyId)
+    : [];
+  record(
+    "Sinal avisa a fábrica com a data da festa",
+    partyNotesAfterSignal.some((row) => row.audience === "factory" && row.title.toLowerCase().includes("encomendou")),
+    `avisos=${partyNotesAfterSignal.length}`,
   );
   const openAfterSignal = partyId ? (await listOpenParties()).find((row) => row.id === partyId) : undefined;
   record(

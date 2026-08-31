@@ -97,31 +97,36 @@ async function main() {
     !/fábrica tem/i.test(pedir) && !/camara tem/i.test(pedir) && !/câmara tem/i.test(pedir),
     /fábrica tem|câmara tem|camara tem/i.test(pedir) ? pedir.replace(/\s+/g, " ").slice(0, 160) : "sem Y da câmara",
   );
-  record("Pedir tem Reposição e Encomenda", /Reposição/.test(pedir) && /Encomenda/.test(pedir));
+  record("Pedir tem Reposição e Festa", /Reposição/.test(pedir) && /Festa/.test(pedir));
   await shot(page, "t9-01-pedir-loja");
 
-  await page.getByRole("button", { name: /^Encomenda$/ }).click();
+  await page.getByRole("button", { name: /^Festa$/ }).click();
   await page.waitForTimeout(400);
   const festa = addDays(todayDate(), 5);
   await page.locator('input[type="date"]').first().fill(festa);
+  await page.getByPlaceholder("Ex.: aniversário da Márcia").fill("Aniversário da Márcia");
+  await page.getByPlaceholder("0,00").fill("400,00");
+  await page.getByRole("button", { name: /^Continuar$/ }).click();
+  await page.waitForTimeout(400);
   await page.getByPlaceholder("Buscar: coxinha, festa, coca...").fill("mini");
   await page.waitForTimeout(400);
   const plus = page.getByRole("button", { name: "Aumentar" }).first();
   for (let i = 0; i < 5; i += 1) await plus.click();
-  await page.getByPlaceholder("Ex.: aniversário da Márcia").fill("Aniversário da Márcia");
+  await page.getByRole("button", { name: /^Continuar$/ }).click();
+  await page.waitForTimeout(400);
   await page.getByRole("button", { name: "50%" }).click();
   await page.getByRole("button", { name: /^Pix$/ }).click();
   await shot(page, "t9-02-encomenda-montada");
   await page.getByRole("button", { name: /Revisar e enviar/ }).click({ timeout: 10000 });
-  await clickDialog(page, /Confirmar pedido/);
+  await clickDialog(page, /Confirmar festa/);
   await page.waitForFunction(
-    () => /Encomenda enviada|Pedido enviado|fábrica já foi avisada/i.test(document.body?.innerText || ""),
+    () => /Festa registrada|fábrica já foi avisada/i.test(document.body?.innerText || ""),
     { timeout: 20000 },
   );
   const afterAsk = await mainText(page);
   record(
-    "Loja lança encomenda com data e sinal",
-    /Encomenda enviada|fábrica já foi avisada/i.test(afterAsk),
+    "Loja lança festa com data e sinal",
+    /Festa registrada|fábrica já foi avisada/i.test(afterAsk),
     afterAsk.replace(/\s+/g, " ").slice(0, 180),
   );
 
@@ -130,7 +135,7 @@ async function main() {
   await waitShell(page);
   await waitMain(page, 25000);
   const fila = await mainText(page);
-  record("Fábrica vê a encomenda na mesma fila", /Encomenda/i.test(fila) && /Loja Centro/i.test(fila), fila.replace(/\s+/g, " ").slice(0, 220));
+  record("Fábrica vê a festa na mesma fila", /Festa/i.test(fila) && /Loja Centro/i.test(fila), fila.replace(/\s+/g, " ").slice(0, 220));
   record("Fábrica vê a data da festa", /Para /.test(fila), fila.replace(/\s+/g, " ").match(/Para [^\n]+/)?.[0] ?? "");
   record(
     "Fábrica continua vendo o poço da câmara",

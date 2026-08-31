@@ -50,7 +50,7 @@ function storePartyMoney(row: QueueRow) {
 export default function PedidosPage() {
   const ready = useReady();
   const panel = ready ? getPanel(getLocationId() ?? "") : undefined;
-  const requests = useLiveQuery(() => (ready ? listRequests() : []), [ready]);
+  const requests = useLiveQuery(() => (ready ? listRequests(undefined, { factoryQueue: true }) : []), [ready]);
   const orders = useLiveQuery(() => (ready ? listFactoryOrders() : []), [ready]);
   const canSend = panel?.type === "factory";
   const [qty, setQty] = useState<Record<string, Record<string, number>>>({});
@@ -107,7 +107,7 @@ export default function PedidosPage() {
   if (panel && panel.type === "store") {
     return (
       <AppShell>
-        <Empty title="Os pedidos chegam aqui na fábrica e no admin" hint="Na loja, use Pedir para a fábrica." />
+        <Empty title="Os pedidos chegam aqui na fábrica e no admin" hint="Festas das lojas aparecem depois do sinal. Revendedores entram ao pedir na câmara." />
       </AppShell>
     );
   }
@@ -175,15 +175,15 @@ export default function PedidosPage() {
         title="Pedidos"
         hint={
           canSend
-            ? "Loja e cliente de volume na mesma fila. O mais antigo segura o saldo. Encomenda da loja traz o dia da festa. Cliente levou sai da câmara e paga na fábrica — não vai para a loja e não mistura no caixa da loja."
-            : "Aqui o admin vê o que as lojas e os clientes pediram. Quem manda o estoque da loja e quem separa na câmara é a fábrica."
+            ? "Festa da loja: a Rita só vê depois que a loja recebeu o sinal. Volume (revendedor): retira na câmara e paga aqui — não passa pela loja."
+            : "Festas das lojas (com sinal) e pedidos de revendedores na mesma fila. Quem manda estoque para a loja é a fábrica."
         }
       />
       <ErrorBox message={error} />
       <SuccessBox message={ok} />
 
       {pending.length === 0 ? (
-        <Empty title="Nenhum pedido esperando" hint="Quando a loja ou o cliente pedir, aparece aqui e no sino de avisos." />
+        <Empty title="Nenhum pedido esperando" hint="Festas aparecem quando a loja recebe o sinal. Revendedores entram ao pedir na câmara." />
       ) : (
         <div>
           <PageBoard ref={pendingPage.listRef} size={pendingPage.size} rowMin="16rem">
@@ -194,7 +194,7 @@ export default function PedidosPage() {
               >
                 <div>
                   <p className="text-sm font-extrabold uppercase tracking-wide text-orange-800">
-                    {request.source === "customer" ? "Cliente · câmara" : request.kindLabel ?? "Loja"}
+                    {request.source === "customer" ? "Revendedor · retira na câmara" : request.kindLabel ?? "Loja"}
                   </p>
                   <p className="text-xl font-extrabold text-stone-900">
                     {request.name} · {request.statusLabel}

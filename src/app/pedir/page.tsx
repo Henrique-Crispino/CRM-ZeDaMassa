@@ -35,7 +35,7 @@ import { catalogItems, stockByLocation } from "@/lib/queries";
 import { createStoreRequest, listRequests, RequestError, type RequestView } from "@/lib/requests";
 import { getLocationId } from "@/lib/session";
 import type { PaymentMethod, StoreRequestKind } from "@/lib/types";
-import { PAYMENT_METHODS, paymentMethodLabel, storeRequestKind, storeRequestKindLabel } from "@/lib/types";
+import { PAYMENT_METHODS, paymentMethodLabel, storeRequestKind, storeRequestKindLabel, isEncomendaAwaitingSignal } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
 export default function PedirPage() {
@@ -67,7 +67,7 @@ export default function PedirPage() {
   const [ok, setOk] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  const [pending, setPending] = useState<{ action: "sinal" | "entregar"; request: RequestView } | null>(null);
+  const [pending, setPending] = useState<{ action: "sinal" | "entregar"; request: RequestView; amount?: number } | null>(null);
   const [payLater, setPayLater] = useState<PaymentMethod>("pix");
   const [partyStep, setPartyStep] = useState(1);
 
@@ -125,8 +125,10 @@ export default function PedirPage() {
     return [...map.values()];
   }, [visible]);
   const mineRows = mine ?? [];
+  const awaitingSignal = mineRows.filter(isEncomendaAwaitingSignal);
   const openMine = mineRows.filter(isOpenPartyRequest);
-  const otherMine = mineRows.filter((row) => !isOpenPartyRequest(row));
+  const otherMine = mineRows.filter((row) => !isOpenPartyRequest(row) && !isEncomendaAwaitingSignal(row));
+  const awaitingPage = usePager(awaitingSignal, 4, String(awaitingSignal.length));
   const openPage = usePager(openMine, 4, String(openMine.length));
   const minePage = usePager(otherMine, 8, String(otherMine.length));
 
@@ -172,8 +174,10 @@ export default function PedirPage() {
       setConfirm(false);
       setOk(
         askKind === "encomenda"
-          ? "Encomenda enviada. A fábrica já foi avisada com a data."
-          : "Pedido enviado. A fábrica e o admin já foram avisados.",
+          ? signalMode !== "depois" && signalAmount > 0
+            ? "Festa registrada. Sinal entrou no caixa. A fábrica já foi avisada com a data."
+            : "Festa registrada. Receba o sinal para avisar a fábrica."
+          : "Pedido de reposição enviado. A fábrica e o admin já foram avisados.",
       );
     } catch (err) {
       setConfirm(false);
@@ -195,12 +199,13 @@ export default function PedirPage() {
     try {
       if (pending.action === "sinal") {
         const total = pending.request.estimatedTotal ?? (await estimateEncomendaTotal(pending.request.items));
+        const amount = pending.amount ?? Math.round(total * 50) / 100;
         await takeEncomendaSignal({
           requestId: pending.request.id,
-          amount: Math.round(total * 50) / 100,
+          amount,
           payment: payLater,
         });
-        setOk("Sinal entrou no caixa. Estoque da loja não mexeu.");
+        setOk("Sinal entrou no caixa. A fábrica já foi avisada para mandar os salgados.");
       } else {
         await deliverEncomenda({ requestId: pending.request.id, payment: payLater });
         setOk("Resto entrou no caixa. A festa saiu da prateleira desta loja.");
@@ -268,10 +273,11 @@ export default function PedirPage() {
                 className="min-h-11"
                 onClick={() => {
                   setOk("");
-                  setPending({ action: "sinal", request });
+                  const total = request.estimatedTotal ?? 0;
+                  setPending({ action: "sinal", request, amount: total > 0 ? Math.round(total * 50) / 100 : undefined });
                 }}
               >
-                Receber sinal 50%
+                Receber sinal
               </Button>
             ) : null}
             {canDeliver ? (
@@ -296,15 +302,38 @@ export default function PedirPage() {
     <AppShell>
       <div className="pb-44">
         <PageTitle
-          title="Pedir para a fábrica"
-          hint="Peça o que esta loja precisa. A fábrica recebe o aviso. Se a câmara não aguentar, o pedido fica do lado dela."
+          title={askKind === "encomenda" ? "Encomenda de festa" : "Reposição da loja"}
+          hint={
+            askKind === "encomenda"
+              ? "O cliente da festa encomenda aqui. Receba o sinal no caixa — aí a fábrica é avisada para mandar os salgados. No dia, cobre o resto e entregue."
+              : "Peça o que está faltando na prateleira. A fábrica recebe o aviso na hora."
+          }
         />
+
+        {awaitingSignal.length > 0 ? (
+          <section className="mb-6">
+            <h2 className="text-xl font-extrabold text-stone-900">Festas aguardando sinal</h2>
+            <p className="mt-1 mb-3 text-stone-600">
+              A fábrica só é avisada depois que o sinal entrar no caixa.
+            </p>
+            <div ref={awaitingPage.listRef} className="space-y-3">
+              {awaitingPage.rows.map(requestCard)}
+            </div>
+            <Pager
+              page={awaitingPage.page}
+              pages={awaitingPage.pages}
+              total={awaitingPage.total}
+              onPage={awaitingPage.setPage}
+              word="festas"
+            />
+          </section>
+        ) : null}
 
         {openMine.length > 0 ? (
           <section className="mb-6">
             <h2 className="text-xl font-extrabold text-stone-900">Festas em aberto</h2>
             <p className="mt-1 mb-3 text-stone-600">
-              Sinal já entrou. O resto se recebe aqui, no dia, com o caixa aberto.
+              Sinal já entrou e a fábrica já foi avisada. O resto se recebe aqui, no dia, com o caixa aberto.
             </p>
             <div ref={openPage.listRef} className="space-y-3">
               {openPage.rows.map(requestCard)}
@@ -325,7 +354,7 @@ export default function PedirPage() {
             onChange={setAskKind}
             options={[
               { id: "reposicao", label: "Reposição" },
-              { id: "encomenda", label: "Encomenda" },
+              { id: "encomenda", label: "Festa" },
             ]}
           />
           {askKind === "encomenda" ? (
@@ -362,10 +391,10 @@ export default function PedirPage() {
 
         {askKind === "encomenda" && partyStep === 1 ? (
           <Card className="mb-4 space-y-3">
-            <Field label="Dia da festa" hint="A fábrica vê esta data no pedido.">
+            <Field label="Dia da festa" hint="Data em que o cliente retira a encomenda.">
               <Input type="date" min={todayDate()} value={neededBy} onChange={(event) => setNeededBy(event.target.value)} />
             </Field>
-            <Field label="Nome (opcional)">
+            <Field label="Cliente da festa (opcional)">
               <Input value={guestName} onChange={(event) => setGuestName(event.target.value)} placeholder="Ex.: aniversário da Márcia" />
             </Field>
             <Field label="Valor da festa" hint="Estimativa pelo preço de prateleira. Pode corrigir.">
@@ -409,7 +438,9 @@ export default function PedirPage() {
                   {estimatedTotal > signalAmount ? ` · faltam ${formatBRL(estimatedTotal - signalAmount)} no dia` : ""}
                 </p>
               ) : (
-                <p className="mt-2 text-sm font-semibold text-stone-500">O pedido vai mesmo sem o sinal. Receba depois, com o caixa aberto.</p>
+                <p className="mt-2 text-sm font-semibold text-stone-500">
+                  A fábrica só é avisada depois do sinal. Receba aqui ou na lista acima, com o caixa aberto.
+                </p>
               )}
               {signalMode !== "depois" ? (
                 <div className="mt-3 grid grid-cols-3 gap-2">
@@ -540,13 +571,15 @@ export default function PedirPage() {
 
       <ConfirmDialog
         open={confirm}
-        title={askKind === "encomenda" ? "Enviar esta encomenda?" : "Enviar este pedido?"}
+        title={askKind === "encomenda" ? "Registrar esta festa?" : "Enviar este pedido de reposição?"}
         hint={
           askKind === "encomenda"
-            ? "A fábrica vê a data hoje. O estoque desta loja não sai agora."
+            ? signalMode !== "depois" && signalAmount > 0
+              ? "Sinal entra no caixa agora. A fábrica é avisada na hora. Estoque desta loja não sai."
+              : "Fica registrada na loja. A fábrica só é avisada quando o sinal entrar no caixa."
             : "A fábrica e o admin vão receber o aviso. Se a câmara não aguentar, o pedido fica."
         }
-        confirmLabel="Confirmar pedido"
+        confirmLabel={askKind === "encomenda" ? "Confirmar festa" : "Confirmar pedido"}
         busy={saving}
         onConfirm={save}
         onCancel={() => setConfirm(false)}
@@ -576,10 +609,10 @@ export default function PedirPage() {
 
       <ConfirmDialog
         open={Boolean(pending)}
-        title={pending?.action === "sinal" ? "Receber o sinal agora?" : "Receber o resto e entregar?"}
+        title={pending?.action === "sinal" ? "Receber o sinal da festa?" : "Receber o resto e entregar?"}
         hint={
           pending?.action === "sinal"
-            ? "Entra no caixa deste turno. Estoque não sai."
+            ? "Entra no caixa deste turno. Depois disso a fábrica é avisada para mandar os salgados."
             : "Só se o envio já foi conferido. A baixa é da prateleira desta loja."
         }
         confirmLabel={pending?.action === "sinal" ? "Confirmar sinal" : "Confirmar entrega"}
@@ -587,6 +620,9 @@ export default function PedirPage() {
         onConfirm={finishPending}
         onCancel={() => setPending(null)}
       >
+        {pending?.action === "sinal" && pending.amount ? (
+          <p className="mb-3 font-semibold text-stone-700">Sinal {formatBRL(pending.amount)}</p>
+        ) : null}
         <div className="grid grid-cols-3 gap-2">
           {PAYMENT_METHODS.map((item) => (
             <Button
