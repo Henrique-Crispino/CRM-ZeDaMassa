@@ -70,6 +70,7 @@ export default function PedirPage() {
   const [pending, setPending] = useState<{ action: "sinal" | "entregar"; request: RequestView; amount?: number } | null>(null);
   const [payLater, setPayLater] = useState<PaymentMethod>("pix");
   const [partyStep, setPartyStep] = useState(1);
+  const [acceptPriceDiff, setAcceptPriceDiff] = useState(false);
 
   const deliveryQuote = useLiveQuery(
     () =>
@@ -82,6 +83,10 @@ export default function PedirPage() {
   useEffect(() => {
     setPartyStep(1);
   }, [askKind]);
+
+  useEffect(() => {
+    setAcceptPriceDiff(false);
+  }, [pending?.request.id, pending?.action]);
 
   const selected = useMemo(
     () => Object.entries(qty).filter(([, value]) => value > 0),
@@ -215,7 +220,11 @@ export default function PedirPage() {
         });
         setOk("Sinal entrou no caixa. A fábrica já foi avisada para mandar os salgados.");
       } else {
-        await deliverEncomenda({ requestId: pending.request.id, payment: payLater });
+        await deliverEncomenda({
+          requestId: pending.request.id,
+          payment: payLater,
+          acceptPriceDiff: deliveryQuote?.differs ? acceptPriceDiff : undefined,
+        });
         setOk("Resto entrou no caixa. A festa saiu da prateleira desta loja.");
       }
       setPending(null);
@@ -624,6 +633,9 @@ export default function PedirPage() {
             : "Só se o envio já foi conferido. A baixa é da prateleira desta loja."
         }
         confirmLabel={pending?.action === "sinal" ? "Confirmar sinal" : "Confirmar entrega"}
+        confirmDisabled={
+          pending?.action === "entregar" && deliveryQuote?.differs ? !acceptPriceDiff : false
+        }
         busy={saving}
         onConfirm={finishPending}
         onCancel={() => setPending(null)}
@@ -635,9 +647,24 @@ export default function PedirPage() {
           <div className="mb-3 space-y-1 font-semibold text-stone-700">
             <p>Combinado {formatBRL(deliveryQuote.combinedTotal)} · resto {formatBRL(deliveryQuote.due)}</p>
             {deliveryQuote.differs ? (
-              <p className="text-sm text-orange-800">
-                Na prateleira (FIFO) somaria {formatBRL(deliveryQuote.fifoTotal)} — o caixa cobra o combinado.
-              </p>
+              <div className="space-y-2 text-sm text-orange-900">
+                <p>
+                  Preço dos lotes na prateleira: {formatBRL(deliveryQuote.fifoTotal)} · valor combinado no pedido:{" "}
+                  {formatBRL(deliveryQuote.combinedTotal)} — o caixa cobra o combinado.
+                </p>
+                <label className="flex cursor-pointer items-start gap-2 rounded-xl bg-orange-50 p-3 ring-1 ring-orange-100">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4"
+                    checked={acceptPriceDiff}
+                    onChange={(event) => setAcceptPriceDiff(event.target.checked)}
+                  />
+                  <span>
+                    Cliente combinou {formatBRL(deliveryQuote.combinedTotal)} — vi a diferença da prateleira (
+                    {formatBRL(deliveryQuote.fifoTotal)}).
+                  </span>
+                </label>
+              </div>
             ) : null}
           </div>
         ) : null}

@@ -210,6 +210,8 @@ export async function deliverEncomenda(input: {
   requestId: string;
   payment?: PaymentMethod;
   payments?: SalePayment[];
+  /** Obrigatório quando preço da prateleira ≠ valor combinado. */
+  acceptPriceDiff?: boolean;
 }) {
   const db = getDb();
   const request = await db.requests.get(input.requestId);
@@ -239,6 +241,11 @@ export async function deliverEncomenda(input: {
   if (payload.length === 0) throw new EncomendaError("Não tem o que entregar neste pedido.");
 
   const quote = await quoteEncomendaDelivery(request.id);
+  if (quote.differs && !input.acceptPriceDiff) {
+    throw new EncomendaError(
+      "O preço dos lotes na prateleira não bate com o valor combinado no pedido. Confirme que viu a diferença antes de entregar.",
+    );
+  }
   const total = quote.combinedTotal;
   const credit = money2(request.signalAmount);
   const due = quote.due;

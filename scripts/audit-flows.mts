@@ -1855,10 +1855,15 @@ async function main() {
         partyQuote.differs,
       `fifo=${partyQuote.fifoTotal} combinado=${partyQuote.combinedTotal} resto=${partyQuote.due}`,
     );
+    await expectFail(
+      "Entrega sem aceite recusa quando prateleira difere do combinado",
+      () => deliverEncomenda({ requestId: partyId, payment: "pix" }),
+      "prateleira",
+    );
     const storeBeforeDeliver = await stockQty("store_1", "cox-mini");
     const ledgerBeforeDeliver = sessionForParty ? await sessionLedger(sessionForParty.id) : null;
     await expectOk("Resto entra e a festa sai da prateleira da loja", () =>
-      deliverEncomenda({ requestId: partyId, payment: "pix" }),
+      deliverEncomenda({ requestId: partyId, payment: "pix", acceptPriceDiff: true }),
     );
     const storeAfterDeliver = await stockQty("store_1", "cox-mini");
     const delivered = await db.requests.get(partyId);
@@ -1894,7 +1899,7 @@ async function main() {
         `deliveredAt=${reopened?.deliveredAt} remainder=${reopened?.remainderSaleId} lista=${openAgain}`,
       );
       await expectOk("Festa reentregável após estorno", () =>
-        deliverEncomenda({ requestId: partyId, payment: "pix" }),
+        deliverEncomenda({ requestId: partyId, payment: "pix", acceptPriceDiff: true }),
       );
     }
   }
