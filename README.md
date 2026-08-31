@@ -141,9 +141,8 @@ Lojas do exemplo: **Loja Centro** e **Loja Jardim**.
 │       ├── factory-orders.ts  # Volume da câmara
 │       ├── actor.ts           # Quem opera, testemunha
 │       └── seed.ts            # Dados de demonstração
-├── scripts/
-│   └── audit-flows.mts       # 226 testes de fluxo
-└── docs/                     # Documentação Obsidian (regra, QA, UI)
+└── scripts/
+    └── audit-flows.mts       # 226 testes de fluxo
 ```
 
 ---
@@ -156,9 +155,7 @@ Auditoria de fluxos críticos (caixa, FIFO, festa, consumo, identidade):
 npx tsx scripts/audit-flows.mts
 ```
 
-Resultado esperado: **226/226 PASS**.
-
-Detalhes da QA: [`docs/Auditoria 2026-08-26 — QA do protótipo.md`](docs/Auditoria%202026-08-26%20—%20QA%20do%20protótipo.md).
+Resultado esperado: **233/233 PASS** (lib) e **71/71 PASS** (UI no Chrome).
 
 ---
 
@@ -179,17 +176,13 @@ Este repositório **valida regra**, não substitui ERP em produção:
 - Sem NF-e, motoboy real, delivery operacional ou crediário
 - “Delivery” na venda é **rótulo** de relatório, não logística
 
-Roadmap de produção (API, auth, estoque único): [`docs/Antes de produção.md`](docs/Antes%20de%20produ%C3%A7%C3%A3o.md).
+Roadmap de produção (API, auth, estoque único) fica fora deste protótipo.
 
 ---
 
 ## Documentação
 
-Vault Obsidian em `docs/` — contexto de produto, capítulos de regra, auditorias e guias de UI:
-
-- [`docs/Contexto do produto.md`](docs/Contexto%20do%20produto.md)
-- [`docs/O que este repositório é.md`](docs/O%20que%20este%20reposit%C3%B3rio%20%C3%A9.md)
-- [`docs/Início.md`](docs/In%C3%ADcio.md)
+O vault Obsidian (`docs/`) fica **só na máquina de quem desenvolve** — não está no GitHub. Contexto de produto, capítulos de regra, auditorias e guias de UI vivem aí localmente.
 
 ---
 
