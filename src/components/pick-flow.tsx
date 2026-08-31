@@ -120,6 +120,7 @@ export function ConfirmDialog({
   cancelLabel = "Voltar",
   confirmVariant = "primary",
   confirmDisabled,
+  confirmHidden,
   busy,
   onConfirm,
   onCancel,
@@ -128,12 +129,13 @@ export function ConfirmDialog({
   title: string;
   hint?: string;
   children: ReactNode;
-  confirmLabel: string;
+  confirmLabel?: string;
   cancelLabel?: string;
   confirmVariant?: "primary" | "secondary" | "danger";
   confirmDisabled?: boolean;
+  confirmHidden?: boolean;
   busy?: boolean;
-  onConfirm: () => void;
+  onConfirm?: () => void;
   onCancel: () => void;
 }) {
   useEffect(() => {
@@ -162,10 +164,23 @@ export function ConfirmDialog({
         {hint ? <p className="mt-1 text-stone-600">{hint}</p> : null}
         <div className="mt-4">{children}</div>
         <div className="mt-6 flex flex-wrap gap-3">
-          <Button className="flex-1" variant={confirmVariant} disabled={busy || confirmDisabled} onClick={onConfirm}>
-            {busy ? "Salvando..." : confirmLabel}
-          </Button>
-          <Button type="button" variant="ghost" className="flex-1" disabled={busy} onClick={onCancel}>
+          {!confirmHidden && confirmLabel ? (
+            <Button
+              className="flex-1"
+              variant={confirmVariant}
+              disabled={busy || confirmDisabled}
+              onClick={onConfirm}
+            >
+              {busy ? "Salvando..." : confirmLabel}
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            className={confirmHidden ? "w-full" : "flex-1"}
+            disabled={busy}
+            onClick={onCancel}
+          >
             {cancelLabel}
           </Button>
         </div>

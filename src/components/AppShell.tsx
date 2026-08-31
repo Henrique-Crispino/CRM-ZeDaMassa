@@ -373,18 +373,16 @@ export function AppShell({ children }: { children: ReactNode }) {
       <ConfirmDialog
         open={switchPlace}
         title="Ir para outro lugar?"
-        hint="Só os sítios desta ficha. A Telma não vê a administração aqui."
-        confirmLabel="Fechar"
-        confirmVariant="secondary"
-        cancelLabel="Fechar"
-        onConfirm={() => setSwitchPlace(false)}
+        hint="Toque no sítio. Só os lugares desta ficha — a Telma não vê a administração."
+        confirmHidden
+        cancelLabel="Cancelar"
         onCancel={() => setSwitchPlace(false)}
       >
         <div className="space-y-2">
           {switchTargets.map((id) => (
             <Button
               key={id}
-              variant="ghost"
+              variant="primary"
               className="w-full justify-start"
               onClick={() => {
                 if (!person) return;

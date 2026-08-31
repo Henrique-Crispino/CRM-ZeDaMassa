@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Button, ErrorBox, Field, Input } from "@/components/ui";
+import { showDemoHints } from "@/lib/demo-hints";
 import { enterOperator, verifyOperatorPin } from "@/lib/operator";
 import { listPeople, PeopleError, personDoorHint } from "@/lib/people";
 import { useReady } from "@/lib/use-ready";
@@ -80,7 +81,10 @@ export default function HomePage() {
               void enter();
             }}
           >
-            <Field label={`PIN de ${picked.name}`} hint="O mesmo da ficha. No exemplo é 1234.">
+            <Field
+              label={`PIN de ${picked.name}`}
+              hint={showDemoHints() ? "O mesmo da ficha. No exemplo é 1234." : "O mesmo cadastrado na Equipe."}
+            >
               <Input
                 type="password"
                 inputMode="numeric"
