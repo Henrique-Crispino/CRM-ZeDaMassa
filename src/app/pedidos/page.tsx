@@ -12,7 +12,15 @@ import { cancelFactoryOrder, deliverFactoryOrder, FactoryOrderError, listFactory
 import { partyMoneyPhrase } from "@/lib/encomendas";
 import { getPanel } from "@/lib/locations";
 import { reportRomaneio, type ReportTable } from "@/lib/reports";
-import { cancelRequest, fulfillRequest, listRequests, requestWhen, RequestError, type RequestItemView } from "@/lib/requests";
+import {
+  cancelRequest,
+  compareWellQueuePriority,
+  fulfillRequest,
+  listRequests,
+  requestWhen,
+  RequestError,
+  type RequestItemView,
+} from "@/lib/requests";
 import { formatBRL, formatDate } from "@/lib/money";
 import { getLocationId } from "@/lib/session";
 import { StockError } from "@/lib/stock";
@@ -24,6 +32,7 @@ import {
   storeRequestKindLabel,
   type PaymentMethod,
   type RequestStatus,
+  type StoreRequestKind,
 } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
@@ -38,6 +47,7 @@ type QueueRow = {
   neededBy?: string;
   guestName?: string;
   kindLabel?: string;
+  kind?: StoreRequestKind;
   estimatedTotal?: number;
   signalAmount?: number;
   deliveredAt?: string;
@@ -73,6 +83,7 @@ export default function PedidosPage() {
       note: row.note,
       neededBy: row.neededBy,
       guestName: row.guestName,
+      kind: storeRequestKind(row),
       kindLabel: storeRequestKindLabel(storeRequestKind(row)),
       estimatedTotal: row.estimatedTotal,
       signalAmount: row.signalAmount,
@@ -92,7 +103,15 @@ export default function PedidosPage() {
     return [...stores, ...customers].sort((a, b) => b.at.localeCompare(a.at));
   }, [orders, requests]);
 
-  const pending = queue.filter((row) => isOpenRequest(row.status));
+  const pending = useMemo(() => {
+    const open = queue.filter((row) => isOpenRequest(row.status));
+    return [...open].sort((a, b) =>
+      compareWellQueuePriority(
+        { source: a.source, at: a.at, id: a.id, kind: a.kind, neededBy: a.neededBy },
+        { source: b.source, at: b.at, id: b.id, kind: b.kind, neededBy: b.neededBy },
+      ),
+    );
+  }, [queue]);
   const others = queue.filter((row) => !isOpenRequest(row.status));
   const othersPage = usePager(others, 8);
   const pendingPage = usePager(pending, 4);
@@ -219,7 +238,7 @@ export default function PedidosPage() {
                     </p>
                   ) : request.status === "parcial" ? (
                     <p className="mt-2 font-bold text-orange-800">
-                      Não tem tudo. O mais antigo da fila ficou com o que cabia — o resto continua aberto.
+                      Não tem tudo. Festa com data ficou na frente — o resto continua aberto.
                     </p>
                   ) : null}
                 </div>

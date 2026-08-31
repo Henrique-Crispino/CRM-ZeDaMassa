@@ -1645,6 +1645,61 @@ async function main() {
   for (const row of await listFactoryOrders("open")) {
     await cancelFactoryOrder(row.id);
   }
+
+  const cap57TargetFree = 30;
+  const cap57Qty = 25;
+  let cap57Free = (await factoryStockPosition()).find((row) => row.nicheId === "cox-mini")?.free ?? 0;
+  if (cap57Free < cap57TargetFree) {
+    await produceItems({ madeAt: today, items: [{ nicheId: "cox-mini", qty: cap57TargetFree - cap57Free }] });
+    cap57Free = (await factoryStockPosition()).find((row) => row.nicheId === "cox-mini")?.free ?? cap57TargetFree;
+  } else if (cap57Free > cap57TargetFree) {
+    const burnOrder = (await expectOk("Queimar excesso da câmara para o teste da fila", () =>
+      createFactoryOrder({ customerId: padaria?.id ?? "x", items: [{ nicheId: "cox-mini", qty: cap57Free - cap57TargetFree }] }),
+    )) as string | null;
+    if (burnOrder) {
+      await expectOk("Cliente levou o excesso da câmara", () =>
+        deliverFactoryOrder(burnOrder, { "cox-mini": cap57Free - cap57TargetFree }, { method: "pix" }),
+      );
+    }
+    cap57Free = (await factoryStockPosition()).find((row) => row.nicheId === "cox-mini")?.free ?? cap57TargetFree;
+  }
+  const repoAt = new Date();
+  repoAt.setDate(repoAt.getDate() - 2);
+  const repoId = (await expectOk("Reposição antiga pede 25 no poço", () =>
+    createStoreRequest({ fromLocationId: "store_2", items: [{ nicheId: "cox-mini", qty: cap57Qty }] }),
+  )) as string | null;
+  if (repoId) await db.requests.update(repoId, { at: repoAt.toISOString() });
+  const cashCap57 = await currentCashSession("store_1");
+  if (!cashCap57) {
+    await openCashSession({ locationId: "store_1", period: "tarde", employeeId: "emp-telma", openingAmount: 150 });
+  }
+  const festaDay = addDays(today, 1);
+  const festaId = (await expectOk("Festa amanhã pede 25 com sinal", () =>
+    createStoreRequest({
+      fromLocationId: "store_1",
+      kind: "encomenda",
+      neededBy: festaDay,
+      estimatedTotal: 300,
+      items: [{ nicheId: "cox-mini", qty: cap57Qty }],
+      signal: { amount: 100, payment: "pix" },
+    }),
+  )) as string | null;
+  const openCap57 = await listRequests("open");
+  const festaCap57 = openCap57.find((row) => row.id === festaId);
+  const repoCap57 = openCap57.find((row) => row.id === repoId);
+  const festaLine = festaCap57?.items.find((item) => item.nicheId === "cox-mini");
+  const repoLine = repoCap57?.items.find((item) => item.nicheId === "cox-mini");
+  record(
+    "Festa urgente recebe poço antes de reposição antiga",
+    festaLine?.availableQty === cap57Qty &&
+      repoLine?.availableQty === Math.max(0, cap57Free - cap57Qty) &&
+      festaCap57?.status !== "sem_saldo" &&
+      repoCap57?.status === "parcial",
+    `festa livre=${festaLine?.availableQty} ${festaCap57?.status} · reposição livre=${repoLine?.availableQty} ${repoCap57?.status}`,
+  );
+  if (repoId) await cancelRequest(repoId);
+  if (festaId) await cancelRequest(festaId);
+
   await produceItems({ items: [{ nicheId: "cox-mini", qty: 80 }], madeAt: today });
   const factoryBeforeParty = await stockQty("factory", "cox-mini");
   const storeBeforeParty = await stockQty("store_1", "cox-mini");

@@ -285,6 +285,26 @@ export type WellClaim = {
   items: RequestItemView[];
 };
 
+export type WellQueueSortKey = Pick<WellClaim, "source" | "at" | "id" | "kind" | "neededBy">;
+
+/** Poço: festa (encomenda) antes de reposição; entre festas, neededBy; resto FIFO por at. */
+export function compareWellQueuePriority(a: WellQueueSortKey, b: WellQueueSortKey): number {
+  const aEncomenda = a.source === "store" && a.kind === "encomenda";
+  const bEncomenda = b.source === "store" && b.kind === "encomenda";
+  const aReposicao = a.source === "store" && !aEncomenda;
+  const bReposicao = b.source === "store" && !bEncomenda;
+
+  if (aEncomenda && bReposicao) return -1;
+  if (aReposicao && bEncomenda) return 1;
+
+  if (aEncomenda && bEncomenda) {
+    const byNeeded = (a.neededBy ?? "").localeCompare(b.neededBy ?? "");
+    if (byNeeded !== 0) return byNeeded;
+  }
+
+  return a.at.localeCompare(b.at) || a.id.localeCompare(b.id);
+}
+
 function claimLines(
   rows: { nicheId: string; qty: number; sentQty?: number }[],
   catalog: Awaited<ReturnType<typeof catalogItems>>,
@@ -365,7 +385,7 @@ export async function loadFactoryWell() {
 
   const open = [...storeClaims, ...customerClaims]
     .filter((claim) => isOpenRequest(claim.status) && encomendaFactoryReady(claim))
-    .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
+    .sort(compareWellQueuePriority);
 
   for (const claim of open) {
     for (const line of claim.items) {
