@@ -2,11 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { Download, Printer } from "lucide-react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { ReportPreview } from "@/components/ReportPreview";
 import { Button, Card, Empty, PageTitle } from "@/components/ui";
+import { getDb } from "@/lib/db";
 import { getLocation, getPanel, storeLocations } from "@/lib/locations";
+import { personCanUsePanel } from "@/lib/people";
 import { addDays, todayDate } from "@/lib/money";
 import {
   downloadCsv,
@@ -28,12 +31,15 @@ import {
   type ReportTable,
   type StoreScope,
 } from "@/lib/reports";
-import { getLocationId } from "@/lib/session";
+import { getActorId, getLocationId } from "@/lib/session";
 import { useReady } from "@/lib/use-ready";
 
 export default function RelatoriosPage() {
   const ready = useReady();
   const panel = ready ? getPanel(getLocationId() ?? "") : undefined;
+  const actorId = ready ? getActorId() : null;
+  const person = useLiveQuery(() => (actorId ? getDb().employees.get(actorId) : undefined), [actorId]);
+  const canDownload = Boolean(person && personCanUsePanel(person, "admin"));
   const today = todayDate();
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
@@ -55,13 +61,20 @@ export default function RelatoriosPage() {
         ? "Ontem · uma folha"
         : "Um dia · uma folha";
 
-  if (panel && panel.type !== "admin") {
+  if (ready && person !== undefined && !canDownload) {
     return (
       <AppShell>
         <Empty
           title="Relatórios só o admin baixa"
           hint="Loja e fábrica operam o dia. Quem tira o papel e o Excel é a administração."
         />
+      </AppShell>
+    );
+  }
+  if (ready && person === undefined) {
+    return (
+      <AppShell>
+        <Empty title="Carregando..." hint="Aguarde um instante." />
       </AppShell>
     );
   }

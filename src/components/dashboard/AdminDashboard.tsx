@@ -66,7 +66,7 @@ export function AdminDashboard({
         <MetricCard
           label="Custo das perdas"
           value={formatBRL(data.wasteCost)}
-          hint={`Promoção ${formatBRL(data.promoRevenue)} · consumo interno ${data.internalQty} un.`}
+          hint={`Sobra do dia · ${data.wasteQty} un. · ${formatBRL(data.wasteRevenue)} deixou de vender`}
           alert={data.wasteCost > 0}
         />
         <MetricCard
@@ -142,9 +142,9 @@ export function AdminDashboard({
         <ChartCard title="Venda e perda no tempo" empty={data.daily.every((item) => item.receita === 0 && item.perda === 0)}>
           <TrendLine data={data.daily} />
         </ChartCard>
-        <ChartCard title="De onde veio a venda" empty={data.channels.length === 0}>
+        <ChartCard title="Como pagaram" empty={data.payments.length === 0}>
           <SimpleBars
-            data={data.channels.map((item) => ({ name: item.name, total: item.total }))}
+            data={data.payments.map((item) => ({ name: item.name, total: item.total }))}
             dataKey="total"
             name="Reais"
             color="#d97706"

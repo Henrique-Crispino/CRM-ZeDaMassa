@@ -33,11 +33,6 @@ import type { Category, PaymentMethod, SaleChannel } from "@/lib/types";
 import { PAYMENT_METHODS, paymentMethodLabel, productIsLive, promoIsLive, promoStatus } from "@/lib/types";
 import { useReady } from "@/lib/use-ready";
 
-const channels: { id: SaleChannel; label: string }[] = [
-  { id: "caixa", label: "No caixa" },
-  { id: "delivery", label: "Delivery" },
-];
-
 type Kind = "todos" | Category;
 
 export default function VenderPage() {
@@ -430,19 +425,27 @@ export default function VenderPage() {
 
           <div>
             <p className="mb-2 font-bold">Como o cliente comprou?</p>
-            {moreSale || channel !== "caixa" ? (
-              <div className="grid grid-cols-3 gap-2">
-                {channels.map((item) => (
-                  <Button
-                    key={item.id}
-                    type="button"
-                    variant={channel === item.id ? "primary" : "ghost"}
-                    className="min-h-12 px-2 text-sm"
-                    onClick={() => setChannel(item.id)}
-                  >
-                    {item.label}
-                  </Button>
-                ))}
+            {moreSale ? (
+              <div className="space-y-3 rounded-2xl bg-stone-50 px-4 py-3 ring-1 ring-stone-200">
+                <p className="font-extrabold text-stone-900">No caixa</p>
+                <p className="text-sm font-semibold text-stone-600">
+                  Delivery ainda não é motoboy — só marca de onde veio a venda nos relatórios.
+                </p>
+                <label className="flex min-h-12 cursor-pointer items-center gap-3 font-bold text-stone-800">
+                  <input
+                    type="checkbox"
+                    className="size-5 rounded border-stone-300"
+                    checked={channel === "delivery"}
+                    onChange={(event) => setChannel(event.target.checked ? "delivery" : "caixa")}
+                  />
+                  Marcar como delivery nesta venda
+                </label>
+                <Button type="button" variant="ghost" className="min-h-11 text-sm" onClick={() => {
+                  setMoreSale(false);
+                  setChannel("caixa");
+                }}>
+                  Voltar ao balcão
+                </Button>
               </div>
             ) : (
               <div className="space-y-2">
@@ -607,7 +610,7 @@ export default function VenderPage() {
         hint={
           quick
             ? `No caixa · ${paymentLines.map((row) => `${paymentMethodLabel(row.method)} ${formatBRL(row.amount)}`).join(" + ")}`
-            : `${channels.find((item) => item.id === channel)?.label} · ${paymentLines.map((row) => `${paymentMethodLabel(row.method)} ${formatBRL(row.amount)}`).join(" + ")}${session ? ` · ${session.employeeName}` : ""}`
+            : `${channel === "delivery" ? "Delivery (rótulo)" : "No caixa"} · ${paymentLines.map((row) => `${paymentMethodLabel(row.method)} ${formatBRL(row.amount)}`).join(" + ")}${session ? ` · ${session.employeeName}` : ""}`
         }
         confirmLabel="Confirmar venda"
         busy={saving}

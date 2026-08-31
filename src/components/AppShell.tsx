@@ -34,7 +34,7 @@ import {
 import { useLocationCatalog } from "@/lib/locations";
 import { getDb } from "@/lib/db";
 import { leaveOperator, otherOperatorPanels, panelLabel, switchOperatorPanel } from "@/lib/operator";
-import { personCanCash } from "@/lib/people";
+import { personCanCash, personCanUsePanel } from "@/lib/people";
 import { getActorId, getLocationId } from "@/lib/session";
 import { useReady } from "@/lib/use-ready";
 import { BackLink, backTarget } from "./BackLink";
@@ -238,8 +238,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     role === "store" && person && !personCanCash(person)
       ? storeTurno.filter((link) => link.href !== "/caixa" && link.href !== "/vender")
       : storeTurno;
+  const factoryMenu =
+    role === "factory" && person && personCanUsePanel(person, "admin")
+      ? [{ href: "/relatorios", label: "Relatórios", icon: FileDown }, ...factoryRest]
+      : factoryRest;
   const turno = role === "admin" ? adminLinks : role === "factory" ? factoryTurno : storeMenu;
-  const rest = role === "admin" ? [] : role === "factory" ? factoryRest : storeRest;
+  const rest = role === "admin" ? [] : role === "factory" ? factoryMenu : storeRest;
   const back = backTarget(pathname, role);
   const hasBottomNav = role !== "admin";
   const who = person?.name;
