@@ -40,7 +40,7 @@ import { useReady } from "@/lib/use-ready";
 import { BackLink, backTarget } from "./BackLink";
 import { ConfirmDialog } from "./pick-flow";
 import { NotificationBell } from "./NotificationBell";
-import { Button, cn } from "./ui";
+import { Button, cn, LoadingCard } from "./ui";
 
 type NavItem = { href: string; label: string; short?: string; icon: LucideIcon };
 
@@ -226,8 +226,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   if (!ready || !panelId || !actorId) {
     return (
-      <div className="grid min-h-screen place-items-center bg-orange-50 text-xl font-bold text-stone-600">
-        Carregando...
+      <div className="grid min-h-screen place-items-center bg-orange-50 px-4">
+        <LoadingCard className="w-full max-w-md animate-none" hint="Preparando o turno..." />
       </div>
     );
   }

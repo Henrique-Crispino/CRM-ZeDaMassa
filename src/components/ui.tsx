@@ -159,6 +159,25 @@ export function Empty({
   );
 }
 
+export function LoadingCard({
+  title = "Carregando...",
+  hint,
+  className,
+}: {
+  title?: string;
+  hint?: string;
+  className?: string;
+}) {
+  return (
+    <Card className={cn("animate-pulse space-y-3", className)}>
+      <p className="text-lg font-bold text-stone-600">{title}</p>
+      {hint ? <p className="text-base font-semibold text-stone-500">{hint}</p> : null}
+      <div className="h-4 w-full max-w-sm rounded-xl bg-stone-200" />
+      <div className="h-4 w-2/3 max-w-xs rounded-xl bg-stone-100" />
+    </Card>
+  );
+}
+
 export function ErrorBox({ message }: { message: string }) {
   if (!message) return null;
   return (

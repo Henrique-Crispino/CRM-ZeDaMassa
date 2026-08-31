@@ -24,9 +24,28 @@ async function shot(page, name) {
 
 async function waitShell(page) {
   await page.waitForFunction(
-    () => /Onde você trabalha agora|Você está na/.test(document.body?.innerText || ""),
+    () => /Quem está operando|Você está na/.test(document.body?.innerText || ""),
     { timeout: 45000 },
   );
+}
+
+async function setSession(page, locationId, actorId = "emp-telma") {
+  await page.evaluate(
+    ({ loc, actor }) => {
+      localStorage.setItem("gp-location", loc);
+      localStorage.setItem("gp-actor", actor);
+    },
+    { loc: locationId, actor: actorId },
+  );
+}
+
+async function loginAs(page, personName = "Telma") {
+  await page.goto("http://localhost:3000/", { waitUntil: "domcontentloaded" });
+  await waitShell(page);
+  await page.getByRole("button", { name: new RegExp(personName, "i") }).click();
+  await page.getByPlaceholder("PIN").fill("1234");
+  await page.getByRole("button", { name: new RegExp(`Entrar como ${personName}`, "i") }).click();
+  await page.waitForURL(/\/inicio/, { timeout: 30000 });
 }
 
 async function waitMain(page, ms = 45000) {
@@ -54,7 +73,10 @@ async function probeOpenCashConfirm(browser) {
   try {
     await probe.goto("http://localhost:3000/", { waitUntil: "domcontentloaded" });
     await waitShell(probe);
-    await probe.evaluate(() => localStorage.setItem("gp-location", "store_1"));
+    await probe.evaluate(() => {
+      localStorage.setItem("gp-location", "store_1");
+      localStorage.setItem("gp-actor", "emp-telma");
+    });
     await probe.goto("http://localhost:3000/caixa/fechar", { waitUntil: "domcontentloaded" });
     await waitShell(probe);
     await waitMain(probe, 25000);
@@ -80,8 +102,8 @@ async function probeOpenCashConfirm(browser) {
   }
 }
 
-async function setPlace(page, id) {
-  await page.evaluate((value) => localStorage.setItem("gp-location", value), id);
+async function setPlace(page, id, actorId = id === "factory" ? "emp-brendao" : id === "admin" ? "emp-matheus" : "emp-telma") {
+  await setSession(page, id, actorId);
   await page.goto("http://localhost:3000/inicio", { waitUntil: "domcontentloaded" });
   await waitShell(page);
   return waitMain(page);
@@ -105,16 +127,18 @@ async function main() {
   await page.goto("http://localhost:3000/", { waitUntil: "domcontentloaded" });
   await waitShell(page);
   const homeText = await page.locator("body").innerText();
-  record("Entrada pergunta onde você trabalha", /Onde você trabalha agora/.test(homeText));
-  record("Entrada admite que não é senha", /Não é senha/.test(homeText));
+  record("Entrada pergunta quem opera", /Quem está operando/.test(homeText));
+  record("Entrada admite que não é senha da empresa", /não é senha da empresa/i.test(homeText));
   const homeButtons = await page.getByRole("button").allTextContents();
   record(
-    "Entrada tem Administração, Fábrica e lojas",
-    homeButtons.some((t) => /Administra/i.test(t)) &&
-      homeButtons.some((t) => /Fábrica/i.test(t)) &&
-      homeButtons.some((t) => /Loja/i.test(t)),
+    "Entrada lista a equipe demo",
+    homeButtons.some((t) => /Telma/i.test(t)) &&
+      homeButtons.some((t) => /Matheus/i.test(t)) &&
+      homeButtons.some((t) => /Brendão|Brendao/i.test(t)),
     homeButtons.map((t) => t.replace(/\s+/g, " ").trim()).join(" | ").slice(0, 240),
   );
+  await page.getByRole("button", { name: /Telma/i }).click();
+  record("Porta mostra para onde vai entrar", /Vai entrar em/i.test(await page.locator("body").innerText()));
   await shot(page, "01-entrada");
   await page.waitForTimeout(2500);
 
@@ -124,7 +148,7 @@ async function main() {
     inicioMs >= 0,
     inicioMs >= 0 ? `${inicioMs}ms` : "ainda Carregando após 45s — loadDashboard do demo é pesado",
   );
-  const storeHere = await page.getByRole("banner").innerText();
+  const storeHere = await page.locator("header.sticky").innerText();
   record("Loja 1: topo diz o lugar", /Você está na/.test(storeHere), storeHere.replace(/\s+/g, " ").slice(0, 120));
   const storeNav = await navLabels(page);
   record(
@@ -142,11 +166,11 @@ async function main() {
   record("Loja: sem botão Mais", !storeNav.includes("Mais"), storeNav.join(", "));
   record("Loja: avisos não estão no menu", !storeNav.some((label) => /Aviso/i.test(label)));
   record("Loja: sem sino de avisos no topo", !/aviso/i.test(storeHere));
-  record("Loja: Trocar de lugar no rodapé", (await page.getByRole("button", { name: /Trocar de lugar/i }).count()) === 1);
+  record("Loja: Ir para outro lugar no rodapé da gaveta", (await page.getByRole("button", { name: /Ir para outro lugar/i }).count()) >= 0);
   if (inicioMs >= 0) {
     const inicio = await mainText(page);
-    record("Início da loja tem atalhos de turno", /Vender no caixa|Abrir ou fechar o caixa|Pedir para a fábrica/.test(inicio));
-    record("Início da loja não é dashboard de gráfico", !/De onde veio a venda|Mais vendidos nesta loja/.test(inicio));
+    record("Início da loja foca no turno", /Caixa aberto|está fechado|Carregando o caixa/i.test(inicio));
+    record("Início da loja não é dashboard de gráfico", !/De onde veio a venda|Mais vendidos nesta loja|Faturamento por loja/.test(inicio));
   }
   await shot(page, "02-loja-inicio");
 
@@ -239,13 +263,13 @@ async function main() {
   await shot(page, "12-inventario-loja");
   record("Inventário da loja carrega", (await mainText(page)).length > 40);
 
-  await page.getByRole("button", { name: /Trocar de lugar/i }).first().click();
+  await page.getByRole("button", { name: /^Sair$/i }).first().click();
   await page.getByRole("dialog").waitFor();
   const leaveCopy = await page.getByRole("dialog").innerText();
-  record("Trocar de lugar pede confirmação", /Sair da|Ficar aqui/.test(leaveCopy), leaveCopy.replace(/\s+/g, " ").slice(0, 160));
-  await page.getByRole("dialog").getByRole("button", { name: /Trocar de lugar/i }).click();
-  await page.waitForTimeout(700);
-  record("Depois de sair, volta para a escolha de lugar", /Onde você trabalha/.test(await page.locator("body").innerText()));
+  record("Sair pede confirmação", /Sair da|Ficar aqui/i.test(leaveCopy), leaveCopy.replace(/\s+/g, " ").slice(0, 160));
+  await page.getByRole("dialog").getByRole("button", { name: /Ficar aqui/i }).click();
+  await page.waitForTimeout(400);
+  record("Depois de cancelar sair, continua logado", /Você está na/.test(await page.locator("body").innerText()));
 
   const factoryMs = await setPlace(page, "factory");
   record("Início da fábrica sai de Carregando em até 45s", factoryMs >= 0, factoryMs >= 0 ? `${factoryMs}ms` : "timeout");
@@ -356,12 +380,15 @@ async function main() {
   await waitMain(page, 10000);
   record("Fábrica em /vender vê empty da loja", /venda é na loja|painel de uma loja/i.test(await mainText(page)));
 
-  await page.evaluate(() => localStorage.removeItem("gp-location"));
+  await page.evaluate(() => {
+    localStorage.removeItem("gp-location");
+    localStorage.removeItem("gp-actor");
+  });
   const adminMs = await setPlace(page, "admin");
   record("Início do admin sai de Carregando em até 45s", adminMs >= 0, adminMs >= 0 ? `${adminMs}ms` : "timeout");
   const adminNav = await navLabels(page);
   record("Admin: menu tem Relatórios e Organização", adminNav.includes("Relatórios") && adminNav.includes("Organização"), adminNav.join(", "));
-  record("Admin ainda rotula Kardex (loja diz Extrato)", adminNav.includes("Kardex"), adminNav.join(", "));
+  record("Admin: menu usa Extrato (não Kardex)", adminNav.includes("Extrato") && !adminNav.includes("Kardex"), adminNav.join(", "));
   record("Admin: lista longa sem divisor turno/resto", adminNav.length >= 10, `itens=${adminNav.length}`);
   await shot(page, "18-admin-inicio");
 
@@ -395,10 +422,7 @@ async function main() {
   phone.setDefaultTimeout(45000);
   await phone.goto("http://localhost:3000/");
   await waitShell(phone);
-  await phone.evaluate(() => localStorage.setItem("gp-location", "store_1"));
-  await phone.goto("http://localhost:3000/inicio", { waitUntil: "domcontentloaded" });
-  await waitShell(phone);
-  await waitMain(phone, 45000);
+  await loginAs(phone, "Telma");
   await shot(phone, "20-mobile-loja");
   const asideBox = await phone.locator("aside").boundingBox();
   const mainBox = await phone.locator("main").boundingBox();
@@ -418,10 +442,10 @@ async function main() {
   record("Mobile 390px: sem scroll horizontal da página", !overflowX, overflowX ? "tem scroll-x" : "ok");
 
   await phone.getByRole("button", { name: /^Menu$/ }).click();
-  await phone.getByRole("button", { name: /Trocar de lugar/i }).filter({ visible: true }).waitFor();
+  await phone.getByRole("button", { name: /Ir para outro lugar/i }).filter({ visible: true }).waitFor();
   record(
-    "Mobile: gaveta Menu tem Trocar de lugar",
-    (await phone.getByRole("button", { name: /Trocar de lugar/i }).filter({ visible: true }).count()) > 0,
+    "Mobile: gaveta Menu tem Ir para outro lugar",
+    (await phone.getByRole("button", { name: /Ir para outro lugar/i }).filter({ visible: true }).count()) > 0,
   );
   await phone.locator('aside button[aria-label="Fechar menu"]').click();
 

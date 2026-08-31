@@ -8,7 +8,7 @@ import { personCanCash, personCanUsePanel } from "@/lib/people";
 import { getActorId, getLocationId } from "@/lib/session";
 import { useReady } from "@/lib/use-ready";
 import { AppShell } from "./AppShell";
-import { Empty } from "./ui";
+import { Empty, LoadingCard } from "./ui";
 
 export function AccessGate({
   allow,
@@ -30,7 +30,7 @@ export function AccessGate({
   if (!ready) {
     return (
       <AppShell>
-        <Empty title="Carregando..." hint="Aguarde um instante." />
+        <LoadingCard hint="Aguarde um instante." />
       </AppShell>
     );
   }
@@ -54,7 +54,7 @@ export function AccessGate({
   if (actorId && person === undefined) {
     return (
       <AppShell>
-        <Empty title="Carregando a ficha..." hint="Aguarde antes de entrar nesta tela." />
+        <LoadingCard title="Carregando a ficha..." hint="Aguarde antes de entrar nesta tela." />
       </AppShell>
     );
   }

@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { FileDown } from "lucide-react";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { PendingRequests } from "@/components/PendingRequests";
 import { OpenParties } from "@/components/OpenParties";
-import { Card, PageTitle } from "@/components/ui";
+import { Button, Card, PageTitle, cn } from "@/components/ui";
 import { formatBRL, rangePhrase } from "@/lib/money";
 import type { DashboardData } from "@/lib/queries";
 import {
@@ -31,6 +32,7 @@ export function AdminDashboard({
   onRange: (from: string, to: string) => void;
 }) {
   const label = rangePhrase(from, to);
+  const [showCharts, setShowCharts] = useState(false);
 
   return (
     <div>
@@ -39,7 +41,7 @@ export function AdminDashboard({
         hint="Primeiro o dinheiro: venda da loja, o que a padaria pagou na fábrica, e a perda. Reposição e validade vêm depois."
       />
 
-      <Card className="mb-6">
+      <Card className="mb-6 hidden md:block">
         <DateRangeFilter
           from={from}
           to={to}
@@ -63,6 +65,9 @@ export function AdminDashboard({
           hint={`${formatBRL(data.wasteRevenue)} deixou de vender`}
           alert={data.wasteQty > 0}
         />
+      </MetricGrid>
+
+      <div className="mt-4 hidden gap-4 md:grid sm:grid-cols-2 xl:grid-cols-3">
         <MetricCard
           label="Custo das perdas"
           value={formatBRL(data.wasteCost)}
@@ -79,9 +84,30 @@ export function AdminDashboard({
           }
           alert={data.expiredQty > 0}
         />
-      </MetricGrid>
+      </div>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <OpenParties />
+
+      <PendingRequests canSend={false} />
+
+      <div className="mb-4 md:hidden">
+        <Button type="button" variant="ghost" className="w-full" onClick={() => setShowCharts((open) => !open)}>
+          {showCharts ? "Esconder gráficos e lojas" : "Ver gráficos, lojas e recorte de datas"}
+        </Button>
+      </div>
+
+      <div className={cn(!showCharts && "hidden md:block")}>
+        <Card className="mb-6 md:hidden">
+          <DateRangeFilter
+            from={from}
+            to={to}
+            onChange={onRange}
+            fromHint="Venda, perda e o que saiu da câmara."
+            toHint="Inclui este dia."
+          />
+        </Card>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {data.byLocation.map((location) => (
           <Card key={location.id}>
             <p className="text-base font-bold text-stone-500">{location.name}</p>
@@ -103,9 +129,7 @@ export function AdminDashboard({
         </Card>
       </div>
 
-      <OpenParties />
-
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      <div className={cn("mt-6 grid gap-4 lg:grid-cols-2", !showCharts && "hidden md:grid")}>
         <ChartCard title="Faturamento por loja" empty={data.byLocation.every((item) => item.revenue === 0)}>
           <MoneyBars
             data={data.byLocation.map((item) => ({
@@ -167,6 +191,7 @@ export function AdminDashboard({
           />
         </ChartCard>
       </div>
+      </div>
 
       <Card className="mb-8 mt-8">
         <p className="text-lg font-extrabold text-stone-900">Relatórios para baixar</p>
@@ -181,8 +206,6 @@ export function AdminDashboard({
           Abrir relatórios
         </Link>
       </Card>
-
-      <PendingRequests canSend={false} />
 
       <ExpiryList items={data.expiryAlerts} />
 

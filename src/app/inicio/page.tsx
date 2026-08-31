@@ -6,6 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { AdminDashboard } from "@/components/dashboard/AdminDashboard";
 import { FactoryDashboard } from "@/components/dashboard/FactoryDashboard";
 import { StoreDashboard } from "@/components/dashboard/StoreDashboard";
+import { LoadingCard } from "@/components/ui";
 import { getPanel } from "@/lib/locations";
 import { loadDashboard } from "@/lib/queries";
 import { getLocationId } from "@/lib/session";
@@ -27,16 +28,16 @@ export default function InicioPage() {
   return (
     <AppShell>
       {!panel || !panelId ? (
-        <p className="text-xl font-bold text-stone-500">Carregando...</p>
+        <LoadingCard hint="Abrindo o painel..." />
       ) : panel.type === "admin" ? (
         !data ? (
-          <p className="text-xl font-bold text-stone-500">Carregando...</p>
+          <LoadingCard hint="Montando a visão da rede..." />
         ) : (
           <AdminDashboard data={data} from={from} to={to} onRange={(nextFrom, nextTo) => { setFrom(nextFrom); setTo(nextTo); }} />
         )
       ) : panel.type === "factory" ? (
         !data ? (
-          <p className="text-xl font-bold text-stone-500">Carregando...</p>
+          <LoadingCard hint="Montando a fila da fábrica..." />
         ) : (
           <FactoryDashboard data={data} from={from} to={to} onRange={(nextFrom, nextTo) => { setFrom(nextFrom); setTo(nextTo); }} />
         )

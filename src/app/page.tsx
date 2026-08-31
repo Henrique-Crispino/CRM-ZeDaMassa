@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Button, Card, ErrorBox, Field, Input } from "@/components/ui";
+import { Button, Card, ErrorBox, Field, Input, LoadingCard } from "@/components/ui";
 import { showDemoHints } from "@/lib/demo-hints";
 import { enterOperator, verifyOperatorPin, panelLabel } from "@/lib/operator";
 import { listPeople, PeopleError, personAllowedPanelIds, personDoorHint, personHomePanelId } from "@/lib/people";
@@ -48,7 +48,9 @@ export default function HomePage() {
           administração. Isto não é senha da empresa — é para não misturar o trabalho neste computador.
         </p>
         {!ready || people === undefined ? (
-          <p className="mt-4 text-lg font-bold text-stone-500">Carregando...</p>
+          <div className="mt-4">
+            <LoadingCard hint="Carregando a equipe..." />
+          </div>
         ) : null}
 
         <div className="mt-8 space-y-3">
