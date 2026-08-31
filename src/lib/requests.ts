@@ -1,10 +1,16 @@
-import { stampActor } from "./actor";
+import { assertOperatorCanCash, stampActor } from "./actor";
+import { currentCashSession } from "./cash";
+import {
+  encomendaPaymentsOf,
+  recordEncomendaSignalInTx,
+  validateEncomendaSignalAmount,
+} from "./encomendas";
 import { getDb } from "./db";
 import { getLocation, isStore } from "./locations";
 import { formatDate, formatTime, newId, todayDate } from "./money";
 import { catalogItems, sellableQty, stockByLocation } from "./queries";
 import { sendToStore, StockError } from "./stock";
-import type { AppNotification, NotificationAudience, RequestStatus, StockRequest, StoreRequestKind } from "./types";
+import type { AppNotification, NotificationAudience, PaymentMethod, RequestStatus, SalePayment, StockRequest, StoreRequestKind } from "./types";
 import { closedCatalogMessage, isOpenRequest, productIsLive, requestStatusLabel, storeRequestKind } from "./types";
 
 export class RequestError extends Error {}
@@ -66,6 +72,7 @@ export async function createStoreRequest(input: {
   guestName?: string;
   estimatedTotal?: number;
   items: { nicheId: string; qty: number }[];
+  signal?: { amount: number; payment?: PaymentMethod; payments?: SalePayment[] };
 }) {
   if (!isStore(input.fromLocationId)) {
     throw new RequestError("Só a loja pede produto para a fábrica.");
@@ -83,7 +90,6 @@ export async function createStoreRequest(input: {
     if (neededBy < todayDate()) throw new RequestError("A data da encomenda não pode ser no passado.");
   }
 
-  const actor = await stampActor(RequestError);
   const db = getDb();
   const requestId = newId();
   const at = new Date().toISOString();
@@ -108,7 +114,37 @@ export async function createStoreRequest(input: {
   const estimatedTotal =
     kind === "encomenda" && Number.isFinite(input.estimatedTotal) ? Math.max(0, Number(input.estimatedTotal)) : undefined;
 
-  await db.transaction("rw", [db.requests, db.requestItems, db.notifications], async () => {
+  let signalWrite:
+    | {
+        amount: number;
+        payments: SalePayment[];
+        sessionId: string;
+        saleId: string;
+        actorId: string;
+        at: string;
+      }
+    | undefined;
+  if (input.signal) {
+    if (kind !== "encomenda") {
+      throw new RequestError("Sinal só entra na encomenda da loja.");
+    }
+    const amount = validateEncomendaSignalAmount({ estimatedTotal }, input.signal.amount);
+    const cashActor = await assertOperatorCanCash(RequestError);
+    const session = await currentCashSession(input.fromLocationId);
+    if (!session) throw new RequestError("Abra o caixa deste período antes de receber o sinal.");
+    signalWrite = {
+      amount,
+      payments: encomendaPaymentsOf(amount, input.signal),
+      sessionId: session.id,
+      saleId: newId(),
+      actorId: cashActor.actorId,
+      at: new Date().toISOString(),
+    };
+  }
+
+  const actor = await stampActor(RequestError);
+
+  await db.transaction("rw", [db.requests, db.requestItems, db.notifications, db.sales, db.cashSessions], async () => {
     await db.requests.add({
       id: requestId,
       fromLocationId: input.fromLocationId,
@@ -128,6 +164,22 @@ export async function createStoreRequest(input: {
         nicheId: item.nicheId,
         qty: item.qty,
         sentQty: 0,
+      });
+    }
+    if (signalWrite) {
+      const live = await db.cashSessions.get(signalWrite.sessionId);
+      if (!live || live.closedAt || live.locationId !== input.fromLocationId) {
+        throw new RequestError("Abra o caixa deste período antes de receber o sinal.");
+      }
+      await recordEncomendaSignalInTx(db, {
+        requestId,
+        locationId: input.fromLocationId,
+        amount: signalWrite.amount,
+        payments: signalWrite.payments,
+        actorId: signalWrite.actorId,
+        at: signalWrite.at,
+        sessionId: live.id,
+        saleId: signalWrite.saleId,
       });
     }
     const weekday =

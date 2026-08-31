@@ -37,11 +37,11 @@ export default function InventarioPage() {
   const locationId = panel?.type === "admin" ? picked : panel?.type === "factory" ? "factory" : (panelId ?? "");
   const witnesses = useLiveQuery(() => (ready ? listWitnesses(actorId) : undefined), [ready, actorId]);
   const sheet = useLiveQuery(
-    () => (ready && locationId ? inventorySheet(locationId) : []),
+    () => (ready && locationId ? inventorySheet(locationId) : undefined),
     [ready, locationId],
   );
   const history = useLiveQuery(
-    () => (ready ? listInventoryCounts(panel?.type === "admin" ? undefined : locationId) : []),
+    () => (ready ? listInventoryCounts(panel?.type === "admin" ? undefined : locationId) : undefined),
     [ready, panel?.type, locationId],
   );
   const historyPage = usePager(history ?? [], 8, locationId);
@@ -183,7 +183,11 @@ export default function InventarioPage() {
         <SearchField value={search} onChange={setSearch} placeholder="Procurar produto..." />
       </div>
 
-      {rows.length === 0 ? (
+      {sheet === undefined ? (
+        <Card className="mb-4">
+          <p className="font-extrabold text-stone-600">Carregando o inventário...</p>
+        </Card>
+      ) : rows.length === 0 ? (
         <Empty title="Nada para contar" hint="Cadastre produtos ou mande estoque para este local." />
       ) : (
         <div className="space-y-3">

@@ -148,6 +148,23 @@ export default function FuncionariosPage() {
                 />
               </Field>
             </div>
+          ) : form.podeCaixa ? (
+            <Field
+              label={editingId ? "Novo PIN (opcional)" : "PIN da ficha"}
+              hint={
+                editingId
+                  ? "Usado na porta e quando esta pessoa é testemunha. Deixe em branco para manter."
+                  : "Mínimo 4 dígitos. Usado na porta e na 2ª contagem do caixa."
+              }
+            >
+              <Input
+                type="password"
+                value={form.password}
+                onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+                placeholder={editingId ? "••••" : "Mínimo 4 caracteres"}
+                autoComplete="new-password"
+              />
+            </Field>
           ) : null}
           <ErrorBox message={error} />
           <SuccessBox message={ok} />
@@ -229,9 +246,15 @@ export default function FuncionariosPage() {
                     variant="danger"
                     className="min-h-12"
                     onClick={async () => {
-                      await deactivatePerson(item.id);
-                      if (editingId === item.id) resetForm();
-                      setOk("Removido da equipe.");
+                      setError("");
+                      setOk("");
+                      try {
+                        await deactivatePerson(item.id);
+                        if (editingId === item.id) resetForm();
+                        setOk("Removido da equipe.");
+                      } catch (err) {
+                        setError(err instanceof PeopleError ? err.message : "Não deu para remover.");
+                      }
                     }}
                   >
                     Remover

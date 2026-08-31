@@ -25,9 +25,9 @@ export default function EstoquePage() {
   const ready = useReady();
   const panel = ready ? getPanel(getLocationId() ?? "") : undefined;
   const { locations } = useLocationCatalog();
-  const stock = useLiveQuery(() => (ready ? stockByLocation() : []), [ready]);
+  const stock = useLiveQuery(() => (ready ? stockByLocation() : undefined), [ready]);
   const expiry = useLiveQuery(
-    () => (ready ? expiryAlertsFor(panel?.type === "store" ? panel.id : "admin") : []),
+    () => (ready ? expiryAlertsFor(panel?.type === "store" ? panel.id : "admin") : undefined),
     [ready, panel?.id, panel?.type],
   );
   const isStore = panel?.type === "store";
@@ -115,7 +115,7 @@ export default function EstoquePage() {
           href="/kardex"
           className="inline-flex min-h-12 items-center rounded-2xl bg-white px-4 text-base font-bold text-stone-800 ring-1 ring-stone-300"
         >
-          Ver kardex
+          Ver extrato
         </Link>
       </div>
 
@@ -187,7 +187,11 @@ export default function EstoquePage() {
             }}
           />
         </div>
-      ) : !stock?.length ? (
+      ) : stock === undefined ? (
+        <Card className="mb-4">
+          <p className="font-extrabold text-stone-600">Carregando estoque...</p>
+        </Card>
+      ) : !stock.length ? (
         <Empty title="Nenhum produto cadastrado" hint="Cadastre os produtos para começar a ver o estoque." />
       ) : rows.length === 0 ? (
         <Empty title="Nada com esse nome" hint="Tente outro trecho: coxinha, mini, coca." />

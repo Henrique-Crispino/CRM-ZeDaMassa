@@ -41,6 +41,8 @@ function paymentsOf(total: number, input: { payment?: PaymentMethod; payments?: 
   return payments;
 }
 
+export const encomendaPaymentsOf = paymentsOf;
+
 export async function estimateEncomendaTotal(items: { nicheId: string; qty: number }[]) {
   const catalog = await catalogItems(false);
   return money2(
@@ -66,13 +68,7 @@ export async function takeEncomendaSignal(input: {
   if (request.signalSaleId) throw new EncomendaError("O sinal desta festa já entrou.");
   if (!isStore(request.fromLocationId)) throw new EncomendaError("Só a loja recebe o sinal.");
 
-  const total = money2(request.estimatedTotal ?? 0);
-  if (total <= 0) throw new EncomendaError("Falta o valor da festa para receber o sinal.");
-  const amount = money2(input.amount);
-  if (amount <= 0 || amount >= total) {
-    throw new EncomendaError("O sinal tem que ser maior que zero e menor que o total.");
-  }
-
+  const amount = validateEncomendaSignalAmount(request, input.amount);
   const session = await currentCashSession(request.fromLocationId);
   if (!session) throw new EncomendaError("Abra o caixa deste período antes de receber o sinal.");
 
@@ -87,27 +83,65 @@ export async function takeEncomendaSignal(input: {
       if (!live || live.closedAt || live.locationId !== request.fromLocationId) {
         throw new EncomendaError("Abra o caixa deste período antes de receber o sinal.");
       }
-      const current = await db.requests.get(request.id);
-      if (!current || current.signalSaleId) throw new EncomendaError("O sinal desta festa já entrou.");
-      await db.sales.add({
-        id: saleId,
-        locationId: request.fromLocationId,
-        channel: "encomenda",
-        payment: payments[0]?.method ?? "pix",
-        payments: payments.length > 1 ? payments : undefined,
-        total: amount,
-        at,
-        cashSessionId: live.id,
-        kind: "sinal",
+      await recordEncomendaSignalInTx(db, {
         requestId: request.id,
+        locationId: request.fromLocationId,
+        amount,
+        payments,
         actorId: actor.actorId,
+        at,
+        sessionId: live.id,
+        saleId,
       });
-      await db.requests.update(request.id, { signalAmount: amount, signalSaleId: saleId });
     });
   } catch (err) {
     asStock(err);
   }
   return saleId;
+}
+
+export function validateEncomendaSignalAmount(
+  request: Pick<StockRequest, "estimatedTotal">,
+  rawAmount: number,
+) {
+  const total = money2(request.estimatedTotal ?? 0);
+  if (total <= 0) throw new EncomendaError("Falta o valor da festa para receber o sinal.");
+  const amount = money2(rawAmount);
+  if (amount <= 0 || amount >= total) {
+    throw new EncomendaError("O sinal tem que ser maior que zero e menor que o total.");
+  }
+  return amount;
+}
+
+export async function recordEncomendaSignalInTx(
+  db: ReturnType<typeof getDb>,
+  input: {
+    requestId: string;
+    locationId: string;
+    amount: number;
+    payments: SalePayment[];
+    actorId: string;
+    at: string;
+    sessionId: string;
+    saleId: string;
+  },
+) {
+  const current = await db.requests.get(input.requestId);
+  if (!current || current.signalSaleId) throw new EncomendaError("O sinal desta festa já entrou.");
+  await db.sales.add({
+    id: input.saleId,
+    locationId: input.locationId,
+    channel: "encomenda",
+    payment: input.payments[0]?.method ?? "pix",
+    payments: input.payments.length > 1 ? input.payments : undefined,
+    total: input.amount,
+    at: input.at,
+    cashSessionId: input.sessionId,
+    kind: "sinal",
+    requestId: input.requestId,
+    actorId: input.actorId,
+  });
+  await db.requests.update(input.requestId, { signalAmount: input.amount, signalSaleId: input.saleId });
 }
 
 export async function deliverEncomenda(input: {

@@ -8,6 +8,7 @@ import {
   CompactGroup,
   CompactList,
   CompactRow,
+  ConfirmDialog,
   FilterChips,
   SearchField,
   StickyActionBar,
@@ -16,7 +17,7 @@ import {
   pickKindOptions,
   type PickKind,
 } from "@/components/pick-flow";
-import { Button, Empty, ErrorBox, Field, Input, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
+import { Button, Card, Empty, ErrorBox, Field, Input, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { isManufactured } from "@/lib/categories";
 import { getPanel } from "@/lib/locations";
 import { todayDate } from "@/lib/money";
@@ -29,7 +30,10 @@ export default function ProduzirPage() {
   const ready = useReady();
   const panel = ready ? getPanel(getLocationId() ?? "") : undefined;
   const items = useLiveQuery(
-    () => (ready ? catalogItems().then((rows) => rows.filter((item) => isManufactured(item.product.category))) : []),
+    () =>
+      ready
+        ? catalogItems().then((rows) => rows.filter((item) => isManufactured(item.product.category)))
+        : undefined,
     [ready],
   );
   const [qty, setQty] = useState<Record<string, number>>({});
@@ -39,6 +43,7 @@ export default function ProduzirPage() {
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
   const [saving, setSaving] = useState(false);
+  const [confirm, setConfirm] = useState(false);
 
   const selected = useMemo(
     () => Object.entries(qty).filter(([, value]) => value > 0),
@@ -84,6 +89,7 @@ export default function ProduzirPage() {
         items: selected.map(([nicheId, value]) => ({ nicheId, qty: value })),
       });
       setQty({});
+      setConfirm(false);
       setOk("Pronto. O que foi feito já entrou no estoque da fábrica.");
     } catch (err) {
       setError(err instanceof StockError ? err.message : "Não deu para salvar. Tente de novo.");
@@ -127,7 +133,11 @@ export default function ProduzirPage() {
           <FilterChips value={kind} onChange={setKind} options={pickKindOptions(selected.length)} />
         </div>
 
-        {!items?.length ? (
+        {!ready || items === undefined ? (
+          <Card className="mb-4">
+            <p className="font-extrabold text-stone-600">Carregando produtos...</p>
+          </Card>
+        ) : !items.length ? (
           <Empty
             title="Cadastre os produtos primeiro"
             hint="Sem produto cadastrado, não dá para registrar a produção."
@@ -165,6 +175,19 @@ export default function ProduzirPage() {
         )}
       </div>
 
+      <ConfirmDialog
+        open={confirm}
+        title="Guardar no estoque?"
+        hint={`${selected.length} tipos · ${selectedUnits} un. na data ${madeAt}.`}
+        confirmLabel={saving ? "Salvando..." : "Sim, guardar"}
+        busy={saving}
+        onCancel={() => setConfirm(false)}
+        onConfirm={() => {
+          if (saving) return;
+          void save();
+        }}
+      />
+
       <StickyActionBar>
         <ErrorBox message={error} />
         <SuccessBox message={ok} />
@@ -172,7 +195,7 @@ export default function ProduzirPage() {
           <p className="font-bold text-stone-700">
             {selected.length > 0 ? `${selected.length} tipos · ${selectedUnits} un.` : "Nada lançado ainda"}
           </p>
-          <Button disabled={saving || selected.length === 0} onClick={save}>
+          <Button disabled={saving || selected.length === 0} onClick={() => setConfirm(true)}>
             {saving ? "Salvando..." : "Guardar no estoque"}
           </Button>
         </div>

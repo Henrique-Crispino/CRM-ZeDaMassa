@@ -27,6 +27,13 @@ export function AccessGate({
   const actorId = ready ? getActorId() : null;
   const panel = ready ? getPanel(getLocationId() ?? "") : undefined;
   const person = useLiveQuery(() => (actorId ? getDb().employees.get(actorId) : undefined), [actorId]);
+  if (!ready) {
+    return (
+      <AppShell>
+        <Empty title="Carregando..." hint="Aguarde um instante." />
+      </AppShell>
+    );
+  }
   if (panel && !allow.includes(panel.type)) {
     return (
       <AppShell>
@@ -41,6 +48,13 @@ export function AccessGate({
           title={`Isto não é de ${person.name}`}
           hint="Sai e entra de novo com quem opera este lugar. A Telma não abre a administração."
         />
+      </AppShell>
+    );
+  }
+  if (actorId && person === undefined) {
+    return (
+      <AppShell>
+        <Empty title="Carregando a ficha..." hint="Aguarde antes de entrar nesta tela." />
       </AppShell>
     );
   }

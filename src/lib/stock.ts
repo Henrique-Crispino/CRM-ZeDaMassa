@@ -753,6 +753,7 @@ export async function checkout(input: {
         payment: payments[0]?.method ?? "dinheiro",
         payments: payments.length > 1 || credit > 0 ? payments : undefined,
         total,
+        signalCredit: credit > 0 ? credit : undefined,
         at,
         cashSessionId: live.id,
         kind: input.kind === "sinal" ? "sinal" : "venda",

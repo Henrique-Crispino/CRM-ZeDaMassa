@@ -20,7 +20,7 @@ import {
 } from "@/components/pick-flow";
 import { PageBoard, Pager, usePager } from "@/components/pager";
 import { ReportPreview } from "@/components/ReportPreview";
-import { Button, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
+import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
 import { getLocation, getPanel, useLocationCatalog } from "@/lib/locations";
 import { expiryAlertsFor, listTransfers, sellableQty, stockByLocation } from "@/lib/queries";
 import { loadFactoryWell } from "@/lib/requests";
@@ -35,13 +35,13 @@ export default function EnviarPage() {
   const ready = useReady();
   const panel = ready ? getPanel(getLocationId() ?? "") : undefined;
   const { stores } = useLocationCatalog();
-  const stock = useLiveQuery(() => (ready ? stockByLocation() : []), [ready]);
+  const stock = useLiveQuery(() => (ready ? stockByLocation() : undefined), [ready]);
   const well = useLiveQuery(() => (ready ? loadFactoryWell() : undefined), [ready]);
   const pending = useLiveQuery(
     () =>
       ready
         ? listTransfers({ kind: "envio" }).then((rows) => rows.filter((row) => row.status === "em_transito"))
-        : [],
+        : undefined,
     [ready],
   );
   const pendingPage = usePager(pending ?? [], 6);
@@ -56,7 +56,7 @@ export default function EnviarPage() {
   const [sheet, setSheet] = useState<ReportTable | null>(null);
 
   const expiry = useLiveQuery(
-    () => (ready ? expiryAlertsFor("factory") : []),
+    () => (ready ? expiryAlertsFor("factory") : undefined),
     [ready],
   );
   const expiredFactory = (expiry ?? []).filter((item) => item.level === "expired");
@@ -149,6 +149,12 @@ export default function EnviarPage() {
           hint="Primeiro as quantidades. A loja só aparece na revisão — assim não manda para o lugar errado no meio da conta. O que a loja ou o cliente já pediu não sai daqui: só o que sobrou da fila. O que sair da câmara fica em trânsito até a loja conferir."
         />
 
+        {stock === undefined || well === undefined ? (
+          <Card className="mb-4">
+            <p className="font-extrabold text-stone-600">Carregando estoque da fábrica...</p>
+          </Card>
+        ) : null}
+
         {(pending ?? []).length > 0 ? (
           <div className="mb-4 rounded-3xl bg-orange-50 px-4 py-3 ring-1 ring-orange-200">
             <p className="font-extrabold text-stone-900">
@@ -209,6 +215,7 @@ export default function EnviarPage() {
         </div>
 
         {!available.length ? (
+          stock === undefined || well === undefined ? null : (
           <Empty
             title="A fábrica está sem estoque"
             hint="Registre a produção primeiro. Só depois dá para mandar para a loja."
@@ -221,6 +228,7 @@ export default function EnviarPage() {
               </Link>
             }
           />
+          )
         ) : grouped.length === 0 ? (
           <Empty title="Nada com esse nome" hint="Tente outro trecho ou limpe a busca." />
         ) : (

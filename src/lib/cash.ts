@@ -206,44 +206,47 @@ export async function closeCashSession(input: {
 }) {
   const actor = await assertOperatorCanCash(CashError);
   const db = getDb();
-  const session = await db.cashSessions.get(input.sessionId);
-  if (!session || session.closedAt) throw new CashError("Esse caixa já foi fechado.");
 
-  const ledger = await sessionLedger(session.id);
-  const closingAmount = money2(Math.max(0, input.closingAmount));
-  const difference = money2(closingAmount - ledger.expectedCash);
+  await db.transaction("rw", [db.cashSessions, db.sales, db.cashMovements, db.employees], async () => {
+    const session = await db.cashSessions.get(input.sessionId);
+    if (!session || session.closedAt) throw new CashError("Esse caixa já foi fechado.");
 
-  let secondCount: number | undefined;
-  let recountedBy: string | undefined;
-  let recountedById: string | undefined;
-  if (needsCashRecount(difference)) {
-    if (input.secondCount == null || Number.isNaN(input.secondCount)) {
-      throw new CashError("Quebra ou sobra: conte o dinheiro de novo antes de encerrar.");
+    const ledger = await sessionLedger(session.id);
+    const closingAmount = money2(Math.max(0, input.closingAmount));
+    const difference = money2(closingAmount - ledger.expectedCash);
+
+    let secondCount: number | undefined;
+    let recountedBy: string | undefined;
+    let recountedById: string | undefined;
+    if (needsCashRecount(difference)) {
+      if (input.secondCount == null || Number.isNaN(input.secondCount)) {
+        throw new CashError("Quebra ou sobra: conte o dinheiro de novo antes de encerrar.");
+      }
+      secondCount = money2(Math.max(0, input.secondCount));
+      if (Math.abs(secondCount - closingAmount) >= 0.005) {
+        throw new CashError("A segunda contagem tem que bater com a primeira. Se achou outro valor, corrija o apurado e conte de novo.");
+      }
+      const witness = await assertWitness(CashError, { personId: input.recountedById, pin: input.witnessPin });
+      recountedBy = witness.recountedBy;
+      recountedById = witness.recountedById;
     }
-    secondCount = money2(Math.max(0, input.secondCount));
-    if (Math.abs(secondCount - closingAmount) >= 0.005) {
-      throw new CashError("A segunda contagem tem que bater com a primeira. Se achou outro valor, corrija o apurado e conte de novo.");
-    }
-    const witness = await assertWitness(CashError, { personId: input.recountedById, pin: input.witnessPin });
-    recountedBy = witness.recountedBy;
-    recountedById = witness.recountedById;
-  }
 
-  await db.cashSessions.update(session.id, {
-    closedAt: new Date().toISOString(),
-    closingAmount,
-    expectedAmount: ledger.expectedCash,
-    difference,
-    cashSales: ledger.byPayment.dinheiro,
-    pixSales: ledger.byPayment.pix,
-    cardSales: ledger.byPayment.cartao,
-    sangriaTotal: ledger.sangriaTotal,
-    supplyTotal: ledger.supplyTotal,
-    note: input.note?.trim() ?? "",
-    secondCount,
-    recountedBy,
-    recountedById,
-    actorId: session.actorId ?? actor.actorId,
+    await db.cashSessions.update(session.id, {
+      closedAt: new Date().toISOString(),
+      closingAmount,
+      expectedAmount: ledger.expectedCash,
+      difference,
+      cashSales: ledger.byPayment.dinheiro,
+      pixSales: ledger.byPayment.pix,
+      cardSales: ledger.byPayment.cartao,
+      sangriaTotal: ledger.sangriaTotal,
+      supplyTotal: ledger.supplyTotal,
+      note: input.note?.trim() ?? "",
+      secondCount,
+      recountedBy,
+      recountedById,
+      closedById: actor.actorId,
+    });
   });
 }
 
@@ -261,18 +264,9 @@ export async function reopenCashSession(input: {
   note: string;
 }) {
   const db = getDb();
-  const session = await db.cashSessions.get(input.sessionId);
-  if (!session) throw new CashError("Caixa não encontrado.");
-  if (!session.closedAt) throw new CashError("Esse caixa ainda está aberto.");
-  if (localDay(session.openedAt) !== todayDate()) {
-    throw new CashError("Só reabre o caixa do dia. Turno de outro dia fica como está.");
-  }
-
-  const open = await currentCashSession(session.locationId);
-  if (open) {
-    throw new CashError(
-      `Já tem um caixa aberto nesta loja (${cashPeriodLabel(open.period)} · ${open.employeeName}). Feche antes de reabrir outro.`,
-    );
+  const note = input.note.trim();
+  if (note.length < 3) {
+    throw new CashError("Escreva por que está reabrindo. O dia precisa de um motivo.");
   }
 
   const code = await ensureReopenCode();
@@ -280,30 +274,45 @@ export async function reopenCashSession(input: {
     throw new CashError("Senha de reabertura não confere.");
   }
 
-  const note = input.note.trim();
-  if (note.length < 3) {
-    throw new CashError("Escreva por que está reabrindo. O dia precisa de um motivo.");
-  }
+  let next: CashSession | undefined;
+  await db.transaction("rw", [db.cashSessions], async () => {
+    const session = await db.cashSessions.get(input.sessionId);
+    if (!session) throw new CashError("Caixa não encontrado.");
+    if (!session.closedAt) throw new CashError("Esse caixa ainda está aberto.");
+    if (localDay(session.openedAt) !== todayDate()) {
+      throw new CashError("Só reabre o caixa do dia. Turno de outro dia fica como está.");
+    }
 
-  const next: CashSession = {
-    ...session,
-    reopenedAt: new Date().toISOString(),
-    reopenNote: note,
-    reopenCount: (session.reopenCount ?? 0) + 1,
-  };
-  delete next.closedAt;
-  delete next.closingAmount;
-  delete next.expectedAmount;
-  delete next.difference;
-  delete next.cashSales;
-  delete next.pixSales;
-  delete next.cardSales;
-  delete next.sangriaTotal;
-  delete next.supplyTotal;
-  delete next.secondCount;
-  delete next.recountedBy;
-  delete next.recountedById;
-  await db.cashSessions.put(next);
+    const rows = await db.cashSessions.where("locationId").equals(session.locationId).toArray();
+    const open = rows.find((row) => !row.closedAt);
+    if (open) {
+      throw new CashError(
+        `Já tem um caixa aberto nesta loja (${cashPeriodLabel(open.period)} · ${open.employeeName}). Feche antes de reabrir outro.`,
+      );
+    }
+
+    next = {
+      ...session,
+      reopenedAt: new Date().toISOString(),
+      reopenNote: note,
+      reopenCount: (session.reopenCount ?? 0) + 1,
+    };
+    delete next.closedAt;
+    delete next.closingAmount;
+    delete next.expectedAmount;
+    delete next.difference;
+    delete next.cashSales;
+    delete next.pixSales;
+    delete next.cardSales;
+    delete next.sangriaTotal;
+    delete next.supplyTotal;
+    delete next.secondCount;
+    delete next.recountedBy;
+    delete next.recountedById;
+    delete next.closedById;
+    await db.cashSessions.put(next);
+  });
+  if (!next) throw new CashError("Caixa não encontrado.");
   return next;
 }
 
@@ -396,6 +405,22 @@ export async function sessionLedger(sessionId: string): Promise<CashLedger> {
 
   const sales = (await db.sales.where("cashSessionId").equals(sessionId).toArray()).filter(isLiveSale);
   const merchandise = sales.filter(isRevenueSale);
+  const signalSessionByRequest = new Map<string, string>();
+  for (const sale of sales) {
+    if (sale.kind === "sinal" && sale.requestId && sale.cashSessionId) {
+      signalSessionByRequest.set(sale.requestId, sale.cashSessionId);
+    }
+  }
+  function revenueTotal(sale: Sale) {
+    const credit = sale.signalCredit ?? 0;
+    if (credit > 0 && sale.requestId) {
+      const signalSession = signalSessionByRequest.get(sale.requestId);
+      if (signalSession && signalSession !== sale.cashSessionId) {
+        return money2(sale.total - credit);
+      }
+    }
+    return sale.total;
+  }
   const movements = (
     (await db.cashMovements?.where("sessionId").equals(sessionId).toArray().catch(() => [])) ?? []
   ).sort((a, b) => a.at.localeCompare(b.at));
@@ -426,7 +451,7 @@ export async function sessionLedger(sessionId: string): Promise<CashLedger> {
   return {
     session,
     salesCount: merchandise.length,
-    salesTotal: money2(merchandise.reduce((sum, sale) => sum + sale.total, 0)),
+    salesTotal: money2(merchandise.reduce((sum, sale) => sum + revenueTotal(sale), 0)),
     byPayment: {
       dinheiro: money2(byPayment.dinheiro),
       pix: money2(byPayment.pix),

@@ -142,7 +142,7 @@ export default function PedirPage() {
     setOk("");
     setSaving(true);
     try {
-      const requestId = await createStoreRequest({
+      await createStoreRequest({
         fromLocationId: locationId,
         note,
         kind: askKind,
@@ -150,10 +150,11 @@ export default function PedirPage() {
         guestName: askKind === "encomenda" ? guestName : undefined,
         estimatedTotal: askKind === "encomenda" ? estimatedTotal : undefined,
         items: selected.map(([nicheId, value]) => ({ nicheId, qty: value })),
+        signal:
+          askKind === "encomenda" && signalMode !== "depois" && signalAmount > 0
+            ? { amount: signalAmount, payment }
+            : undefined,
       });
-      if (askKind === "encomenda" && signalMode !== "depois" && signalAmount > 0) {
-        await takeEncomendaSignal({ requestId, amount: signalAmount, payment });
-      }
       setQty({});
       setNote("");
       setSearch("");

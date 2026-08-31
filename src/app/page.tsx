@@ -11,7 +11,7 @@ import { useReady } from "@/lib/use-ready";
 export default function HomePage() {
   const router = useRouter();
   const ready = useReady();
-  const people = useLiveQuery(() => (ready ? listPeople() : []), [ready]);
+  const people = useLiveQuery(() => (ready ? listPeople() : undefined), [ready]);
   const active = (people ?? []).filter((person) => person.active);
   const [pickedId, setPickedId] = useState("");
   const [pin, setPin] = useState("");
@@ -46,9 +46,14 @@ export default function HomePage() {
           Escolha o nome. Depois o PIN da ficha. Matheus e Yokota entram em qualquer painel. A Telma não abre a
           administração. Isto não é senha da empresa — é para não misturar o trabalho neste computador.
         </p>
-        {!ready ? <p className="mt-4 text-lg font-bold text-stone-500">Carregando...</p> : null}
+        {!ready || people === undefined ? (
+          <p className="mt-4 text-lg font-bold text-stone-500">Carregando...</p>
+        ) : null}
 
         <div className="mt-8 space-y-3">
+          {people !== undefined && active.length === 0 ? (
+            <p className="text-lg font-semibold text-stone-600">Ninguém cadastrado na equipe.</p>
+          ) : null}
           {active.map((person) => (
             <Button
               key={person.id}

@@ -424,6 +424,7 @@ export type Sale = {
   kind?: SaleKind;
   requestId?: string;
   actorId?: string;
+  signalCredit?: number;
 };
 
 export type SaleItem = {
@@ -627,6 +628,7 @@ export type CashSession = {
   reopenNote?: string;
   reopenCount?: number;
   actorId?: string;
+  closedById?: string;
 };
 
 export type InternalAllowance = {

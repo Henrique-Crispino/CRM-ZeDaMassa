@@ -39,16 +39,23 @@ function startDemoClock() {
 
 export function useReady() {
   const [ready, setReady] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     let alive = true;
     function run() {
       setReady(false);
+      setError(null);
       ensureAppBoot()
         .then(() => {
           if (alive) setReady(true);
         })
-        .catch(() => undefined);
+        .catch((err) => {
+          if (alive) {
+            setError(err instanceof Error ? err : new Error(String(err)));
+            setReady(false);
+          }
+        });
     }
     run();
     startDemoClock();
@@ -62,5 +69,6 @@ export function useReady() {
     };
   }, []);
 
+  if (error) throw error;
   return ready;
 }

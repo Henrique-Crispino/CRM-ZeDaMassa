@@ -204,6 +204,7 @@ export async function savePerson(input: {
   const current = input.id ? await db.employees.get(input.id) : undefined;
   const login = input.podeConsumo ? normalizeLogin(input.login ?? current?.login ?? "") : current?.login;
   const password = input.password?.trim() || current?.password || "";
+  const needsPin = input.podeConsumo || input.podeCaixa;
 
   if (input.podeConsumo) {
     if (!login || login.length < 3) {
@@ -220,6 +221,14 @@ export async function savePerson(input: {
       (row) => row.active && row.id !== input.id && normalizeLogin(row.login ?? "") === login,
     );
     if (taken) throw new PeopleError("Já existe alguém com esta identificação.");
+  } else if (needsPin) {
+    if (!current && password.length < 4) {
+      throw new PeopleError("O PIN da ficha precisa ter pelo menos 4 caracteres.");
+    }
+    if (input.password?.trim() && password.length < 4) {
+      throw new PeopleError("O PIN da ficha precisa ter pelo menos 4 caracteres.");
+    }
+    if (!current && !password) throw new PeopleError("Informe o PIN desta ficha.");
   }
 
   const record: Employee = {
@@ -230,7 +239,7 @@ export async function savePerson(input: {
     podeCaixa: input.podeCaixa,
     podeConsumo: input.podeConsumo,
     login: input.podeConsumo ? login : current?.login,
-    password: input.podeConsumo ? password : current?.password,
+    password: needsPin ? password : current?.password,
     active: true,
   };
   await db.employees.put(record);

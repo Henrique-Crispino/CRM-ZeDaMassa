@@ -20,7 +20,7 @@ export default function ReceberPage() {
   const storeLocked = panel?.type === "store";
   const scope = storeLocked ? panelId ?? undefined : undefined;
   const transfers = useLiveQuery(
-    () => (ready ? listTransfers({ toLocationId: scope, kind: "envio" }) : []),
+    () => (ready ? listTransfers({ toLocationId: scope, kind: "envio" }) : undefined),
     [ready, scope],
   );
 
@@ -89,7 +89,7 @@ export default function ReceberPage() {
       {storeLocked ? (
         <Card className="mb-5 bg-orange-50 ring-orange-200">
           <p className="font-extrabold text-stone-900">Só os envios desta loja</p>
-          <p className="text-stone-600">Quem confere fica no nome deste painel: {panel?.name}.</p>
+          <p className="text-stone-600">Quem confere fica no cupom com o nome de quem operou esta loja.</p>
         </Card>
       ) : (
         <Card className="mb-5 bg-orange-50 ring-orange-200">
@@ -101,7 +101,13 @@ export default function ReceberPage() {
       <ErrorBox message={error} />
       <SuccessBox message={ok} />
 
-      {pending.length === 0 && !selected ? (
+      {transfers === undefined ? (
+        <Card className="mb-5">
+          <p className="font-extrabold text-stone-600">Carregando envios...</p>
+        </Card>
+      ) : null}
+
+      {transfers !== undefined && pending.length === 0 && !selected ? (
         <Empty
           title="Nada em trânsito"
           hint="Quando a fábrica mandar, o envio aparece aqui. Enquanto não conferir, a loja não vende isso."
