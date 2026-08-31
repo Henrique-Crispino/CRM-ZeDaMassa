@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import { DiscardExpiredBanner } from "@/components/DiscardExpiredBanner";
-import { ConfirmDialog, FilterChips, SearchField, StickyActionBar } from "@/components/pick-flow";
+import { ConfirmDialog, FilterChips, SearchField, StickyActionBar, BottomSheet } from "@/components/pick-flow";
 import { SessionSalesList } from "@/components/SessionSalesList";
 import {
   Button,
@@ -69,6 +69,7 @@ export default function VenderPage() {
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [quick, setQuick] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
 
   const sellable = useMemo(() => {
     return (stock ?? []).filter(
@@ -150,6 +151,192 @@ export default function VenderPage() {
   const paid = paymentLines.reduce((sum, row) => sum + row.amount, 0);
   const remaining = Math.round((total - paid) * 100) / 100;
   const payReady = paymentLines.length > 0 && Math.abs(remaining) < 0.005;
+  const itemCount =
+    cartItems.reduce((sum, item) => sum + item.cartQty, 0) +
+    comboCartItems.reduce((sum, item) => sum + item.cartQty, 0);
+
+  function openReview(quickSale = false) {
+    setOk("");
+    setQuick(quickSale);
+    setCartOpen(false);
+    setConfirm(true);
+  }
+
+  function checkoutPanel() {
+    return (
+      <>
+        {cartItems.length === 0 && comboCartItems.length === 0 ? (
+          <p className="text-stone-600">Toque nos produtos ou no combo para montar o pedido.</p>
+        ) : (
+          <>
+            {comboCartItems.map((item) => (
+              <div key={item.id} className="space-y-2 border-b border-stone-100 pb-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="font-bold">Combo · {item.name}</p>
+                    <p className="text-sm text-stone-500">{formatBRL(item.price)}</p>
+                  </div>
+                  <NumberStepper
+                    value={item.cartQty}
+                    max={item.packsLeft}
+                    onChange={(value) => setComboCart((current) => ({ ...current, [item.id]: value }))}
+                  />
+                </div>
+              </div>
+            ))}
+            {cartItems.map((item) => (
+              <div key={item.niche.id} className="space-y-2 border-b border-stone-100 pb-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="font-bold">{item.label}</p>
+                    <p className="text-sm text-stone-500">{formatBRL(item.lineTotal)}</p>
+                  </div>
+                  <NumberStepper
+                    value={item.cartQty}
+                    max={item.available}
+                    onChange={(value) => setCart((current) => ({ ...current, [item.niche.id]: value }))}
+                  />
+                </div>
+                {promoIsLive(item.niche) ? (
+                  <Button
+                    type="button"
+                    variant={item.usePromo ? "primary" : "ghost"}
+                    className="min-h-11 w-full text-sm"
+                    onClick={() => setPromo((current) => ({ ...current, [item.niche.id]: !current[item.niche.id] }))}
+                  >
+                    {item.usePromo
+                      ? `Promoção ligada · ${formatBRL(item.niche.promoPrice)}`
+                      : `Vender em promoção · ${formatBRL(item.niche.promoPrice)}`}
+                  </Button>
+                ) : null}
+              </div>
+            ))}
+          </>
+        )}
+
+        <div>
+          <p className="mb-2 font-bold">Como o cliente comprou?</p>
+          {moreSale ? (
+            <div className="space-y-3 rounded-2xl bg-stone-50 px-4 py-3 ring-1 ring-stone-200">
+              <p className="font-extrabold text-stone-900">No caixa</p>
+              <p className="text-sm font-semibold text-stone-600">
+                Delivery ainda não é motoboy — só marca de onde veio a venda nos relatórios.
+              </p>
+              <label className="flex min-h-12 cursor-pointer items-center gap-3 font-bold text-stone-800">
+                <input
+                  type="checkbox"
+                  className="size-5 rounded border-stone-300"
+                  checked={channel === "delivery"}
+                  onChange={(event) => setChannel(event.target.checked ? "delivery" : "caixa")}
+                />
+                Marcar como delivery nesta venda
+              </label>
+              <Button
+                type="button"
+                variant="ghost"
+                className="min-h-11 text-sm"
+                onClick={() => {
+                  setMoreSale(false);
+                  setChannel("caixa");
+                }}
+              >
+                Voltar ao balcão
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="rounded-2xl bg-orange-50 px-4 py-3 font-extrabold text-orange-900">No caixa</p>
+              <Button type="button" variant="ghost" className="w-full min-h-11 text-sm" onClick={() => setMoreSale(true)}>
+                Delivery nesta venda
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <p className="mb-2 font-bold">Pagamento</p>
+          {split ? (
+            <div className="space-y-3">
+              {PAYMENT_METHODS.map((item) => (
+                <Field
+                  key={item.id}
+                  label={item.label}
+                  hint={item.id === "dinheiro" ? "Esta parte entra no esperado em espécie." : "Não fica na gaveta."}
+                >
+                  <Input
+                    inputMode="decimal"
+                    value={splitAmounts[item.id]}
+                    onChange={(event) => setSplitAmounts((current) => ({ ...current, [item.id]: event.target.value }))}
+                    placeholder="0,00"
+                  />
+                </Field>
+              ))}
+              <p className={Math.abs(remaining) < 0.005 ? "font-bold text-emerald-800" : "font-bold text-red-700"}>
+                {Math.abs(remaining) < 0.005
+                  ? "As formas somam o pedido."
+                  : remaining > 0
+                    ? `Falta ${formatBRL(remaining)}`
+                    : `Passou ${formatBRL(Math.abs(remaining))}`}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2">
+              {PAYMENT_METHODS.map((item) => (
+                <Button
+                  key={item.id}
+                  type="button"
+                  variant={payment === item.id ? "secondary" : "ghost"}
+                  className="min-h-12 px-2 text-sm"
+                  onClick={() => setPayment(item.id)}
+                >
+                  {item.label}
+                </Button>
+              ))}
+            </div>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            className="mt-2 w-full min-h-11 text-sm"
+            onClick={() => {
+              if (!split) {
+                setSplitAmounts({
+                  dinheiro: payment === "dinheiro" && total ? total.toFixed(2).replace(".", ",") : "",
+                  pix: payment === "pix" && total ? total.toFixed(2).replace(".", ",") : "",
+                  cartao: payment === "cartao" && total ? total.toFixed(2).replace(".", ",") : "",
+                });
+              }
+              setSplit((current) => !current);
+            }}
+          >
+            {split ? "Uma forma só" : "Dividir pagamento"}
+          </Button>
+        </div>
+
+        <p className="text-3xl font-extrabold">{formatBRL(total)}</p>
+        <ErrorBox message={error} />
+        <SuccessBox message={ok} />
+        <Button
+          className="w-full"
+          disabled={saving || (cartItems.length === 0 && comboCartItems.length === 0) || !session || !payReady}
+          onClick={() => openReview(false)}
+        >
+          Revisar e fechar
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="mt-2 w-full"
+          disabled={
+            saving || cartItems.length === 0 || comboCartItems.length > 0 || split || !session || !payReady
+          }
+          onClick={() => openReview(true)}
+        >
+          Fechar rápido
+        </Button>
+      </>
+    );
+  }
 
   if (panel && panel.type !== "store") {
     return (
@@ -367,192 +554,9 @@ export default function VenderPage() {
           )}
         </div>
 
-        <Card className="h-fit space-y-4 lg:sticky lg:top-28">
+        <Card className="hidden h-fit space-y-4 lg:sticky lg:top-28 lg:block">
           <h2 className="text-2xl font-extrabold">Pedido</h2>
-          {cartItems.length === 0 && comboCartItems.length === 0 ? (
-            <p className="text-stone-600">Toque nos produtos ou no combo para montar o pedido.</p>
-          ) : (
-            <>
-              {comboCartItems.map((item) => (
-                <div key={item.id} className="space-y-2 border-b border-stone-100 pb-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="font-bold">Combo · {item.name}</p>
-                      <p className="text-sm text-stone-500">{formatBRL(item.price)}</p>
-                    </div>
-                    <NumberStepper
-                      value={item.cartQty}
-                      max={item.packsLeft}
-                      onChange={(value) => setComboCart((current) => ({ ...current, [item.id]: value }))}
-                    />
-                  </div>
-                </div>
-              ))}
-              {cartItems.map((item) => (
-              <div key={item.niche.id} className="space-y-2 border-b border-stone-100 pb-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="font-bold">{item.label}</p>
-                    <p className="text-sm text-stone-500">{formatBRL(item.lineTotal)}</p>
-                  </div>
-                  <NumberStepper
-                    value={item.cartQty}
-                    max={item.available}
-                    onChange={(value) =>
-                      setCart((current) => ({ ...current, [item.niche.id]: value }))
-                    }
-                  />
-                </div>
-                {promoIsLive(item.niche) ? (
-                  <Button
-                    type="button"
-                    variant={item.usePromo ? "primary" : "ghost"}
-                    className="min-h-11 w-full text-sm"
-                    onClick={() =>
-                      setPromo((current) => ({ ...current, [item.niche.id]: !current[item.niche.id] }))
-                    }
-                  >
-                    {item.usePromo
-                      ? `Promoção ligada · ${formatBRL(item.niche.promoPrice)}`
-                      : `Vender em promoção · ${formatBRL(item.niche.promoPrice)}`}
-                  </Button>
-                ) : null}
-              </div>
-            ))
-            }
-            </>
-          )}
-
-          <div>
-            <p className="mb-2 font-bold">Como o cliente comprou?</p>
-            {moreSale ? (
-              <div className="space-y-3 rounded-2xl bg-stone-50 px-4 py-3 ring-1 ring-stone-200">
-                <p className="font-extrabold text-stone-900">No caixa</p>
-                <p className="text-sm font-semibold text-stone-600">
-                  Delivery ainda não é motoboy — só marca de onde veio a venda nos relatórios.
-                </p>
-                <label className="flex min-h-12 cursor-pointer items-center gap-3 font-bold text-stone-800">
-                  <input
-                    type="checkbox"
-                    className="size-5 rounded border-stone-300"
-                    checked={channel === "delivery"}
-                    onChange={(event) => setChannel(event.target.checked ? "delivery" : "caixa")}
-                  />
-                  Marcar como delivery nesta venda
-                </label>
-                <Button type="button" variant="ghost" className="min-h-11 text-sm" onClick={() => {
-                  setMoreSale(false);
-                  setChannel("caixa");
-                }}>
-                  Voltar ao balcão
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="rounded-2xl bg-orange-50 px-4 py-3 font-extrabold text-orange-900">No caixa</p>
-                <Button type="button" variant="ghost" className="w-full min-h-11 text-sm" onClick={() => setMoreSale(true)}>
-                  Delivery nesta venda
-                </Button>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <p className="mb-2 font-bold">Pagamento</p>
-            {split ? (
-              <div className="space-y-3">
-                {PAYMENT_METHODS.map((item) => (
-                  <Field
-                    key={item.id}
-                    label={item.label}
-                    hint={item.id === "dinheiro" ? "Esta parte entra no esperado em espécie." : "Não fica na gaveta."}
-                  >
-                    <Input
-                      inputMode="decimal"
-                      value={splitAmounts[item.id]}
-                      onChange={(event) =>
-                        setSplitAmounts((current) => ({ ...current, [item.id]: event.target.value }))
-                      }
-                      placeholder="0,00"
-                    />
-                  </Field>
-                ))}
-                <p className={Math.abs(remaining) < 0.005 ? "font-bold text-emerald-800" : "font-bold text-red-700"}>
-                  {Math.abs(remaining) < 0.005
-                    ? "As formas somam o pedido."
-                    : remaining > 0
-                      ? `Falta ${formatBRL(remaining)}`
-                      : `Passou ${formatBRL(Math.abs(remaining))}`}
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-3 gap-2">
-                {PAYMENT_METHODS.map((item) => (
-                  <Button
-                    key={item.id}
-                    type="button"
-                    variant={payment === item.id ? "secondary" : "ghost"}
-                    className="min-h-12 px-2 text-sm"
-                    onClick={() => setPayment(item.id)}
-                  >
-                    {item.label}
-                  </Button>
-                ))}
-              </div>
-            )}
-            <Button
-              type="button"
-              variant="ghost"
-              className="mt-2 w-full min-h-11 text-sm"
-              onClick={() => {
-                if (!split) {
-                  setSplitAmounts({
-                    dinheiro: payment === "dinheiro" && total ? total.toFixed(2).replace(".", ",") : "",
-                    pix: payment === "pix" && total ? total.toFixed(2).replace(".", ",") : "",
-                    cartao: payment === "cartao" && total ? total.toFixed(2).replace(".", ",") : "",
-                  });
-                }
-                setSplit((current) => !current);
-              }}
-            >
-              {split ? "Uma forma só" : "Dividir pagamento"}
-            </Button>
-          </div>
-
-          <p className="text-3xl font-extrabold">{formatBRL(total)}</p>
-          <ErrorBox message={error} />
-          <SuccessBox message={ok} />
-          <Button
-            className="hidden w-full lg:inline-flex"
-            disabled={saving || (cartItems.length === 0 && comboCartItems.length === 0) || !session || !payReady}
-            onClick={() => {
-              setOk("");
-              setQuick(false);
-              setConfirm(true);
-            }}
-          >
-            Revisar e fechar
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            className="mt-2 hidden w-full lg:inline-flex"
-            disabled={
-              saving ||
-              cartItems.length === 0 ||
-              comboCartItems.length > 0 ||
-              split ||
-              !session ||
-              !payReady
-            }
-            onClick={() => {
-              setOk("");
-              setQuick(true);
-              setConfirm(true);
-            }}
-          >
-            Fechar rápido
-          </Button>
+          {checkoutPanel()}
         </Card>
       </div>
 
@@ -564,44 +568,29 @@ export default function VenderPage() {
       </div>
 
       <div className="lg:hidden">
-        <StickyActionBar>
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-2xl font-extrabold">{formatBRL(total)}</p>
-            <div className="flex flex-col gap-2">
-              <Button
-                className="min-w-44"
-                disabled={saving || (cartItems.length === 0 && comboCartItems.length === 0) || !session || !payReady}
-                onClick={() => {
-                  setOk("");
-                  setQuick(false);
-                  setConfirm(true);
-                }}
-              >
-                Revisar e fechar
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                className="min-h-11 min-w-44 text-sm"
-                disabled={
-                  saving ||
-                  cartItems.length === 0 ||
-                  comboCartItems.length > 0 ||
-                  split ||
-                  !session ||
-                  !payReady
-                }
-                onClick={() => {
-                  setOk("");
-                  setQuick(true);
-                  setConfirm(true);
-                }}
-              >
-                Fechar rápido
+        {itemCount > 0 ? (
+          <StickyActionBar>
+            <div className="flex items-center justify-between gap-3">
+              <button type="button" className="min-w-0 text-left" onClick={() => setCartOpen(true)}>
+                <p className="text-sm font-bold text-stone-500">
+                  {itemCount} no pedido
+                </p>
+                <p className="text-2xl font-extrabold">{formatBRL(total)}</p>
+              </button>
+              <Button type="button" className="min-w-36 shrink-0" onClick={() => setCartOpen(true)}>
+                Ver pedido
               </Button>
             </div>
-          </div>
-        </StickyActionBar>
+          </StickyActionBar>
+        ) : null}
+        <BottomSheet
+          open={cartOpen}
+          title="Pedido"
+          hint="Pagamento e revisão — sem rolar o catálogo."
+          onClose={() => setCartOpen(false)}
+        >
+          <div className="space-y-4">{checkoutPanel()}</div>
+        </BottomSheet>
       </div>
 
       <ConfirmDialog

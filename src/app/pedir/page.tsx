@@ -69,6 +69,11 @@ export default function PedirPage() {
   const [confirm, setConfirm] = useState(false);
   const [pending, setPending] = useState<{ action: "sinal" | "entregar"; request: RequestView } | null>(null);
   const [payLater, setPayLater] = useState<PaymentMethod>("pix");
+  const [partyStep, setPartyStep] = useState(1);
+
+  useEffect(() => {
+    setPartyStep(1);
+  }, [askKind]);
 
   const selected = useMemo(
     () => Object.entries(qty).filter(([, value]) => value > 0),
@@ -163,6 +168,7 @@ export default function PedirPage() {
       setTotalText("");
       setSignalMode("depois");
       setSignalText("");
+      setPartyStep(1);
       setConfirm(false);
       setOk(
         askKind === "encomenda"
@@ -214,6 +220,9 @@ export default function PedirPage() {
       (Boolean(neededBy) &&
         estimatedTotal > 0 &&
         (signalMode === "depois" || (signalAmount > 0 && signalAmount < estimatedTotal && Boolean(session)))));
+  const canAdvancePartyStep1 = Boolean(neededBy) && estimatedTotal > 0;
+  const canAdvancePartyStep2 = selectedCount > 0;
+  const showCatalog = askKind === "reposicao" || (askKind === "encomenda" && partyStep === 2);
 
   function requestCard(request: RequestView) {
     const kindLabel = storeRequestKindLabel(storeRequestKind(request));
@@ -319,11 +328,39 @@ export default function PedirPage() {
               { id: "encomenda", label: "Encomenda" },
             ]}
           />
-          <SearchField value={search} onChange={setSearch} placeholder="Buscar: coxinha, festa, coca..." />
-          <FilterChips value={kind} onChange={setKind} options={pickKindOptions(selectedCount)} />
+          {askKind === "encomenda" ? (
+            <div className="grid grid-cols-3 gap-2">
+              {(
+                [
+                  [1, "Festa"],
+                  [2, "Itens"],
+                  [3, "Sinal"],
+                ] as const
+              ).map(([step, label]) => (
+                <Button
+                  key={step}
+                  type="button"
+                  variant={partyStep === step ? "primary" : "ghost"}
+                  className="min-h-11 px-2 text-sm"
+                  onClick={() => {
+                    if (step < partyStep) setPartyStep(step);
+                  }}
+                  disabled={step > partyStep}
+                >
+                  {step}. {label}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+          {showCatalog ? (
+            <>
+              <SearchField value={search} onChange={setSearch} placeholder="Buscar: coxinha, festa, coca..." />
+              <FilterChips value={kind} onChange={setKind} options={pickKindOptions(selectedCount)} />
+            </>
+          ) : null}
         </div>
 
-        {askKind === "encomenda" ? (
+        {askKind === "encomenda" && partyStep === 1 ? (
           <Card className="mb-4 space-y-3">
             <Field label="Dia da festa" hint="A fábrica vê esta data no pedido.">
               <Input type="date" min={todayDate()} value={neededBy} onChange={(event) => setNeededBy(event.target.value)} />
@@ -334,6 +371,11 @@ export default function PedirPage() {
             <Field label="Valor da festa" hint="Estimativa pelo preço de prateleira. Pode corrigir.">
               <Input inputMode="decimal" value={totalText} onChange={(event) => setTotalText(event.target.value)} placeholder="0,00" />
             </Field>
+          </Card>
+        ) : null}
+
+        {askKind === "encomenda" && partyStep === 3 ? (
+          <Card className="mb-4 space-y-3">
             <div>
               <p className="mb-2 font-bold">Sinal</p>
               <div className="flex flex-wrap gap-2">
@@ -388,10 +430,19 @@ export default function PedirPage() {
                 <p className="mt-2 font-bold text-red-700">Abra o caixa para receber o sinal agora.</p>
               ) : null}
             </div>
+            <p className="text-sm font-semibold text-stone-600">
+              {selectedCount} tipos · {selectedUnits} un. · {neededBy ? formatDate(neededBy) : "sem data"}
+            </p>
           </Card>
         ) : null}
 
-        {!catalog?.length ? (
+        {askKind === "reposicao" ? (
+          <Card className="mb-4 bg-stone-50 ring-stone-200">
+            <p className="font-semibold text-stone-700">Peça o que está faltando na prateleira. A fábrica avisa se não der.</p>
+          </Card>
+        ) : null}
+
+        {!showCatalog ? null : !catalog?.length ? (
           <Empty title="Cadastre os produtos primeiro" hint="Sem produto, não tem o que pedir." />
         ) : grouped.length === 0 ? (
           <Empty
@@ -451,21 +502,39 @@ export default function PedirPage() {
       </div>
 
       <StickyActionBar>
-        <input
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
-          placeholder={askKind === "encomenda" ? "Recado opcional. Ex.: entregar de manhã" : "Recado opcional. Ex.: festa no sábado"}
-          className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-base outline-none focus:border-orange-500"
-        />
+        {(askKind === "encomenda" && partyStep === 3) || askKind === "reposicao" ? (
+          <input
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder={askKind === "encomenda" ? "Recado opcional. Ex.: entregar de manhã" : "Recado opcional. Ex.: festa no sábado"}
+            className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-base outline-none focus:border-orange-500"
+          />
+        ) : null}
         <ErrorBox message={error} />
         <SuccessBox message={ok} />
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="font-bold text-stone-700">
-            {selectedCount > 0 ? `${selectedCount} tipos · ${selectedUnits} un.` : "Nada escolhido ainda"}
-          </p>
-          <Button className="min-w-48" disabled={!canSend} onClick={() => { setOk(""); setConfirm(true); }}>
-            Revisar e enviar
-          </Button>
+          {askKind === "encomenda" && partyStep > 1 ? (
+            <Button type="button" variant="ghost" className="min-h-11" onClick={() => setPartyStep((step) => step - 1)}>
+              Voltar
+            </Button>
+          ) : (
+            <p className="font-bold text-stone-700">
+              {selectedCount > 0 ? `${selectedCount} tipos · ${selectedUnits} un.` : "Nada escolhido ainda"}
+            </p>
+          )}
+          {askKind === "encomenda" && partyStep === 1 ? (
+            <Button className="min-w-48" disabled={!canAdvancePartyStep1} onClick={() => setPartyStep(2)}>
+              Continuar
+            </Button>
+          ) : askKind === "encomenda" && partyStep === 2 ? (
+            <Button className="min-w-48" disabled={!canAdvancePartyStep2} onClick={() => setPartyStep(3)}>
+              Continuar
+            </Button>
+          ) : (
+            <Button className="min-w-48" disabled={!canSend} onClick={() => { setOk(""); setConfirm(true); }}>
+              Revisar e enviar
+            </Button>
+          )}
         </div>
       </StickyActionBar>
 

@@ -111,6 +111,67 @@ export function StickyActionBar({ children }: { children: ReactNode }) {
   );
 }
 
+export function BottomSheet({
+  open,
+  title,
+  hint,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  hint?: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [open]);
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 lg:hidden" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40" />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sheet-title"
+        className="absolute inset-x-0 bottom-0 flex max-h-[88vh] flex-col rounded-t-3xl bg-white shadow-xl [.shell-turno_&]:bottom-16"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="shrink-0 border-b border-orange-100 px-5 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 id="sheet-title" className="text-2xl font-extrabold text-stone-900">
+                {title}
+              </h2>
+              {hint ? <p className="mt-1 text-stone-600">{hint}</p> : null}
+            </div>
+            <Button type="button" variant="ghost" className="shrink-0 px-3" aria-label="Fechar" onClick={onClose}>
+              ✕
+            </Button>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export function ConfirmDialog({
   open,
   title,
