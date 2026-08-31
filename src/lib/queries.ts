@@ -765,6 +765,7 @@ export async function loadKardex(input: {
   const factoryOrderById = new Map(factoryOrders.map((row) => [row.id, row]));
   const customerById = new Map(customers.map((row) => [row.id, row]));
   const personById = new Map(people.map((row) => [row.id, row]));
+  const consumptionById = new Map(consumptions.map((row) => [row.id, row]));
   const names = new Map(people.map((row) => [row.id, row.name]));
 
   const scoped = movements
@@ -842,15 +843,17 @@ export async function loadKardex(input: {
             ? salePaymentSummary(sale)
             : "Venda";
     } else if (movement.type === "internal") {
-      const consume = consumptions.find(
-        (row) =>
-          row.locationId === movement.locationId &&
-          row.lotId === movement.lotId &&
-          row.qty === Math.abs(movement.qty) &&
-          localDay(row.at) === localDay(movement.at),
-      );
+      const consume =
+        consumptionById.get(movement.refId) ??
+        consumptions.find(
+          (row) =>
+            row.locationId === movement.locationId &&
+            row.lotId === movement.lotId &&
+            row.qty === Math.abs(movement.qty) &&
+            localDay(row.at) === localDay(movement.at),
+        );
       who = consume?.userName ?? operatorName ?? locationName;
-      note = "Consumo interno";
+      note = consume?.userName ? `Consumo interno · ${consume.userName}` : "Consumo interno";
     } else if (movement.type === "waste") {
       const waste = wastes.find(
         (row) =>

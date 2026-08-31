@@ -982,6 +982,20 @@ async function main() {
       ],
     }),
   );
+  const kardexTelma = await loadKardex({
+    nicheId: "cox-mini",
+    locationId: "store_1",
+    from: startOfDayIso(today),
+    to: endOfDayIso(today),
+  });
+  record(
+    "Extrato da loja lista consumo interno com ficha",
+    kardexTelma.rows.some((row) => row.type === "internal" && row.who.includes("Telma") && row.qty === -1),
+    kardexTelma.rows
+      .filter((row) => row.type === "internal")
+      .map((row) => `${row.who} · ${row.qty}`)
+      .join(" · ") || "vazio",
+  );
   await expectFail(
     "Quarto salgado da Telma é recusado pela cota",
     () =>

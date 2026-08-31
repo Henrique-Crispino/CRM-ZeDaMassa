@@ -6,6 +6,7 @@ import { catalogItems } from "./queries";
 import { ADMIN_PANEL, FACTORY_LOCATION, getLocation, isStore, storeLocations } from "./locations";
 import { newId, todayDate } from "./money";
 import { oldestLots, changeStock } from "./stock-core";
+import { writeInternalConsumeMovements } from "./stock";
 import {
   asConsumeUser,
   deactivatePerson,
@@ -289,7 +290,6 @@ export async function registerInternalConsume(input: {
     }
   }
   const dayKey = todayDate();
-  const refId = newId();
   const at = new Date().toISOString();
 
   await db.transaction(
@@ -356,12 +356,19 @@ export async function registerInternalConsume(input: {
 
       for (const item of items) {
         const chunks = await oldestLots(input.locationId, item.nicheId, item.qty, { skipExpired: true, onlyFree: true });
+        const stockLines: {
+          consumptionId: string;
+          nicheId: string;
+          lotId: string;
+          qty: number;
+          unitCost?: number;
+        }[] = [];
         for (const chunk of chunks) {
           const lot = await db.lots.get(chunk.lotId);
           const niche = await db.niches.get(item.nicheId);
-          await changeStock(input.locationId, item.nicheId, chunk.lotId, -chunk.qty);
+          const consumptionId = newId();
           await db.consumptions.add({
-            id: newId(),
+            id: consumptionId,
             locationId: input.locationId,
             nicheId: item.nicheId,
             lotId: chunk.lotId,
@@ -373,23 +380,25 @@ export async function registerInternalConsume(input: {
             unitCost: lotCost(lot, niche?.costPrice ?? 0),
             actorId: actor.actorId,
           });
-          await db.movements.add({
-            id: newId(),
-            locationId: input.locationId,
+          stockLines.push({
+            consumptionId,
             nicheId: item.nicheId,
             lotId: chunk.lotId,
-            qty: -chunk.qty,
-            type: "internal",
-            refId,
-            at,
-            actorId: actor.actorId,
+            qty: chunk.qty,
+            unitCost: lotCost(lot, niche?.costPrice ?? 0),
           });
         }
+        await writeInternalConsumeMovements({
+          locationId: input.locationId,
+          at,
+          actorId: actor.actorId,
+          lines: stockLines,
+        });
       }
     },
   );
 
-  return refId;
+  return at;
 }
 
 export async function listConsumptions(scope?: string) {

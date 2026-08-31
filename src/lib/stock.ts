@@ -1020,6 +1020,31 @@ export async function registerWaste(input: {
   return refId;
 }
 
+/** Baixa estoque + movement `internal` — usar dentro da tx de consumo interno (cota/caixa já validados). */
+export async function writeInternalConsumeMovements(input: {
+  locationId: string;
+  at: string;
+  actorId?: string;
+  lines: { consumptionId: string; nicheId: string; lotId: string; qty: number; unitCost?: number }[];
+}) {
+  const db = getDb();
+  for (const line of input.lines) {
+    await changeStock(input.locationId, line.nicheId, line.lotId, -line.qty);
+    await db.movements.add({
+      id: newId(),
+      locationId: input.locationId,
+      nicheId: line.nicheId,
+      lotId: line.lotId,
+      qty: -line.qty,
+      type: "internal",
+      refId: line.consumptionId,
+      at: input.at,
+      unitCost: line.unitCost,
+      actorId: input.actorId,
+    });
+  }
+}
+
 export async function openPackages(input: {
   locationId: string;
   items: { nicheId: string; qty: number }[];
