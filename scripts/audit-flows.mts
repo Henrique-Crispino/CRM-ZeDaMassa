@@ -74,7 +74,7 @@ async function main() {
   } = await import("../src/lib/stock.ts");
   const { openCashSession, registerCashMovement, closeCashSession, reopenCashSession, currentCashSession, sessionLedger } =
     await import("../src/lib/cash.ts");
-  const { createStoreRequest, fulfillRequest, listRequests, cancelRequest, factoryFreeByNiche } = await import("../src/lib/requests.ts");
+  const { createStoreRequest, fulfillRequest, listRequests, cancelRequest, factoryFreeByNiche, factoryStockPosition } = await import("../src/lib/requests.ts");
   const { registerInternalConsume } = await import("../src/lib/consume.ts");
   const { reportDayPack, reportRomaneio, reportWindow, reportClosing, reportFactoryClients } = await import("../src/lib/reports.ts");
   const { catalogItems, inventorySheet, setProductActive, loadKardex, loadDashboard, listProductionLogs } = await import("../src/lib/queries.ts");
@@ -84,7 +84,7 @@ async function main() {
   const { createFactoryOrder, listFactoryOrders, deliverFactoryOrder, lastFactoryOrder, cancelFactoryOrder } =
     await import("../src/lib/factory-orders.ts");
   const { customerKind, isRevenueSale } = await import("../src/lib/types.ts");
-  const { takeEncomendaSignal, deliverEncomenda, listOpenParties } = await import("../src/lib/encomendas.ts");
+  const { takeEncomendaSignal, deliverEncomenda, listOpenParties, quoteEncomendaDelivery } = await import("../src/lib/encomendas.ts");
   const db = getDb();
   const today = todayDate();
 
@@ -1456,6 +1456,12 @@ async function main() {
     afterDeliver?.status === "sem_saldo" && afterLine?.remaining === 30 && afterLine.availableQty === 0 && afterLine.sentQty === 20,
     `${afterDeliver?.statusLabel ?? "sumiu"} · restam ${afterLine?.remaining} · livres ${afterLine?.availableQty}`,
   );
+  const padariaOrderRow = orderId ? await db.factoryOrders.get(orderId) : undefined;
+  record(
+    "sem_saldo da padaria persiste no banco",
+    padariaOrderRow?.status === "sem_saldo",
+    `db=${padariaOrderRow?.status}`,
+  );
 
   const storeStill = (await listRequests("open")).find((row) => row.id === storeWell?.id);
   record(
@@ -1535,6 +1541,25 @@ async function main() {
     "Pedido novo da loja envelhece se o poço acabou",
     store2Ask?.status === "sem_saldo" && store2Ask.items[0]?.availableQty === 0,
     `${store2Ask?.statusLabel ?? "sumiu"} · livres ${store2Ask?.items[0]?.availableQty}`,
+  );
+  const store2Row = store2Ask ? await db.requests.get(store2Ask.id) : undefined;
+  record(
+    "sem_saldo do pedido da loja persiste no banco",
+    store2Row?.status === "sem_saldo",
+    `db=${store2Row?.status}`,
+  );
+  await produceItems({ items: [{ nicheId: "cox-mini", qty: 200 }], madeAt: today });
+  const store2AfterProduce = store2Ask ? await db.requests.get(store2Ask.id) : undefined;
+  record(
+    "Produzir de novo tira o pedido de sem_saldo",
+    store2AfterProduce?.status === "pending" || store2AfterProduce?.status === "parcial",
+    `status=${store2AfterProduce?.status}`,
+  );
+  const coxPos = (await factoryStockPosition()).find((row) => row.nicheId === "cox-mini");
+  record(
+    "Saldo na câmara separa reservado e livre",
+    Boolean(coxPos && coxPos.reserved >= 40 && coxPos.sellable >= coxPos.reserved),
+    `válido=${coxPos?.sellable} reservado=${coxPos?.reserved} livre=${coxPos?.free} trânsito=${coxPos?.inTransit}`,
   );
 
   record("parseMoney 1.500 é milhar", parseMoney("1.500") === 1500, String(parseMoney("1.500")));
@@ -1735,6 +1760,15 @@ async function main() {
       "Festa conferida espera o resto na loja",
       openAtStore?.stock === "na_loja" && openAtStore.due === 200,
       `stock=${openAtStore?.stock} due=${openAtStore?.due}`,
+    );
+    const partyQuote = await quoteEncomendaDelivery(partyId);
+    record(
+      "Entrega da festa compara FIFO com o combinado",
+      partyQuote.combinedTotal === 400 &&
+        partyQuote.fifoTotal === 60 &&
+        partyQuote.due === 200 &&
+        partyQuote.differs,
+      `fifo=${partyQuote.fifoTotal} combinado=${partyQuote.combinedTotal} resto=${partyQuote.due}`,
     );
     const storeBeforeDeliver = await stockQty("store_1", "cox-mini");
     const ledgerBeforeDeliver = sessionForParty ? await sessionLedger(sessionForParty.id) : null;

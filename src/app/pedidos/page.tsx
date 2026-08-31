@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
+import { FactoryStockSummary } from "@/components/FactoryStockSummary";
 import { ConfirmDialog } from "@/components/pick-flow";
 import { ReportPreview } from "@/components/ReportPreview";
 import { Button, Card, Empty, ErrorBox, NumberStepper, PageTitle, SuccessBox } from "@/components/ui";
@@ -181,6 +182,8 @@ export default function PedidosPage() {
       />
       <ErrorBox message={error} />
       <SuccessBox message={ok} />
+
+      {canSend ? <FactoryStockSummary pageSize={8} /> : null}
 
       {pending.length === 0 ? (
         <Empty title="Nenhum pedido esperando" hint="Festas aparecem quando a loja recebe o sinal. Revendedores entram ao pedir na câmara." />

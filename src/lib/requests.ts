@@ -18,6 +18,7 @@ import {
   productIsLive,
   requestStatusLabel,
   storeRequestKind,
+  transferStatus,
 } from "./types";
 
 export class RequestError extends Error {}
@@ -98,6 +99,27 @@ export function coverageStatus(items: Pick<RequestItemView, "remaining" | "avail
     return "parcial";
   }
   return "pending";
+}
+
+/** Grava sem_saldo/parcial/pending no banco quando o poço muda — a UI e o histórico leem o mesmo status. */
+export async function syncOpenWellStatuses(db = getDb()) {
+  const { storeClaims, customerClaims } = await loadFactoryWell();
+  for (const claim of storeClaims) {
+    const row = await db.requests.get(claim.id);
+    if (!row || !isOpenRequest(row.status)) continue;
+    const live = coverageStatus(claim.items);
+    if (live !== row.status && isOpenRequest(live)) {
+      await db.requests.update(claim.id, { status: live });
+    }
+  }
+  for (const claim of customerClaims) {
+    const row = await db.factoryOrders.get(claim.id);
+    if (!row || !isOpenRequest(row.status)) continue;
+    const live = coverageStatus(claim.items);
+    if (live !== row.status && isOpenRequest(live)) {
+      await db.factoryOrders.update(claim.id, { status: live });
+    }
+  }
 }
 
 export async function createStoreRequest(input: {
@@ -236,6 +258,7 @@ export async function createStoreRequest(input: {
     }
   });
 
+  await syncOpenWellStatuses();
   return requestId;
 }
 
@@ -364,6 +387,60 @@ export async function loadFactoryWell() {
   }
 
   return { sellable, leftover, storeClaims, customerClaims };
+}
+
+export type FactoryStockRow = {
+  nicheId: string;
+  label: string;
+  physical: number;
+  sellable: number;
+  expired: number;
+  reserved: number;
+  free: number;
+  inTransit: number;
+};
+
+export async function factoryStockPosition(): Promise<FactoryStockRow[]> {
+  const db = getDb();
+  const [catalog, stock, well, transfers, transferItems] = await Promise.all([
+    catalogItems(false),
+    stockByLocation(),
+    loadFactoryWell(),
+    db.transfers.toArray(),
+    db.transferItems.toArray(),
+  ]);
+
+  const inTransitByNiche = new Map<string, number>();
+  for (const transfer of transfers) {
+    if (transfer.fromLocationId !== "factory" || transferStatus(transfer) !== "em_transito") continue;
+    for (const part of transferItems.filter((row) => row.transferId === transfer.id)) {
+      inTransitByNiche.set(part.nicheId, (inTransitByNiche.get(part.nicheId) ?? 0) + part.qty);
+    }
+  }
+
+  const rows: FactoryStockRow[] = [];
+  for (const item of stock) {
+    if (!productIsLive(item.product)) continue;
+    const physical = item.qty.factory ?? 0;
+    const expired = item.expiredQty.factory ?? 0;
+    const sellable = sellableQty(item, "factory");
+    const free = well.leftover.get(item.niche.id) ?? 0;
+    const reserved = Math.max(0, sellable - free);
+    const inTransit = inTransitByNiche.get(item.niche.id) ?? 0;
+    if (physical <= 0 && sellable <= 0 && reserved <= 0 && free <= 0 && inTransit <= 0) continue;
+    rows.push({
+      nicheId: item.niche.id,
+      label: item.label,
+      physical,
+      sellable,
+      expired,
+      reserved,
+      free,
+      inTransit,
+    });
+  }
+
+  return rows.sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
 }
 
 export async function factoryFreeByNiche() {
@@ -541,6 +618,7 @@ export async function fulfillRequest(
     throw error;
   }
 
+  await syncOpenWellStatuses();
   return transferId;
 }
 
@@ -563,6 +641,7 @@ export async function cancelRequest(requestId: string) {
     body: "A fábrica não vai mandar este pedido.",
     refId: requestId,
   });
+  await syncOpenWellStatuses();
 }
 
 export async function unreadNotifications(audience: NotificationAudience) {

@@ -94,6 +94,8 @@ export async function produceItems(input: {
     }
   });
 
+  const { syncOpenWellStatuses } = await import("./requests");
+  await syncOpenWellStatuses();
   return refId;
 }
 
@@ -157,6 +159,8 @@ export async function receivePurchase(input: {
     }
   });
 
+  const { syncOpenWellStatuses } = await import("./requests");
+  await syncOpenWellStatuses();
   return refId;
 }
 
@@ -243,6 +247,8 @@ export async function sendToStore(input: {
     },
   );
 
+  const { syncOpenWellStatuses } = await import("./requests");
+  await syncOpenWellStatuses();
   return transferId;
 }
 

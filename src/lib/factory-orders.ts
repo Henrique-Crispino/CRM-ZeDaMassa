@@ -4,7 +4,7 @@ import { getCustomer } from "./customers";
 import { getDb } from "./db";
 import { formatBRL, newId } from "./money";
 import { catalogItems } from "./queries";
-import { coverageStatus, loadFactoryWell, type RequestItemView } from "./requests";
+import { coverageStatus, loadFactoryWell, syncOpenWellStatuses, type RequestItemView } from "./requests";
 import { assertLiveNiches, StockError } from "./stock";
 import { changeStock, oldestLots } from "./stock-core";
 import {
@@ -290,6 +290,7 @@ export async function cancelFactoryOrder(orderId: string) {
     body: "A câmara não vai separar este pedido.",
     refId: orderId,
   });
+  await syncOpenWellStatuses();
 }
 
 export async function deliverFactoryOrder(
@@ -300,9 +301,10 @@ export async function deliverFactoryOrder(
   const method = requirePayment(payment);
   const actor = await stampActor(FactoryOrderError);
   const db = getDb();
+  let result: { amount: number; method: PaymentMethod; leftover: boolean };
 
   try {
-    return await db.transaction(
+    result = await db.transaction(
       "rw",
       [
         db.stock,
@@ -395,4 +397,6 @@ export async function deliverFactoryOrder(
     if (err instanceof StockError) throw new FactoryOrderError(err.message);
     throw err;
   }
+  await syncOpenWellStatuses();
+  return result;
 }

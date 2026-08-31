@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { AppShell } from "@/components/AppShell";
 import { DiscardExpiredBanner } from "@/components/DiscardExpiredBanner";
+import { FactoryStockSummary } from "@/components/FactoryStockSummary";
 import {
   CompactGroup,
   CompactList,
@@ -153,7 +154,9 @@ export default function EnviarPage() {
           <Card className="mb-4">
             <p className="font-extrabold text-stone-600">Carregando estoque da fábrica...</p>
           </Card>
-        ) : null}
+        ) : (
+          <FactoryStockSummary pageSize={5} />
+        )}
 
         {(pending ?? []).length > 0 ? (
           <div className="mb-4 rounded-3xl bg-orange-50 px-4 py-3 ring-1 ring-orange-200">

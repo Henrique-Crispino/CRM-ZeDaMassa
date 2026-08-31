@@ -28,7 +28,7 @@ import {
   SuccessBox,
 } from "@/components/ui";
 import { currentCashSession } from "@/lib/cash";
-import { deliverEncomenda, EncomendaError, estimateEncomendaTotal, isOpenPartyRequest, takeEncomendaSignal } from "@/lib/encomendas";
+import { deliverEncomenda, EncomendaError, estimateEncomendaTotal, isOpenPartyRequest, quoteEncomendaDelivery, takeEncomendaSignal } from "@/lib/encomendas";
 import { getPanel } from "@/lib/locations";
 import { formatBRL, formatDate, parseMoney, todayDate } from "@/lib/money";
 import { catalogItems, stockByLocation } from "@/lib/queries";
@@ -70,6 +70,14 @@ export default function PedirPage() {
   const [pending, setPending] = useState<{ action: "sinal" | "entregar"; request: RequestView; amount?: number } | null>(null);
   const [payLater, setPayLater] = useState<PaymentMethod>("pix");
   const [partyStep, setPartyStep] = useState(1);
+
+  const deliveryQuote = useLiveQuery(
+    () =>
+      ready && pending?.action === "entregar"
+        ? quoteEncomendaDelivery(pending.request.id)
+        : undefined,
+    [ready, pending?.action, pending?.request.id],
+  );
 
   useEffect(() => {
     setPartyStep(1);
@@ -622,6 +630,16 @@ export default function PedirPage() {
       >
         {pending?.action === "sinal" && pending.amount ? (
           <p className="mb-3 font-semibold text-stone-700">Sinal {formatBRL(pending.amount)}</p>
+        ) : null}
+        {pending?.action === "entregar" && deliveryQuote ? (
+          <div className="mb-3 space-y-1 font-semibold text-stone-700">
+            <p>Combinado {formatBRL(deliveryQuote.combinedTotal)} · resto {formatBRL(deliveryQuote.due)}</p>
+            {deliveryQuote.differs ? (
+              <p className="text-sm text-orange-800">
+                Na prateleira (FIFO) somaria {formatBRL(deliveryQuote.fifoTotal)} — o caixa cobra o combinado.
+              </p>
+            ) : null}
+          </div>
         ) : null}
         <div className="grid grid-cols-3 gap-2">
           {PAYMENT_METHODS.map((item) => (

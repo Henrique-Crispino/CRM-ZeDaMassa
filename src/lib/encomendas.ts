@@ -4,9 +4,10 @@ import { getDb } from "./db";
 import { getLocation, isStore } from "./locations";
 import { formatBRL, newId, todayDate } from "./money";
 import { checkout, StockError } from "./stock";
+import { oldestLots } from "./stock-core";
 import { catalogItems } from "./queries";
-import type { PaymentMethod, SalePayment, StockRequest, StockRequestItem, Transfer } from "./types";
-import { isOpenRequest, PAYMENT_METHODS, storeRequestKind, transferStatus } from "./types";
+import type { FifoPriceChunk, PaymentMethod, SalePayment, StockRequest, StockRequestItem, Transfer } from "./types";
+import { fifoSaleTotal, isOpenRequest, PAYMENT_METHODS, saleLotPrice, storeRequestKind, transferStatus } from "./types";
 
 export class EncomendaError extends Error {}
 
@@ -51,6 +52,56 @@ export async function estimateEncomendaTotal(items: { nicheId: string; qty: numb
       return sum + (found?.niche.sellPrice ?? 0) * item.qty;
     }, 0),
   );
+}
+
+export type EncomendaDeliveryQuote = {
+  fifoTotal: number;
+  combinedTotal: number;
+  due: number;
+  differs: boolean;
+};
+
+async function fifoTotalForPayload(locationId: string, payload: { nicheId: string; qty: number }[]) {
+  const db = getDb();
+  let total = 0;
+  for (const item of payload) {
+    if (item.qty <= 0) continue;
+    const niche = await db.niches.get(item.nicheId);
+    if (!niche) throw new EncomendaError("Produto não encontrado.");
+    const chunks = await oldestLots(locationId, item.nicheId, item.qty, { skipExpired: true });
+    const priced: FifoPriceChunk[] = [];
+    for (const chunk of chunks) {
+      const lot = await db.lots.get(chunk.lotId);
+      priced.push({
+        qty: chunk.qty,
+        unitPrice: saleLotPrice(lot, niche.sellPrice, niche.promoPrice ?? 0, false),
+      });
+    }
+    total += fifoSaleTotal(priced);
+  }
+  return money2(total);
+}
+
+export async function quoteEncomendaDelivery(requestId: string): Promise<EncomendaDeliveryQuote> {
+  const db = getDb();
+  const request = await db.requests.get(requestId);
+  if (!request || storeRequestKind(request) !== "encomenda") {
+    throw new EncomendaError("Só a encomenda da loja tem cotação de entrega.");
+  }
+  const items = await db.requestItems.where("requestId").equals(requestId).toArray();
+  const payload = items
+    .filter((item) => (item.sentQty ?? 0) > 0)
+    .map((item) => ({ nicheId: item.nicheId, qty: item.sentQty ?? 0 }));
+  const fifoTotal = payload.length ? await fifoTotalForPayload(request.fromLocationId, payload) : 0;
+  const combinedTotal = money2(request.estimatedTotal ?? 0);
+  const credit = money2(request.signalAmount ?? 0);
+  const due = money2(combinedTotal - credit);
+  return {
+    fifoTotal,
+    combinedTotal,
+    due,
+    differs: combinedTotal > 0 && Math.abs(fifoTotal - combinedTotal) >= 0.01,
+  };
 }
 
 export async function takeEncomendaSignal(input: {
@@ -99,6 +150,8 @@ export async function takeEncomendaSignal(input: {
   }
   const { notifyFactoryOfEncomenda } = await import("./requests");
   await notifyFactoryOfEncomenda(input.requestId);
+  const { syncOpenWellStatuses } = await import("./requests");
+  await syncOpenWellStatuses();
   return saleId;
 }
 
@@ -178,9 +231,10 @@ export async function deliverEncomenda(input: {
     .map((item) => ({ nicheId: item.nicheId, qty: item.sentQty ?? 0 }));
   if (payload.length === 0) throw new EncomendaError("Não tem o que entregar neste pedido.");
 
-  const total = money2(request.estimatedTotal ?? 0);
+  const quote = await quoteEncomendaDelivery(request.id);
+  const total = quote.combinedTotal;
   const credit = money2(request.signalAmount);
-  const due = money2(total - credit);
+  const due = quote.due;
   if (due <= 0) throw new EncomendaError("O resto desta festa não fecha. Confira o total e o sinal.");
 
   let saleId = "";
